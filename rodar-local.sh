@@ -67,8 +67,12 @@ else
     done
     echo
     URL="postgresql://postgres:vf@localhost:5433/producao_vf?schema=public"
-    ok "Postgres no ar em localhost:5433"
+    # banco separado só para a bateria de integração — ela apaga tudo a cada rodada
+    docker exec producao-vf-db psql -U postgres -c 'CREATE DATABASE producao_vf_teste' >/dev/null 2>&1
+    URL_TESTE="postgresql://postgres:vf@localhost:5433/producao_vf_teste?schema=public"
+    ok "Postgres no ar em localhost:5433 (com banco de teste)"
   else
+    URL_TESTE=""
     echo
     echo "  Crie um projeto grátis em https://neon.tech e copie a connection string."
     read -r -p "  Cole aqui (a pooled, com -pooler): " URL
@@ -86,6 +90,7 @@ JWT_SECRET="$(node -e "console.log(require('crypto').randomBytes(32).toString('h
 CORS_ORIGIN="http://localhost:5173"
 PORT=3001
 NODE_ENV=development
+${URL_TESTE:+DATABASE_URL_TESTE="$URL_TESTE"}
 ENV
   ok "backend/.env criado"
 fi
