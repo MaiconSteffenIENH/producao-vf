@@ -1,5 +1,21 @@
 import axios from 'axios'
 
+/*
+ * O Vite embute VITE_API_URL no bundle em tempo de BUILD, não em runtime.
+ * Se ela faltar no build de produção, o app cai no localhost e a pessoa vê
+ * "sem conexão" sem nenhuma pista do motivo — já custou tempo. Aqui a falta
+ * é detectada e dita em voz alta.
+ */
+export const faltaUrlDaApi = import.meta.env.PROD && !import.meta.env.VITE_API_URL
+
+if (faltaUrlDaApi) {
+  console.error(
+    '[Produção VF] VITE_API_URL não estava definida quando este build foi gerado.\n' +
+      'Defina a variável na hospedagem (a URL da API, sem barra no fim) e gere um build NOVO — ' +
+      'redeploy reaproveitando cache mantém o valor antigo embutido.',
+  )
+}
+
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3001',
   timeout: 30_000,
@@ -37,7 +53,13 @@ export function mensagemDoErro(erro: unknown, padrao = 'Não deu certo. Tente de
   if (axios.isAxiosError(erro)) {
     const m = (erro.response?.data as { mensagem?: string } | undefined)?.mensagem
     if (m) return m
-    if (erro.code === 'ERR_NETWORK') return 'Sem conexão com o servidor.'
+    if (erro.code === 'ERR_NETWORK') {
+      if (faltaUrlDaApi) {
+        return 'Este build não sabe o endereço da API (VITE_API_URL faltou na hora de compilar). Refaça o deploy sem reaproveitar o cache.'
+      }
+      // O plano gratuito do Render hiberna: a primeira chamada do dia demora.
+      return 'Sem conexão com o servidor. Se ele estava parado, pode levar até um minuto para acordar — tente de novo.'
+    }
   }
   return padrao
 }

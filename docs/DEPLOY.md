@@ -98,14 +98,13 @@ https://producao-vf.vercel.app,https://producao.veraflesch.com.br
 
 O banco de produção sobe **vazio** — o seed não roda no deploy de propósito, para não recriar dados apagados a cada reinício.
 
-Semeie uma vez, apontando para o banco de produção:
+Semeie uma vez:
 
 ```bash
-cd backend
-DATABASE_URL="<a pooled do Neon>" DIRECT_URL="<a direta>" \
-ADMIN_EMAIL="gabi@veraflesch.com.br" ADMIN_SENHA="uma-senha-boa" \
-npm run seed
+./semear-producao.sh
 ```
+
+Ele pergunta a connection string, deriva a conexão direta sozinho, pede o e-mail e a senha do primeiro usuário (sem ecoar a senha na tela) e confirma o host antes de escrever.
 
 Isso cria peças, esmaltes, etapas, responsáveis e o usuário inicial. A senha é provisória: o sistema obriga a trocar no primeiro login.
 

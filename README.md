@@ -61,6 +61,8 @@ Passo a passo completo em **[docs/DEPLOY.md](docs/DEPLOY.md)**. Antes de começa
 
 Ele confere o que costuma dar errado (principalmente a migração não commitada, que faz a API subir com o banco vazio) e imprime as variáveis prontas para colar no Render e na Vercel.
 
+Depois que a API estiver no ar, semeie o banco de produção uma vez com `./semear-producao.sh`.
+
 <details>
 <summary>Resumo</summary>
 

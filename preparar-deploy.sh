@@ -97,12 +97,9 @@ cat <<TEXTO
  Depois que a Vercel te der a URL final, volte no Render e ajuste
  CORS_ORIGIN para a URL real. Barra no fim faz diferença.
 
- SEMEAR O BANCO DE PRODUÇÃO (uma vez só, do seu terminal):
+ SEMEAR O BANCO DE PRODUÇÃO (uma vez só, depois que a API estiver no ar):
 
-   cd backend
-   DATABASE_URL="<pooled>" DIRECT_URL="<direta>" \\
-   ADMIN_EMAIL="gabi@veraflesch.com.br" ADMIN_SENHA="uma-senha-boa" \\
-   npm run seed
+   ./semear-producao.sh        ← ele pergunta o que precisa; não monte na mão
 
  Passo a passo completo: docs/DEPLOY.md
 ────────────────────────────────────────────────────────────────

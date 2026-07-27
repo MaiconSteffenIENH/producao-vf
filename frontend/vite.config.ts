@@ -9,6 +9,15 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Sem isto o service worker novo fica "waiting" e o usuário continua
+      // com o bundle antigo até fechar TODAS as abas — o que faz uma correção
+      // publicada parecer que não subiu. Já custou tempo depurando um deploy
+      // que estava correto.
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+      },
       manifest: {
         name: 'Produção Vera Flesch',
         short_name: 'Produção VF',
