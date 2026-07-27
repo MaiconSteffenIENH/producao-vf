@@ -15,6 +15,7 @@ import {
   Palette,
   Settings,
   Shapes,
+  Search,
   Sun,
   Users,
   Wrench,
@@ -22,6 +23,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../store/auth'
 import { EVENTO_ATUALIZAR } from '../lib/useAutoRefresh'
+import { TECLA_ATALHO } from '../lib/plataforma'
+import { Tecla } from './ui'
 
 type ItemMenu = { para: string; rotulo: string; icone: typeof Package; somenteAdmin?: boolean }
 type GrupoMenu = { titulo: string; itens: ItemMenu[] }
@@ -101,12 +104,16 @@ function usarPuxarParaAtualizar() {
 
 function Marca({ compacto = false }: { compacto?: boolean }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="font-titulo text-xl leading-none text-ouro">VF</span>
+    <div className="flex items-center gap-2.5">
+      {/* Agora que a lateral é clara, o selo é o bloco de cor da marca. Antes
+          ele era um vazado branco porque a lateral inteira já era areia. */}
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-marca shadow-baixa">
+        <span className="font-titulo text-[15px] leading-none tracking-tight text-contraste">VF</span>
+      </span>
       {!compacto && (
         <span className="leading-tight">
-          <span className="block text-sm font-medium text-contraste">Vera Flesch</span>
-          <span className="block text-[11px] uppercase tracking-widest text-contraste/70">Produção</span>
+          <span className="block font-titulo text-[15px] text-tinta">Vera Flesch</span>
+          <span className="block text-[10px] uppercase tracking-[0.22em] text-tinta-fraca">Produção</span>
         </span>
       )}
     </div>
@@ -131,7 +138,7 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
     })
 
   return (
-    <nav className="flex flex-col gap-1 p-3">
+    <nav className="flex flex-col gap-0.5 px-3 pb-6">
       {GRUPOS.map((grupo) => {
         const itens = grupo.itens.filter((i) => !i.somenteAdmin || admin)
         if (itens.length === 0) return null
@@ -140,7 +147,7 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
           <div key={grupo.titulo}>
             <button
               onClick={() => alternar(grupo.titulo)}
-              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-widest text-contraste/60 hover:text-contraste"
+              className="mt-3 flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-tinta-fraca transition hover:text-tinta"
             >
               {grupo.titulo}
               <ChevronDown size={14} className={`transition ${aberto ? '' : '-rotate-90'}`} />
@@ -153,13 +160,30 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
                   end={item.para === '/'}
                   onClick={aoNavegar}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
-                      isActive ? 'bg-contraste/20 font-medium text-contraste' : 'text-contraste/80 hover:bg-contraste/10'
+                    `group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all duration-200 ${
+                      // sólido, não transparência: areia sobre areia dava
+                      // 3,09:1. Assim passa em 4,54:1 e ainda devolve à lateral
+                      // um bloco da cor da marca, que era o que o fundo areia
+                      // fazia antes — só que num pedaço só, onde tem função.
+                      isActive
+                        ? 'bg-marca font-medium text-contraste shadow-baixa'
+                        : 'text-tinta-fraca hover:bg-tinta/6 hover:text-tinta'
                     }`
                   }
                 >
-                  <item.icone size={18} />
-                  {item.rotulo}
+                  {({ isActive }) => (
+                    <>
+                      {/* marcador que sangra para fora do bloco: dá o mesmo
+                          "você está aqui" das abas de um caderno */}
+                      <span
+                        className={`absolute -left-2 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-marca transition-all duration-200 ${
+                          isActive ? 'opacity-100' : 'opacity-0'
+                        }`}
+                      />
+                      <item.icone size={17} className="shrink-0" />
+                      {item.rotulo}
+                    </>
+                  )}
                 </NavLink>
               ))}
           </div>
@@ -201,11 +225,14 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-fundo lg:flex">
       {/* Sidebar — desktop */}
-      <aside className="hidden w-64 shrink-0 bg-marca lg:block">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-borda bg-lateral lg:flex">
         <div className="px-5 py-5">
           <Marca />
         </div>
-        <Navegacao />
+        <div className="mx-3 h-px bg-borda" />
+        <div className="flex-1 overflow-y-auto">
+          <Navegacao />
+        </div>
       </aside>
 
       {/* Menu — mobile */}
@@ -213,7 +240,7 @@ export function Layout() {
         <div className="fixed inset-0 z-40 lg:hidden" onPointerDown={() => setMenuAberto(false)}>
           <div className="absolute inset-0 bg-black/40" />
           <aside
-            className="absolute inset-y-0 left-0 w-72 overflow-y-auto bg-marca"
+            className="anima-lateral absolute inset-y-0 left-0 w-72 overflow-y-auto border-r border-borda bg-lateral"
             onPointerDown={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-5">
@@ -225,11 +252,11 @@ export function Layout() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-3 bg-marca px-4 py-3">
+        <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-borda bg-lateral/85 px-4 py-2.5 backdrop-blur-md">
           <button
             onClick={() => setMenuAberto(true)}
             aria-label="Abrir menu"
-            className="rounded-lg p-1.5 text-contraste hover:bg-contraste/10 lg:hidden"
+            className="rounded-lg p-1.5 text-tinta hover:bg-tinta/8 lg:hidden"
           >
             <Menu size={22} />
           </button>
@@ -237,11 +264,23 @@ export function Layout() {
             <Marca compacto />
           </div>
 
-          <div className="ml-auto flex items-center gap-1">
+          {/* busca global — atalho ensinado na própria tecla */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('vf:abrir-paleta'))}
+            className="ml-auto flex items-center gap-2 rounded-xl border border-borda bg-superficie px-3 py-1.5 text-sm text-tinta-fraca shadow-baixa transition hover:border-marca-clara hover:text-tinta"
+          >
+            <Search size={16} />
+            <span className="hidden sm:inline">Buscar</span>
+            <span className="hidden lg:inline">
+              <Tecla>{TECLA_ATALHO}</Tecla>
+            </span>
+          </button>
+
+          <div className="flex items-center gap-1">
             <button
               onClick={alternar}
               aria-label={escuro ? 'Tema claro' : 'Tema escuro'}
-              className="rounded-lg p-2 text-contraste hover:bg-contraste/10"
+              className="rounded-lg p-2 text-tinta-fraca transition hover:bg-tinta/8 hover:text-tinta"
             >
               {escuro ? <Sun size={18} /> : <Moon size={18} />}
             </button>
@@ -249,18 +288,16 @@ export function Layout() {
             <div className="relative" ref={caixaPerfil}>
               <button
                 onClick={() => setPerfilAberto((v) => !v)}
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-contraste hover:bg-contraste/10"
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-tinta transition hover:bg-tinta/8"
               >
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-contraste/20 text-xs font-semibold">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-marca text-xs font-semibold text-contraste">
                   {perfil?.nome?.[0]?.toUpperCase() ?? '?'}
                 </span>
                 <span className="hidden sm:inline">{perfil?.nome}</span>
-                <ChevronDown size={14} />
+                <ChevronDown size={14} className="text-tinta-fraca" />
               </button>
               {perfilAberto && (
-                // popover nasce dentro do header (sempre escuro) mas mostra
-                // conteúdo — usa as cores de conteúdo, não as do header
-                <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-xl border border-borda bg-superficie shadow-xl">
+                <div className="anima-surgir absolute right-0 mt-2 w-60 overflow-hidden rounded-2xl border border-borda bg-superficie shadow-alta">
                   <div className="border-b border-borda px-3 py-2">
                     <p className="truncate text-sm font-medium text-tinta">{perfil?.nome}</p>
                     <p className="truncate text-xs text-tinta-fraca">{perfil?.email}</p>
@@ -278,7 +315,12 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 sm:px-6">
+        {/*
+          1600 e não 1152: o quadro de produção tem 7 etapas lado a lado e cada
+          coluna cortada é um lote que ninguém vê. Nas telas de texto o
+          CabecalhoPagina já segura a linha num comprimento legível.
+        */}
+        <main className="relative z-10 mx-auto w-full max-w-[100rem] flex-1 px-4 py-7 sm:px-6">
           <Outlet />
         </main>
       </div>

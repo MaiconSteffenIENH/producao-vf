@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Boxes, Package, Palette, Users } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Boxes, Package, Palette, Users } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { plural } from '../lib/format'
@@ -42,25 +42,32 @@ function Numero({
   valor,
   para,
   detalhe,
+  atraso = 0,
 }: {
   icone: typeof Package
   rotulo: string
   valor: number
   para: string
   detalhe?: string
+  atraso?: number
 }) {
   return (
-    <Link to={para} className="rounded-xl border border-borda bg-superficie p-4 transition hover:border-marca">
+    <Link
+      to={para}
+      style={{ animationDelay: `${atraso}ms` }}
+      className="anima-surgir group rounded-2xl border border-borda bg-superficie p-4 shadow-baixa transition-all duration-200 hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media"
+    >
       <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-marca/15 text-marca">
-          <Icone size={20} />
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-marca/12 text-marca transition-colors duration-200 group-hover:bg-marca/20">
+          <Icone size={19} />
         </span>
         <div className="min-w-0">
-          <p className="text-2xl font-semibold leading-tight text-tinta">{valor}</p>
-          <p className="truncate text-sm text-tinta-fraca">{rotulo}</p>
+          {/* número na serifada da marca: dá peso editorial ao dado */}
+          <p className="font-titulo text-[1.75rem] leading-none text-tinta">{valor}</p>
+          <p className="mt-1 truncate text-sm text-tinta-fraca">{rotulo}</p>
         </div>
       </div>
-      {detalhe && <p className="mt-2 text-xs text-tinta-fraca">{detalhe}</p>}
+      {detalhe && <p className="mt-3 text-xs text-tinta-fraca">{detalhe}</p>}
     </Link>
   )
 }
@@ -134,29 +141,56 @@ export function Dashboard() {
           rotulo="peças ativas"
           valor={cadastros.pecasAtivas}
           para="/pecas"
-          detalhe={cadastros.pecasInativas > 0 ? `${cadastros.pecasInativas} inativa(s)` : undefined}
+          atraso={0}
+          detalhe={cadastros.pecasInativas > 0 ? `${plural(cadastros.pecasInativas, 'inativa')}` : undefined}
         />
         <Numero
           icone={Palette}
           rotulo="esmaltes"
           valor={cadastros.coresAtivas}
           para="/esmaltes"
-          detalhe={cadastros.cores > cadastros.coresAtivas ? `${cadastros.cores - cadastros.coresAtivas} inativo(s)` : undefined}
+          atraso={40}
+          detalhe={cadastros.cores > cadastros.coresAtivas ? `${plural(cadastros.cores - cadastros.coresAtivas, 'inativo')}` : undefined}
         />
-        <Numero icone={Users} rotulo="responsáveis" valor={cadastros.responsaveis} para="/responsaveis" />
-        <Numero icone={Boxes} rotulo="etapas do fluxo" valor={cadastros.etapas} para="/etapas" />
+        <Numero icone={Users} rotulo="responsáveis" valor={cadastros.responsaveis} para="/responsaveis" atraso={80} />
+        <Numero icone={Boxes} rotulo="etapas do fluxo" valor={cadastros.etapas} para="/etapas" atraso={120} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <h2 className="mb-1 text-lg font-semibold text-tinta">
+          <h2 className="mb-1 font-titulo text-xl text-tinta">
             {totalPendencias === 0 ? 'Cadastro em ordem' : 'Falta configurar'}
           </h2>
           {totalPendencias === 0 ? (
-            <p className="text-sm text-tinta-fraca">
-              Toda peça ativa tem roteiro, passa pela etapa que define a cor e tem esmaltes associados. O
-              planejamento tem tudo de que precisa.
-            </p>
+            <>
+              <p className="text-sm leading-relaxed text-tinta-fraca">
+                Toda peça ativa tem roteiro, passa pela etapa que define a cor e tem esmaltes associados. O
+                planejamento tem tudo de que precisa.
+              </p>
+              {/* card sem pendência vira atalho em vez de meia tela em branco */}
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {[
+                  ['/planejamento', 'Ver o que produzir', 'sugestões calculadas agora'],
+                  ['/producao', 'Abrir o quadro', 'onde cada lote está'],
+                  ['/meu-dia', 'Metas do dia', 'quanto falta para cada um'],
+                ].map(([para, titulo, sub]) => (
+                  <Link
+                    key={para}
+                    to={para}
+                    className="group rounded-xl border border-borda bg-superficie-2/60 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-marca-clara hover:bg-superficie"
+                  >
+                    <span className="flex items-center justify-between gap-2 text-sm font-medium text-tinta">
+                      {titulo}
+                      <ArrowRight
+                        size={14}
+                        className="shrink-0 text-tinta-fraca transition-transform duration-200 group-hover:translate-x-0.5"
+                      />
+                    </span>
+                    <span className="mt-0.5 block text-xs text-tinta-fraca">{sub}</span>
+                  </Link>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="mt-2 flex flex-col gap-3">
               <ListaPendencia
@@ -179,10 +213,13 @@ export function Dashboard() {
         </Card>
 
         <Card>
-          <h2 className="mb-2 text-lg font-semibold text-tinta">Peças por categoria</h2>
-          <ul className="flex flex-col gap-1.5">
+          <h2 className="mb-3 font-titulo text-xl text-tinta">Peças por categoria</h2>
+          <ul className="flex flex-col">
             {porCategoria.map((c) => (
-              <li key={c.id} className="flex items-center justify-between text-sm">
+              <li
+                key={c.id}
+                className="flex items-center justify-between border-b border-borda/60 py-2 text-sm last:border-0"
+              >
                 <span className="text-tinta">{c.nome}</span>
                 <span className="text-tinta-fraca">{plural(c.pecas, 'peça', 'peças')}</span>
               </li>
@@ -193,7 +230,7 @@ export function Dashboard() {
 
       <Card className="mt-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-tinta">Produção agora</h2>
+          <h2 className="font-titulo text-xl text-tinta">Produção agora</h2>
           <Link to="/producao" className="text-sm text-tinta-fraca underline hover:text-tinta">
             abrir o quadro
           </Link>
@@ -207,9 +244,9 @@ export function Dashboard() {
             ['Lotes concluídos', producao.lotesConcluidos, ''],
             ['Perdas 30 dias', producao.perdas30dias, ''],
           ].map(([rotulo, valor, ajuda]) => (
-            <div key={String(rotulo)} className="rounded-lg bg-superficie-2 p-3">
-              <p className="text-xl font-semibold text-tinta">{valor}</p>
-              <p className="text-xs text-tinta-fraca">{rotulo}</p>
+            <div key={String(rotulo)} className="rounded-xl bg-superficie-2 p-3.5">
+              <p className="font-titulo text-2xl leading-none text-tinta">{valor}</p>
+              <p className="mt-1.5 text-xs text-tinta-fraca">{rotulo}</p>
               {ajuda && <p className="mt-0.5 text-[11px] text-tinta-fraca">{ajuda}</p>}
             </div>
           ))}

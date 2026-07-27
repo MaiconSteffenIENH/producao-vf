@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma'
 import { calcularEstoque } from './estoque.service'
+import { plural, pluralNome } from '../lib/plural'
 
 /*
  * O módulo que a Gabi chamou de mais importante. Ele responde "o que produzir"
@@ -30,7 +31,6 @@ export type Sugestao = {
   situacaoDetalhe: string
 }
 
-const plural = (n: number, singular: string) => `${n} ${singular}${n === 1 ? '' : 's'}`
 
 export async function sugerir(): Promise<{ sugestoes: Sugestao[]; resumo: Record<string, number> }> {
   const [pecas, materias, estoque] = await Promise.all([
@@ -73,9 +73,9 @@ export async function sugerir(): Promise<{ sugestoes: Sugestao[]; resumo: Record
     if (peca.qtdMinimaDesejada > 0 && faltamProntas > 0) {
       sugestoes.push({
         tipo: 'produzir',
-        titulo: `Produzir ${plural(faltamProntas, peca.nome)}`,
+        titulo: `Produzir ${pluralNome(faltamProntas, peca.nome)}`,
         detalhe:
-          `Mínimo desejado ${peca.qtdMinimaDesejada}. Hoje: ${atual.prontos} pronta(s), ` +
+          `Mínimo desejado ${peca.qtdMinimaDesejada}. Hoje: ${plural(atual.prontos, 'pronta')}, ` +
           `${atual.emProducao} em produção, ${atual.biscoito} em biscoito.`,
         quantidade: faltamProntas,
         prioridade: atual.prontos === 0 ? 1 : 2,
@@ -116,9 +116,9 @@ export async function sugerir(): Promise<{ sugestoes: Sugestao[]; resumo: Record
       if (possivel > 0) {
         sugestoes.push({
           tipo: 'esmaltar',
-          titulo: `Esmaltar ${possivel} ${peca.nome} em ${pc.cor.nome}`,
+          titulo: `Esmaltar ${pluralNome(possivel, peca.nome)} em ${pc.cor.nome}`,
           detalhe:
-            `Mínimo na cor ${pc.qtdMinimaDesejada}, hoje ${prontasNaCor} pronta(s) e ${aCaminhoNaCor} a caminho. ` +
+            `Mínimo na cor ${pc.qtdMinimaDesejada}, hoje ${plural(prontasNaCor, 'pronta')} e ${aCaminhoNaCor} a caminho. ` +
             `Há ${atual.biscoito} em biscoito para usar.`,
           quantidade: possivel,
           prioridade: prontasNaCor === 0 ? 1 : 2,

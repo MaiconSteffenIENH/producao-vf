@@ -3,15 +3,17 @@ import { X } from 'lucide-react'
 
 /*
  * ATENÇÃO — largura de campo.
- * Input/Select/NumeroInput têm `w-full` na classe base, e a base vem DEPOIS do
+ * Input/Select/Textarea têm `w-full` na classe base, e a base vem DEPOIS do
  * className recebido, então ela vence. Para largura custom, embrulhe:
  *   ERRADO: <Select className="w-56" />
  *   CERTO:  <div className="w-56"><Select /></div>
  */
 
 const baseCampo =
-  'w-full rounded-lg border border-borda bg-superficie px-3 py-2 text-tinta placeholder:text-tinta-fraca ' +
-  'outline-none transition focus:border-marca focus:ring-2 focus:ring-marca/30 disabled:opacity-60'
+  'w-full rounded-xl border border-borda bg-superficie px-3.5 py-2.5 text-tinta placeholder:text-tinta-fraca ' +
+  'outline-none transition-[border-color,box-shadow,background-color] duration-200 ' +
+  'hover:border-marca-clara focus:border-marca focus:ring-4 focus:ring-marca/12 ' +
+  'disabled:cursor-not-allowed disabled:opacity-60'
 
 export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className = '', ...props }, ref) => <input ref={ref} {...props} className={`${className} ${baseCampo}`} />,
@@ -19,13 +21,23 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
 Input.displayName = 'Input'
 
 export const Textarea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className = '', ...props }, ref) => <textarea ref={ref} {...props} className={`${className} ${baseCampo}`} />,
+  ({ className = '', ...props }, ref) => (
+    <textarea ref={ref} {...props} className={`${className} ${baseCampo} resize-y`} />
+  ),
 )
 Textarea.displayName = 'Textarea'
 
 export const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className = '', children, ...props }, ref) => (
-    <select ref={ref} {...props} className={`${className} ${baseCampo}`}>
+    <select ref={ref} {...props} className={`${className} ${baseCampo} cursor-pointer appearance-none bg-no-repeat pr-9`}
+      style={{
+        // seta desenhada no próprio campo: a nativa muda de forma em cada
+        // sistema e quebra a unidade visual entre mac, Windows e Android
+        backgroundImage:
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a807c' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
+        backgroundPosition: 'right 0.85rem center',
+      }}
+    >
       {children}
     </select>
   ),
@@ -45,10 +57,10 @@ export function Campo({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-tinta">{rotulo}</span>
+      <span className="mb-1.5 block text-sm font-medium text-tinta">{rotulo}</span>
       {children}
-      {dica && !erro && <span className="mt-1 block text-xs text-tinta-fraca">{dica}</span>}
-      {erro && <span className="mt-1 block text-xs text-perigo">{erro}</span>}
+      {dica && !erro && <span className="mt-1.5 block text-xs leading-relaxed text-tinta-fraca">{dica}</span>}
+      {erro && <span className="mt-1.5 block text-xs text-perigo">{erro}</span>}
     </label>
   )
 }
@@ -57,9 +69,9 @@ type VarianteBotao = 'primario' | 'secundario' | 'perigo' | 'fantasma'
 
 const variantes: Record<VarianteBotao, string> = {
   // text-contraste é sempre o contraste correto do sólido, nos dois temas
-  primario: 'bg-marca text-contraste hover:bg-marca-escura',
-  secundario: 'border border-borda bg-superficie text-tinta hover:bg-superficie-2',
-  perigo: 'bg-perigo text-contraste hover:opacity-90',
+  primario: 'bg-marca text-contraste shadow-baixa hover:bg-marca-escura hover:shadow-media',
+  secundario: 'border border-borda bg-superficie text-tinta hover:border-marca-clara hover:bg-superficie-2',
+  perigo: 'bg-perigo text-contraste shadow-baixa hover:opacity-90 hover:shadow-media',
   fantasma: 'text-tinta hover:bg-superficie-2',
 }
 
@@ -72,16 +84,34 @@ export function Botao({
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
-        transition disabled:cursor-not-allowed disabled:opacity-60 ${variantes[variante]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium
+        transition-all duration-200 active:scale-[0.98]
+        disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100
+        ${variantes[variante]} ${className}`}
     >
       {children}
     </button>
   )
 }
 
-export function Card({ className = '', children }: { className?: string; children: ReactNode }) {
-  return <div className={`rounded-xl border border-borda bg-superficie p-4 ${className}`}>{children}</div>
+export function Card({
+  className = '',
+  interativo = false,
+  children,
+}: {
+  className?: string
+  interativo?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-borda bg-superficie p-5 shadow-baixa transition-all duration-200 ${
+        interativo ? 'hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media' : ''
+      } ${className}`}
+    >
+      {children}
+    </div>
+  )
 }
 
 /**
@@ -89,14 +119,26 @@ export function Card({ className = '', children }: { className?: string; childre
  * abaixo; no desktop volta a ser lado a lado. `flex items-center justify-between`
  * puro espremeria o título na vertical no celular.
  */
-export function CabecalhoPagina({ titulo, descricao, acoes }: { titulo: string; descricao?: string; acoes?: ReactNode }) {
+export function CabecalhoPagina({
+  titulo,
+  descricao,
+  acoes,
+}: {
+  titulo: string
+  descricao?: string
+  acoes?: ReactNode
+}) {
   return (
-    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold text-tinta">{titulo}</h1>
-        {descricao && <p className="mt-0.5 text-sm text-tinta-fraca">{descricao}</p>}
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="font-titulo text-[1.75rem] leading-tight text-tinta">{titulo}</h1>
+        {descricao && <p className="mt-1 max-w-2xl text-sm leading-relaxed text-tinta-fraca">{descricao}</p>}
       </div>
-      {acoes && <div className="flex flex-wrap items-center gap-2">{acoes}</div>}
+      {/* no celular as ações viram grade de duas colunas: dois selects
+          empilhados em largura total empurravam o conteúdo para fora da dobra */}
+      {acoes && (
+        <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">{acoes}</div>
+      )}
     </div>
   )
 }
@@ -109,12 +151,14 @@ export function Modal({
   aberto,
   aoFechar,
   titulo,
+  descricao,
   largura = 'max-w-2xl',
   children,
 }: {
   aberto: boolean
   aoFechar: () => void
   titulo: string
+  descricao?: string
   largura?: string
   children: ReactNode
 }) {
@@ -138,51 +182,87 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      className="anima-aparecer fixed inset-0 z-50 flex items-end justify-center bg-[#2b2725]/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
       onPointerDown={(e) => {
         if (!caixa.current?.contains(e.target as Node)) aoFechar()
       }}
     >
       <div
         ref={caixa}
-        className={`max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-superficie shadow-xl sm:rounded-2xl ${largura}`}
+        className={`anima-modal max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-superficie shadow-alta sm:rounded-2xl ${largura}`}
       >
-        <div className="sticky top-0 flex items-center justify-between border-b border-borda bg-superficie px-4 py-3">
-          <h2 className="text-lg font-semibold text-tinta">{titulo}</h2>
-          <button onClick={aoFechar} aria-label="Fechar" className="rounded-lg p-1 text-tinta-fraca hover:bg-superficie-2">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-borda bg-superficie/95 px-5 py-4 backdrop-blur">
+          <div className="min-w-0">
+            <h2 className="font-titulo text-xl leading-tight text-tinta">{titulo}</h2>
+            {descricao && <p className="mt-0.5 text-sm text-tinta-fraca">{descricao}</p>}
+          </div>
+          <button
+            onClick={aoFechar}
+            aria-label="Fechar"
+            className="-mr-1 shrink-0 rounded-lg p-1.5 text-tinta-fraca transition hover:bg-superficie-2 hover:text-tinta"
+          >
             <X size={20} />
           </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-5">{children}</div>
       </div>
     </div>
   )
 }
 
-export function Vazio({ titulo, descricao, acao }: { titulo: string; descricao?: string; acao?: ReactNode }) {
+/**
+ * Estado vazio. Tela sem dado é onde a pessoa mais precisa de orientação e
+ * onde a maioria dos sistemas entrega uma frase seca — aqui ele explica o que
+ * aquilo seria e oferece o próximo passo.
+ */
+export function Vazio({
+  titulo,
+  descricao,
+  acao,
+  icone,
+}: {
+  titulo: string
+  descricao?: string
+  acao?: ReactNode
+  icone?: ReactNode
+}) {
   return (
-    <div className="rounded-xl border border-dashed border-borda px-6 py-12 text-center">
-      <p className="font-medium text-tinta">{titulo}</p>
-      {descricao && <p className="mx-auto mt-1 max-w-md text-sm text-tinta-fraca">{descricao}</p>}
-      {acao && <div className="mt-4 flex justify-center">{acao}</div>}
+    <div className="anima-surgir rounded-2xl border border-dashed border-borda bg-superficie/40 px-6 py-14 text-center">
+      {icone && (
+        <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-marca/10 text-marca">
+          {icone}
+        </div>
+      )}
+      <p className="font-titulo text-lg text-tinta">{titulo}</p>
+      {descricao && <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-tinta-fraca">{descricao}</p>}
+      {acao && <div className="mt-5 flex justify-center">{acao}</div>}
     </div>
   )
 }
 
 export function Carregando({ texto = 'Carregando…' }: { texto?: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 py-12 text-tinta-fraca">
+    <div className="anima-aparecer flex items-center justify-center gap-3 py-16 text-sm text-tinta-fraca">
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-marca border-t-transparent" />
       {texto}
     </div>
   )
 }
 
+/** Placeholder com a forma do conteúdo — some a sensação de tela travada. */
+export function Esqueleto({ className = '' }: { className?: string }) {
+  return <div className={`esqueleto ${className}`} />
+}
+
 export function Etiqueta({ children, cor }: { children: ReactNode; cor?: string }) {
   return (
     <span
-      className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-      style={cor ? { backgroundColor: `${cor}22`, color: cor } : undefined}
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset"
+      style={
+        cor
+          ? { backgroundColor: `${cor}14`, color: cor, ['--tw-ring-color' as string]: `${cor}33` }
+          : undefined
+      }
     >
       {children}
     </span>
@@ -192,6 +272,7 @@ export function Etiqueta({ children, cor }: { children: ReactNode; cor?: string 
 /**
  * Chip de esmalte. Mostra a foto de amostra quando existe, porque Branco e
  * Pedra Sabão têm praticamente a mesma cor média — só a textura diferencia.
+ * O anel interno evita que esmalte claro suma no fundo branco do card.
  */
 export function ChipCor({
   nome,
@@ -209,15 +290,25 @@ export function ChipCor({
   return (
     <span className="inline-flex items-center gap-1.5" title={malhado ? `${nome} (malhado)` : nome}>
       <span
-        className="inline-block shrink-0 rounded-full border border-borda bg-cover bg-center"
+        className="inline-block shrink-0 rounded-full bg-cover bg-center ring-1 ring-inset ring-black/10"
         style={{
           width: tamanho,
           height: tamanho,
           backgroundColor: hex,
           backgroundImage: amostraUrl ? `url(${amostraUrl})` : undefined,
+          boxShadow: 'inset 0 1px 2px rgb(255 255 255 / 0.35)',
         }}
       />
       <span className="text-sm text-tinta">{nome}</span>
     </span>
+  )
+}
+
+/** Atalho de teclado desenhado como tecla — ensina sem precisar de tutorial. */
+export function Tecla({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="rounded-md border border-borda bg-superficie-2 px-1.5 py-0.5 font-sans text-[11px] font-medium text-tinta-fraca">
+      {children}
+    </kbd>
   )
 }

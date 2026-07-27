@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Calculator } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
-import { brl } from '../lib/format'
+import { brl, plural } from '../lib/format'
 import { avisar } from '../components/Toaster'
 import { Botao, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Input, Modal, Vazio } from '../components/ui'
 
@@ -122,7 +122,7 @@ export function Precos() {
       {semCusto.length > 0 && (
         <Card className="mb-4">
           <p className="flex items-center gap-2 text-sm font-medium text-alerta">
-            <AlertTriangle size={16} /> {semCusto.length} peça(s) sem custo cadastrado
+            <AlertTriangle size={16} /> {plural(semCusto.length, 'peça')} sem custo cadastrado
           </p>
           <p className="mt-1 text-sm text-tinta-fraca">
             Sem o custo não há preço a calcular. Comece pelas que mais vendem.

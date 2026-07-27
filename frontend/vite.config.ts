@@ -17,6 +17,9 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // woff2 não entra no padrão do workbox. Sem isto, o app abre offline
+        // no ateliê com Georgia no lugar da Unna e muda de cara.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
       },
       manifest: {
         name: 'Produção Vera Flesch',

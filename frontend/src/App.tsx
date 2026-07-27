@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { Layout } from './components/Layout'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Toaster } from './components/Toaster'
+import { PaletaComando } from './components/PaletaComando'
 import { Carregando } from './components/ui'
 import { useAuth } from './store/auth'
 
@@ -88,6 +89,7 @@ export function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        <PaletaComando />
         <Toaster />
       </BrowserRouter>
     </ErrorBoundary>

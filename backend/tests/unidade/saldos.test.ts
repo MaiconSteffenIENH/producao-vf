@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calcularSaldos, saldoNaEtapa, saldoTotalDoLote, type MovimentoBruto } from '../src/lib/saldos'
+import { calcularSaldos, saldoNaEtapa, saldoTotalDoLote, type MovimentoBruto } from '../../src/lib/saldos'
 
 /**
  * A regra mais importante do sistema, testada sem banco: o saldo de um lote em

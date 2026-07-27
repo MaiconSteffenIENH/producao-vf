@@ -4,6 +4,7 @@ import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { Botao, CabecalhoPagina, Card, Carregando, Etiqueta, Vazio } from '../components/ui'
+import { formaPlural } from '../lib/format'
 
 type Sugestao = {
   tipo: 'produzir' | 'esmaltar' | 'comprar'
@@ -95,27 +96,30 @@ export function Planejamento() {
           <button
             key={String(chave)}
             onClick={() => setFiltro(chave as typeof filtro)}
-            className={`rounded-xl border p-4 text-left transition ${
-              filtro === chave ? 'border-marca bg-marca/10' : 'border-borda bg-superficie hover:border-marca'
+            className={`rounded-2xl border p-4 text-left shadow-baixa transition-all duration-200 ${
+              filtro === chave
+                ? 'border-marca bg-marca/10 shadow-media'
+                : 'border-borda bg-superficie hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media'
             }`}
           >
-            <p className="text-2xl font-semibold text-tinta">{valor}</p>
-            <p className="text-sm text-tinta-fraca">{rotulo}</p>
+            <p className="font-titulo text-[1.75rem] leading-none text-tinta">{valor}</p>
+            <p className="mt-1.5 text-sm text-tinta-fraca">{rotulo}</p>
           </button>
         ))}
       </div>
 
       {(resumo.urgentes ?? 0) > 0 && (
         <p className="mb-4 rounded-xl border border-perigo/30 bg-perigo/5 px-4 py-3 text-sm text-tinta">
-          <strong className="text-perigo">{resumo.urgentes}</strong> item(ns) sem nenhuma peça pronta — é o que some
+          <strong className="text-perigo">{resumo.urgentes}</strong> {formaPlural(resumo.urgentes ?? 0, 'item')} sem nenhuma peça pronta — é o que some
           da loja primeiro.
         </p>
       )}
 
       {visiveis.length === 0 ? (
         <Vazio
-          titulo="Nada a sugerir"
-          descricao="Ou os mínimos estão atendidos, ou as peças ainda não têm mínimo desejado cadastrado."
+          icone={<Hammer size={22} />}
+          titulo="Nada a sugerir agora"
+          descricao="Ou os mínimos desejados estão atendidos, ou as peças ainda não têm mínimo cadastrado. O planejamento só fala quando tem o que dizer."
         />
       ) : (
         <div className="flex flex-col gap-2">
@@ -123,7 +127,11 @@ export function Planejamento() {
             const Icone = ICONE[s.tipo]
             const situacao = SITUACAO[s.situacao] ?? SITUACAO.nao_iniciada
             return (
-              <Card key={`${s.titulo}-${i}`} className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Card
+                key={`${s.titulo}-${i}`}
+                interativo
+                className="anima-surgir flex flex-col gap-3 sm:flex-row sm:items-center"
+              >
                 <span
                   className="grid h-10 w-10 shrink-0 place-items-center rounded-lg"
                   style={{

@@ -48,7 +48,7 @@ function CartaoAgenda({ agenda }: { agenda: Agenda }) {
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-tinta">
+        <h2 className="flex items-center gap-2 font-titulo text-xl text-tinta">
           <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: agenda.responsavel.cor }} />
           {agenda.responsavel.nome}
         </h2>
@@ -65,9 +65,9 @@ function CartaoAgenda({ agenda }: { agenda: Agenda }) {
           ['Feito hoje', feitoHoje],
           ['Falta', faltaHoje],
         ].map(([rotulo, valor]) => (
-          <div key={String(rotulo)} className="rounded-lg bg-superficie-2 p-3">
-            <p className="text-xl font-semibold text-tinta">{valor}</p>
-            <p className="text-xs text-tinta-fraca">{rotulo}</p>
+          <div key={String(rotulo)} className="rounded-xl bg-superficie-2 p-3.5">
+            <p className="font-titulo text-2xl leading-none text-tinta">{valor}</p>
+            <p className="mt-1.5 text-xs text-tinta-fraca">{rotulo}</p>
           </div>
         ))}
       </div>

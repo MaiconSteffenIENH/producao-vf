@@ -18,8 +18,52 @@ export const dataBr = (iso: string | Date | null | undefined): string => {
   return d.toLocaleDateString('pt-BR')
 }
 
+/*
+ * Plural de verdade. Antes era `singular + 's'`, e por isso o app tinha
+ * "1 peça(s) sem custo" e "3 item(ns)" espalhados: quem escrevia a frase sabia
+ * que o helper ia errar e fugia dele. Agora a regra do português está aqui, e
+ * "(s)" não precisa mais existir em lugar nenhum.
+ */
+const PLURAIS_IRREGULARES: Record<string, string> = {
+  item: 'itens',
+  'matéria-prima': 'matérias-primas',
+  responsável: 'responsáveis',
+  canal: 'canais',
+}
+
+const VOGAIS = 'aeiouáéíóúâêôãõà'
+
+/** Só a palavra no número certo: `formaPlural(3, 'item')` → `itens`. */
+export function formaPlural(n: number, singular: string, pluralForma?: string): string {
+  if (Math.abs(n) === 1) return singular
+  if (pluralForma) return pluralForma
+  const irregular = PLURAIS_IRREGULARES[singular.toLowerCase()]
+  if (irregular) return irregular
+
+  const baixo = singular.toLowerCase()
+  const final = baixo.slice(-2)
+  const penultima = baixo.at(-2) ?? ''
+
+  if (baixo.endsWith('ão')) return `${singular.slice(0, -2)}ões`
+  if (baixo.endsWith('m')) return `${singular.slice(0, -1)}ns`
+  if (baixo.endsWith('r') || baixo.endsWith('z') || baixo.endsWith('s')) return `${singular}es`
+  /*
+   * O -l só cai quando vem VOGAL antes dele: canal→canais, papel→papéis. Em
+   * "Bowl" a letra anterior é consoante, e a regra do português não se aplica
+   * a estrangeirismo — a versão anterior devolvia "Bowis", que o teste pegou.
+   * Bowl é o nome de metade do catálogo da Vera; não dava para deixar passar.
+   */
+  if (baixo.endsWith('l') && VOGAIS.includes(penultima)) {
+    if (final === 'el') return `${singular.slice(0, -2)}éis`
+    if (final === 'ol') return `${singular.slice(0, -2)}óis`
+    if (final === 'il') return `${singular.slice(0, -2)}is`
+    return `${singular.slice(0, -1)}is` // -al, -ul
+  }
+  return `${singular}s`
+}
+/** Número + palavra: `plural(3, 'peça')` → `3 peças`. */
 export const plural = (n: number, singular: string, pluralForma?: string): string =>
-  `${n} ${n === 1 ? singular : (pluralForma ?? `${singular}s`)}`
+  `${n} ${formaPlural(n, singular, pluralForma)}`
 
 /** Mesma normalização do backend — usada só pra filtrar listas já carregadas. */
 export const normalizarBusca = (texto: string): string =>

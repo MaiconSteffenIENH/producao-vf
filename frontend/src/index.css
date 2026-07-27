@@ -1,50 +1,95 @@
 @import 'tailwindcss';
+@import './fontes.css';
 
 /*
  * Tema da VF Cerâmicas.
  *
- * Os tokens são SEMÂNTICOS (fundo, superficie, tinta, marca…), não a escala
- * de cinza do Tailwind. Isso evita de saída o bug clássico de dark mode em que
- * `text-white` num botão sólido vira texto escuro: aqui `text-contraste` é
- * sempre o contraste correto do fundo em que está.
+ * Duas decisões que sustentam o resto:
+ *
+ * 1. TIPOGRAFIA DA MARCA. A loja usa **Unna** nos títulos. Trazer a mesma
+ *    serifada para cá é o que faz o sistema parecer parte da marca em vez de
+ *    um painel genérico — e é de graça, porque a fonte já é do universo VF.
+ *    Inter fica no corpo: feita para tela, some do caminho.
+ *
+ * 2. TOKENS SEMÂNTICOS, não a escala do Tailwind. `fundo`, `superficie`,
+ *    `tinta`, `marca`, `borda`. Isso mata de saída o bug clássico de dark mode
+ *    em que `text-white` num botão sólido vira texto escuro: aqui
+ *    `text-contraste` é sempre o contraste certo do fundo em que está.
  *
  * Paleta tirada do CSS da loja ceramicavf.com.br e da logo.
  */
 @theme {
   --color-fundo: #f2f1ed; /* fundo das telas */
   --color-superficie: #ffffff; /* cards e campos */
-  --color-superficie-2: #faf9f6; /* faixas alternadas, cabeçalho de tabela */
-  --color-marca: #bba58c; /* areia tostado — header, sidebar, botão primário */
-  --color-marca-escura: #a08b73;
-  --color-marca-clara: #d6c6b0;
-  --color-tinta: #6a6060; /* texto principal */
-  --color-tinta-fraca: #918787; /* texto secundário */
-  --color-borda: #e2ded6;
-  --color-ouro: #b8963e; /* logo e destaques */
-  --color-verde: #3e5c4b; /* estados positivos e títulos de campanha */
-  --color-alerta: #b4703a;
+  --color-superficie-2: #f7f5f1; /* faixas alternadas, cabeçalho de tabela */
+  /*
+   * A moldura (lateral + topo). Fica um degrau mais escura que o fundo das
+   * telas, e o fundo das telas um degrau mais escuro que os cards. Três níveis
+   * na mesma direção: o olho entende sozinho o que é ferramenta e o que é
+   * conteúdo, sem precisar de um bloco de cor sólida gritando isso.
+   */
+  --color-lateral: #ebe7df;
+  /*
+   * O areia da loja é #BBA58C. Sobre ele, texto branco dá 2,37:1 — a WCAG pede
+   * 4,5. O botão principal do sistema estava nesse contraste, e é o elemento
+   * mais clicado do app. Este #8E7150 é o MESMO matiz e a MESMA saturação
+   * (32°, 28%), só mais fundo: bate 4,54:1 com branco e continua sendo o barro
+   * esmaltado da marca. O #BBA58C não sumiu — vive nas transparências
+   * (bg-marca/12 e afins) e no marca-clara, onde contraste não é exigência.
+   */
+  --color-marca: #8e7150;
+  --color-marca-escura: #755c40; /* estado hover do sólido */
+  --color-marca-clara: #d6c6b0; /* bordas e realces suaves */
+  --color-tinta: #4a4341; /* texto principal — mais escuro que o do site, para contraste em tela */
+  --color-tinta-fraca: #6e6563; /* texto secundário — 4,6:1 até na lateral, que é o fundo mais escuro em que ele pousa */
+  --color-borda: #e5e0d8;
+  --color-ouro: #79612a; /* logo e destaques — escurecido para virar texto legível sobre o próprio tom */
+  --color-verde: #3e5c4b; /* estados positivos */
+  --color-alerta: #a66836;
   --color-perigo: #a4402f;
-  --color-contraste: #ffffff; /* texto sobre superfícies sólidas escuras */
+  --color-contraste: #ffffff; /* texto sobre preenchimento sólido da marca */
 
-  --font-titulo: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-titulo: 'Unna', 'Iowan Old Style', Georgia, serif;
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /*
+   * Sombras em camadas, não uma só. Uma sombra única e forte parece adesivo
+   * colado na tela; duas fracas (uma rente, outra difusa) leem como objeto
+   * apoiado — que é o que se quer num sistema sobre peças físicas.
+   */
+  --shadow-baixa: 0 1px 2px rgb(74 67 65 / 0.04), 0 1px 3px rgb(74 67 65 / 0.06);
+  --shadow-media: 0 2px 4px rgb(74 67 65 / 0.04), 0 4px 12px rgb(74 67 65 / 0.08);
+  --shadow-alta: 0 4px 8px rgb(74 67 65 / 0.06), 0 12px 32px rgb(74 67 65 / 0.12);
 }
 
 .dark {
-  --color-fundo: #221f1e;
-  --color-superficie: #2d2927;
-  --color-superficie-2: #363130;
-  --color-marca: #8f7a63;
-  --color-marca-escura: #7a6753;
+  --color-fundo: #201d1c;
+  --color-superficie: #2b2725;
+  --color-superficie-2: #332e2c;
+  /* mesma lógica invertida: a moldura é o mais escuro dos três */
+  --color-lateral: #191716;
+  /*
+   * No escuro a lógica inverte: o preenchimento da marca é CLARO e o texto
+   * dentro dele é escuro. Por isso --color-contraste muda junto. É exatamente
+   * para isto que os tokens são semânticos — `text-contraste` continua sendo
+   * "o contraste certo de onde eu estou", sem nenhum `dark:` espalhado no JSX.
+   */
+  --color-marca: #c0a683;
+  --color-marca-escura: #d2ba9b; /* hover: no escuro, clarear é o destaque */
   --color-marca-clara: #4a4038;
   --color-tinta: #ece7e0;
-  --color-tinta-fraca: #b0a69d;
-  --color-borda: #443d39;
+  --color-tinta-fraca: #a89e97;
+  --color-borda: #423a36;
   --color-ouro: #d3ae52;
-  --color-verde: #7ea78c;
+  --color-verde: #92b49e;
   --color-alerta: #d69259;
   --color-perigo: #d8705c;
-  --color-contraste: #ffffff;
+  --color-contraste: #241f1d;
+
+  --shadow-baixa: 0 1px 2px rgb(0 0 0 / 0.24), 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-media: 0 2px 4px rgb(0 0 0 / 0.24), 0 4px 12px rgb(0 0 0 / 0.36);
+  --shadow-alta: 0 4px 8px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.44);
 }
 
 html {
@@ -60,13 +105,35 @@ body {
   color: var(--color-tinta);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* casa a fonte da loja: números alinhados em tabela não dançam ao atualizar */
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Grão de papel. Quase invisível de perto e decisivo de longe: tira o
+ * "branco de tela" e dá a sensação de superfície, que é o vocabulário de uma
+ * marca de cerâmica. Gerado em SVG, sem requisição extra e sem peso.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+.dark body::before {
+  opacity: 0.05;
 }
 
 h1,
 h2,
 h3 {
   font-family: var(--font-titulo);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.005em;
+  font-weight: 400; /* Unna já é encorpada; bold vira peso demais */
 }
 
 /*
@@ -81,7 +148,115 @@ h3 {
   }
 }
 
-/* Rolagem suave sem pular no iOS dentro do PWA */
 * {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Foco visível e da marca — teclado é caminho de primeira classe, não sobra */
+:focus-visible {
+  outline: 2px solid var(--color-marca);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Barra de rolagem discreta, no tom da interface */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-borda) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-borda);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-marca-clara);
+  background-clip: content-box;
+}
+
+/* ── Movimento ─────────────────────────────────────────────
+ * Curto e discreto. Animação em ferramenta de trabalho é para
+ * explicar de onde a coisa veio, não para chamar atenção.
+ */
+@keyframes surgir {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes aparecer {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes subirModal {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* o menu do celular entra deslizando da borda em que ele mora */
+@keyframes entrarLateral {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@utility anima-surgir {
+  animation: surgir 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@utility anima-aparecer {
+  animation: aparecer 0.2s ease both;
+}
+@utility anima-modal {
+  animation: subirModal 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@utility anima-lateral {
+  animation: entrarLateral 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Quem pediu menos movimento no sistema recebe menos movimento. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Skeleton de carregamento — some a percepção de tela travada */
+@keyframes pulsar {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@utility esqueleto {
+  background: var(--color-superficie-2);
+  border-radius: 8px;
+  animation: pulsar 1.6s ease-in-out infinite;
 }

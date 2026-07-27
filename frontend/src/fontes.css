@@ -1,0 +1,53 @@
+/*
+ * Fontes da marca, servidas pelo próprio app.
+ *
+ * POR QUE NÃO O CDN DO GOOGLE. Três motivos, em ordem de peso:
+ *
+ * 1. Isto é um PWA. A Vera abre o sistema no celular dentro do ateliê, onde o
+ *    sinal cai. O service worker guarda o que sai do nosso domínio; um
+ *    fonts.gstatic.com ele não guarda com a mesma garantia. Sem internet, o
+ *    sistema abria com Georgia no lugar da Unna — parecendo outro produto.
+ * 2. Velocidade. O caminho do Google é DNS + TLS + CSS + DNS + TLS + fonte, em
+ *    dois domínios, antes da primeira letra aparecer no peso certo. Daqui, os
+ *    arquivos vêm no mesmo handshake que já está aberto.
+ * 3. Privacidade. Nenhum IP de quem usa o sistema sai para um terceiro.
+ *
+ * Só o subconjunto latino, que é o que o português usa (á ã ç é ê í ó õ ú).
+ * São 90 kB no total: 20 + 21 da Unna e 48 da Inter variável — esta última
+ * cobre 400/500/600 num arquivo só, em vez de três.
+ */
+
+@font-face {
+  font-family: 'Unna';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fontes/unna-400.woff2') format('woff2');
+  /* latino básico + suplemento: cobre todo acento do português */
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Unna';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fontes/unna-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  /* variável: um arquivo cobre de 100 a 900 */
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./fontes/inter-variavel.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}

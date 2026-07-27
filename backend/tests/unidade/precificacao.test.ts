@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calcularCusto, resolverFaixa, TaxasImpossiveis, type Canal } from '../src/lib/precificacao'
+import { calcularCusto, resolverFaixa, TaxasImpossiveis, type Canal } from '../../src/lib/precificacao'
 
 /**
  * Testes de unidade: rodam sem banco, sem Prisma, sem servidor.

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Plus, Scissors } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, ArrowRight, Boxes, Plus, Scissors } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
+import { plural } from '../lib/format'
 import {
   Botao,
   CabecalhoPagina,
@@ -44,6 +45,75 @@ const CORES_TIPO: Record<string, string> = {
   final: '#3E5C4B',
 }
 
+/*
+ * O MAPA DO FLUXO.
+ *
+ * O quadro tem 7 etapas e a tela comporta 4. As três que sobravam eram
+ * Esmaltação, 2ª Queima e Pronto — ou seja, sumia exatamente a metade que já
+ * tem cor e está perto de virar venda. Alargar coluna não resolve: com 11
+ * etapas cadastradas o problema volta.
+ *
+ * A resposta é separar as duas perguntas que o quadro respondia juntas e mal:
+ * "como está o ateliê inteiro" (esta faixa, sempre visível, sempre completa) e
+ * "o que tem nesta etapa" (as colunas, que podem rolar à vontade). Clicar numa
+ * etapa da faixa leva o quadro até ela.
+ */
+function MapaDoFluxo({
+  colunas,
+  aoEscolher,
+}: {
+  colunas: Coluna[]
+  aoEscolher: (etapaId: string) => void
+}) {
+  const maior = Math.max(1, ...colunas.map((c) => c.total))
+  return (
+    // sticky na viewport: rolando a página atrás de uma coluna comprida, o
+    // total das outras etapas continua à vista
+    <div className="sticky top-14 z-20 mb-4 overflow-x-auto rounded-2xl border border-borda bg-superficie/95 p-1.5 shadow-baixa backdrop-blur-md">
+      <ol className="flex min-w-max items-stretch gap-1">
+        {colunas.map((coluna, i) => {
+          const cor = CORES_TIPO[coluna.etapa.tipo] ?? '#BBA58C'
+          const vazia = coluna.total === 0
+          return (
+            <li key={coluna.etapa.id} className="flex items-stretch">
+              {i > 0 && (
+                <span aria-hidden className="w-3 self-center border-t border-dashed border-borda" />
+              )}
+              <button
+                onClick={() => aoEscolher(coluna.etapa.id)}
+                className="group relative min-w-[7.5rem] flex-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-superficie-2"
+                title={`Ir para ${coluna.etapa.nome}`}
+              >
+                <span className="flex items-baseline gap-1.5">
+                  <span
+                    className={`font-titulo text-xl leading-none ${vazia ? 'text-tinta-fraca/50' : 'text-tinta'}`}
+                  >
+                    {coluna.total}
+                  </span>
+                  {coluna.etapa.defineCor && (
+                    <span className="text-[10px] uppercase tracking-wider text-ouro">cor</span>
+                  )}
+                  {coluna.etapa.estoqueIntermediario && (
+                    <span className="text-[10px] uppercase tracking-wider text-verde">pulmão</span>
+                  )}
+                </span>
+                <span className="mt-1 block truncate text-xs text-tinta-fraca">{coluna.etapa.nome}</span>
+                {/* a barra dá a proporção entre etapas sem precisar comparar números */}
+                <span aria-hidden className="mt-1.5 block h-1 overflow-hidden rounded-full bg-superficie-2">
+                  <span
+                    className="block h-full rounded-full transition-all duration-500"
+                    style={{ width: `${(coluna.total / maior) * 100}%`, backgroundColor: cor }}
+                  />
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
 export function Producao() {
   const [colunas, setColunas] = useState<Coluna[]>([])
   const [pecas, setPecas] = useState<{ id: string; nome: string }[]>([])
@@ -56,6 +126,27 @@ export function Producao() {
 
   const [novoAberto, setNovoAberto] = useState(false)
   const [novo, setNovo] = useState({ pecaId: '', quantidade: 20, observacao: '' })
+
+  // rolagem horizontal do quadro: os degradês só existem do lado que ainda tem
+  // quadro, então precisam saber onde o trilho está
+  const trilho = useRef<HTMLDivElement>(null)
+  const [temMaisAEsquerda, setTemMaisAEsquerda] = useState(false)
+  const [temMaisADireita, setTemMaisADireita] = useState(false)
+
+  const medirRolagem = useCallback(() => {
+    const el = trilho.current
+    if (!el) return
+    setTemMaisAEsquerda(el.scrollLeft > 4)
+    // -4 de folga: zoom do navegador deixa a conta com resto e o degradê
+    // ficava aceso para sempre no fim do trilho
+    setTemMaisADireita(el.scrollLeft < el.scrollWidth - el.clientWidth - 4)
+  }, [])
+
+  useEffect(() => {
+    medirRolagem()
+    window.addEventListener('resize', medirRolagem)
+    return () => window.removeEventListener('resize', medirRolagem)
+  }, [medirRolagem, colunas])
 
   const [acao, setAcao] = useState<{ tipo: Acao; cartao: Cartao; etapaId: string } | null>(null)
   const [form, setForm] = useState({ quantidade: 0, etapaDestinoId: '', corId: '', responsavelId: '', motivo: '' })
@@ -178,6 +269,11 @@ export function Producao() {
 
   const vazio = colunas.every((c) => c.cartoes.length === 0)
 
+  const irParaEtapa = (etapaId: string) => {
+    const alvo = trilho.current?.querySelector<HTMLElement>(`[data-etapa="${etapaId}"]`)
+    alvo?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+  }
+
   return (
     <>
       <CabecalhoPagina
@@ -185,7 +281,7 @@ export function Producao() {
         descricao="Onde cada lote está agora. Toque no cartão para mover, perder ou dividir."
         acoes={
           <>
-            <div className="w-full sm:w-44">
+            <div className="min-w-0 sm:w-52">
               <Select value={filtroPeca} onChange={(e) => setFiltroPeca(e.target.value)}>
                 <option value="">Todas as peças</option>
                 {pecas.map((p) => (
@@ -195,7 +291,7 @@ export function Producao() {
                 ))}
               </Select>
             </div>
-            <div className="w-full sm:w-44">
+            <div className="min-w-0 sm:w-52">
               <Select value={filtroCor} onChange={(e) => setFiltroCor(e.target.value)}>
                 <option value="">Todos os esmaltes</option>
                 {cores.map((c) => (
@@ -205,7 +301,7 @@ export function Producao() {
                 ))}
               </Select>
             </div>
-            <Botao onClick={() => setNovoAberto(true)}>
+            <Botao onClick={() => setNovoAberto(true)} className="col-span-2 justify-center sm:col-span-1">
               <Plus size={16} /> Novo lote
             </Botao>
           </>
@@ -214,38 +310,84 @@ export function Producao() {
 
       {vazio ? (
         <Vazio
-          titulo="Nenhum lote em produção"
-          descricao="Abra um lote para começar a acompanhar. O planejamento sugere o que vale a pena produzir."
+          icone={<Boxes size={22} />}
+          titulo="O ateliê está sem lote aberto"
+          descricao="Cada lote é um conjunto de peças andando junto pelo roteiro. Abra um e ele aparece aqui, coluna por coluna, até chegar em Pronto."
           acao={<Botao onClick={() => setNovoAberto(true)}>Abrir o primeiro lote</Botao>}
         />
       ) : (
-        <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
-          <div className="flex min-w-max gap-3">
+        <>
+          <MapaDoFluxo colunas={colunas} aoEscolher={irParaEtapa} />
+
+          <div className="relative -mx-4 sm:-mx-6">
+            {/* degradês nas duas bordas: aparecem só do lado para onde ainda
+                há quadro, então também dizem *onde* você está no fluxo */}
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-y-0 left-0 z-20 w-10 bg-gradient-to-r from-fundo to-transparent transition-opacity duration-200 ${
+                temMaisAEsquerda ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-y-0 right-0 z-20 w-10 bg-gradient-to-l from-fundo to-transparent transition-opacity duration-200 ${
+                temMaisADireita ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+            <div
+              ref={trilho}
+              onScroll={medirRolagem}
+              className="snap-x snap-proximity overflow-x-auto px-4 pb-3 sm:px-6"
+            >
+              <div className="flex min-w-max gap-3">
             {colunas.map((coluna) => (
-              <section key={coluna.etapa.id} className="w-64 shrink-0">
+              <section
+                key={coluna.etapa.id}
+                data-etapa={coluna.etapa.id}
+                className="w-[16rem] shrink-0 snap-start"
+              >
                 <header
-                  className="mb-2 flex items-center justify-between rounded-lg px-3 py-2"
-                  style={{ backgroundColor: `${CORES_TIPO[coluna.etapa.tipo] ?? '#BBA58C'}22` }}
+                  // top-0, não top-14: o `overflow-x` faz deste bloco o próprio
+                  // scrollport, então qualquer offset empurra o cabeçalho para
+                  // cima do primeiro cartão em vez de descolá-lo do topo da
+                  // página. Quem fica preso na viewport é o mapa do fluxo.
+                  className="sticky top-0 z-10 mb-2.5 flex min-h-[2.75rem] items-center justify-between gap-2 rounded-xl px-3.5 py-2 backdrop-blur-md"
+                  style={{ backgroundColor: `${CORES_TIPO[coluna.etapa.tipo] ?? '#BBA58C'}24` }}
                 >
-                  <div className="min-w-0">
-                    <h2 className="truncate text-sm font-semibold text-tinta">{coluna.etapa.nome}</h2>
-                    {coluna.etapa.defineCor && <span className="text-[11px] text-ouro">define a cor</span>}
-                    {coluna.etapa.estoqueIntermediario && (
-                      <span className="text-[11px] text-verde">estoque neutro</span>
+                  <h2 className="truncate text-sm font-semibold text-tinta">{coluna.etapa.nome}</h2>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {coluna.etapa.defineCor && (
+                      <span
+                        title="Etapa em que a cor é escolhida"
+                        className="rounded-md bg-ouro/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-ouro"
+                      >
+                        cor
+                      </span>
                     )}
-                  </div>
-                  <span className="shrink-0 text-sm font-semibold text-tinta">{coluna.total}</span>
+                    {coluna.etapa.estoqueIntermediario && (
+                      <span
+                        title="Estoque neutro: atende qualquer cor que sair na frente"
+                        className="rounded-md bg-verde/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-verde"
+                      >
+                        pulmão
+                      </span>
+                    )}
+                    <span className="text-sm font-semibold text-tinta">{coluna.total}</span>
+                  </span>
                 </header>
 
                 <div className="flex flex-col gap-2">
                   {coluna.cartoes.map((cartao) => (
-                    <article key={cartao.id} className="rounded-xl border border-borda bg-superficie p-3">
+                    <article
+                      key={cartao.id}
+                      className="anima-surgir rounded-2xl border border-borda bg-superficie p-3.5 shadow-baixa transition-all duration-200 hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-tinta">{cartao.peca.nome}</p>
                           <p className="text-xs text-tinta-fraca">{cartao.codigo}</p>
                         </div>
-                        <span className="shrink-0 rounded-full bg-marca/15 px-2 py-0.5 text-sm font-semibold text-tinta">
+                        <span className="shrink-0 rounded-full bg-marca/15 px-2.5 py-0.5 font-titulo text-base leading-6 text-tinta">
                           {cartao.quantidade}
                         </span>
                       </div>
@@ -298,8 +440,10 @@ export function Producao() {
                 </div>
               </section>
             ))}
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* ── novo lote ─────────────────────────────── */}
@@ -362,7 +506,7 @@ export function Producao() {
         {acao && (
           <form onSubmit={enviar} className="flex flex-col gap-4">
             <p className="text-sm text-tinta-fraca">
-              {acao.cartao.peca.nome} — {acao.cartao.quantidade} peça(s) nesta etapa.
+              {acao.cartao.peca.nome} — {plural(acao.cartao.quantidade, 'peça')} nesta etapa.
             </p>
 
             {acao.tipo === 'avancar' && (
