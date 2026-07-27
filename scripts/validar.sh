@@ -25,23 +25,52 @@ if [ -z "$URL_TESTE" ] && [ -f backend/.env ]; then
   URL_TESTE="$(grep -E '^DATABASE_URL_TESTE=' backend/.env | head -1 | cut -d= -f2- | tr -d '"' || true)"
 fi
 
-# Só considera "disponível" se houver alguém escutando na porta. Sem isso o
-# vitest morre no globalSetup com um P1010 que não diz o que fazer.
+# O MESMO padrão que `npm test` usa quando DATABASE_URL_TESTE não está definida.
+# Precisa ser idêntico: se o script achar que não há banco e o npm test tentar
+# um localhost mesmo assim, a bateria roda quando deveria ser pulada.
+URL_PADRAO_TESTE="postgresql://postgres@localhost:5432/producao_vf_teste?schema=public"
+URL_EFETIVA="${URL_TESTE:-$URL_PADRAO_TESTE}"
+
+# ABRIR CONEXÃO DE VERDADE, não só bater na porta.
+#
+# A versão anterior fazia um TCP connect e considerava isso "banco disponível".
+# Porta aberta não é banco acessível: outro Postgres da máquina responde no
+# 5432, o usuário não tem acesso ao banco de teste, e a bateria morre com um
+# P1010 que trava o push sem dizer o que fazer. Aconteceu de verdade.
 banco_de_teste_no_ar() {
-  [ -n "$URL_TESTE" ] || return 1
-  URL_TESTE="$URL_TESTE" node -e '
-    const net = require("net")
-    let u; try { u = new URL(process.env.URL_TESTE) } catch { process.exit(1) }
-    const s = net.connect({ host: u.hostname, port: Number(u.port) || 5432 })
-    s.on("connect", () => { s.end(); process.exit(0) })
-    s.on("error", () => process.exit(1))
-    setTimeout(() => process.exit(1), 3000)
-  ' 2>/dev/null
+  # MESMA salvaguarda do tests/globalSetup.ts: ele recusa qualquer URL sem
+  # "teste"/"test" no nome, porque a bateria começa com --force-reset. Se o
+  # probe não repetir a regra, ele diz "tem banco", a bateria roda e morre na
+  # recusa — que foi o que travou um push de verdade.
+  case "$URL_EFETIVA" in
+    *teste*|*test*) : ;;
+    *) return 1 ;;
+  esac
+  # roda dentro de backend/ porque é lá que o pg está instalado
+  ( cd backend && URL_EFETIVA="$URL_EFETIVA" node -e '
+    let Client
+    try { ({ Client } = require("pg")) } catch { process.exit(1) }
+    const c = new Client({ connectionString: process.env.URL_EFETIVA, connectionTimeoutMillis: 3000 })
+    c.connect()
+      .then(() => c.query("select 1"))
+      .then(() => { c.end(); process.exit(0) })
+      .catch(() => { try { c.end() } catch {} ; process.exit(1) })
+  ' ) 2>/dev/null
 }
 
 passo "Backend — gerar Prisma Client"
-# sem isto o tsc reclama de tipos implícitos: os tipos das queries vêm do client gerado
-( cd backend && npx prisma generate )
+# Sem isto o tsc perde a inferência: os tipos das queries vêm do client gerado.
+#
+# Se a geração falhar (rede bloqueada, binaries.prisma.sh fora do ar), o script
+# NÃO aborta: avisa e segue. O conferidor de campos logo abaixo cobre a parte
+# que o compilador deixaria passar sem o client, e travar o trabalho inteiro
+# por causa de um download indisponível é pior do que seguir com a rede menor.
+PRISMA_OK=1
+if ! ( cd backend && npx prisma generate ); then
+  PRISMA_OK=0
+  aviso "Não deu para gerar o Prisma Client — o tsc vai checar menos coisa nesta rodada."
+  aviso "O conferidor de campos (passo abaixo) cobre nome de modelo e de campo."
+fi
 
 passo "Backend — typecheck (tsc)"
 ( cd backend && npx tsc --noEmit )
@@ -61,22 +90,29 @@ passo "Backend — testes de unidade (regra pura, sem banco)"
 ( cd backend && npm run test:unidade )
 
 passo "Backend — testes de integração"
-if banco_de_teste_no_ar; then
+if [ "$PRISMA_OK" = "0" ]; then
+  # sem o client gerado a bateria não tem como nem começar — reclamar dela aqui
+  # seria repetir o erro anterior com outro nome
+  aviso "Prisma Client não pôde ser gerado — esta bateria depende dele. Pulando."
+elif banco_de_teste_no_ar; then
   # A suíte compartilha UM banco e o vitest não garante ordem entre arquivos —
   # um flake passa na 2ª rodada; regressão real falha nas duas.
-  if ! ( cd backend && DATABASE_URL_TESTE="$URL_TESTE" npm test ); then
+  if ! ( cd backend && DATABASE_URL_TESTE="$URL_EFETIVA" npm test ); then
     printf '\033[1;33m↻ Falhou na 1ª rodada — pode ser flake do banco compartilhado. Rodando de novo…\033[0m\n'
-    ( cd backend && DATABASE_URL_TESTE="$URL_TESTE" npm test )
+    ( cd backend && DATABASE_URL_TESTE="$URL_EFETIVA" npm test )
   fi
 else
-  aviso "Sem banco de teste no ar — pulando esta bateria."
+  aviso "Sem banco de teste utilizável — pulando esta bateria."
+  aviso "(o nome do banco precisa conter \"teste\": a bateria roda --force-reset nele)"
   aviso "O CI do GitHub roda ela a cada push, então nada fica sem cobertura."
-  aviso "Para rodar aqui, aponte DATABASE_URL_TESTE para um Postgres descartável."
+  aviso "Para rodar aqui:"
+  aviso "  docker run -d --name vf-teste -e POSTGRES_PASSWORD=vf -p 5433:5432 postgres:16"
+  aviso "  export DATABASE_URL_TESTE=\"postgresql://postgres:vf@localhost:5433/producao_vf_teste\""
 fi
 
 passo "Migrações — aplicam limpo e batem com o schema"
 if banco_de_teste_no_ar; then
-  node scripts/conferir-schema.mjs "$URL_TESTE"
+  node scripts/conferir-schema.mjs "$URL_EFETIVA"
 else
   aviso "Sem banco no ar — pulando a conferência de migração contra Postgres."
   aviso "O CI do GitHub roda ela a cada push."
