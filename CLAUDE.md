@@ -6,7 +6,9 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 ## Comandos
 
+- Subir tudo do zero: `./rodar-local.sh`
 - Validação completa (obrigatória antes de commitar): `./scripts/validar.sh`
+- Feedback rápido sem banco: `npm run test:unidade --prefix backend`
 - Backend: `npm run dev --prefix backend` (porta 3001) · testes: `npm test --prefix backend`
 - Frontend: `npm run dev --prefix frontend` (porta 5173) · build: `npm run build --prefix frontend`
 - Semear o banco: `npm run seed --prefix backend`
@@ -22,6 +24,10 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 7. **Esmaltar parte de um lote divide o lote sozinho.** Se 20 de 40 vão para Pistache, nasce um lote-filho com a cor e o pai continua neutro em biscoito. Sem isso o sistema teria que escolher entre mentir a cor do resto ou proibir a operação mais comum do ateliê.
 8. **Perda medida ganha da perda estimada na precificação** — mas só com amostra mínima (30 peças). Um lote azarado de 6 viraria "50% de perda" e envenenaria o preço.
 9. **Meta diária tem saldo rolante semanal, e zera na segunda.** Dívida acumulada de mês inteiro vira número que ninguém olha.
+
+## Onde mora a regra pura
+
+`backend/src/lib/precificacao.ts` (conta de preço, perda e faixa) e `backend/src/lib/saldos.ts` (agregação do livro-razão) não importam Prisma de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 ## Regras de código
 

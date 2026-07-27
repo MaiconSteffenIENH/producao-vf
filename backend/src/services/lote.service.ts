@@ -2,6 +2,12 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { conflito, invalido, naoEncontrado } from '../lib/erros'
 import type { Sessao } from '../lib/token'
+import {
+  calcularSaldos,
+  saldoNaEtapa as saldoNaEtapaPuro,
+  saldoTotalDoLote as saldoTotalPuro,
+  type MovimentoBruto,
+} from '../lib/saldos'
 
 /*
  * O saldo de um lote em cada etapa é DERIVADO dos movimentos, nunca guardado
@@ -11,51 +17,22 @@ import type { Sessao } from '../lib/token'
  * discorda do saldo — porque ele É o saldo.
  */
 
-export type SaldoEtapa = { etapaId: string; quantidade: number }
-
-type MovimentoBruto = {
-  loteId: string
-  etapaOrigemId: string | null
-  etapaDestinoId: string | null
-  quantidade: number
-}
+export type { MovimentoBruto }
 
 export async function saldosPorLote(loteIds?: string[]): Promise<Map<string, Map<string, number>>> {
   const movimentos: MovimentoBruto[] = await prisma.movimentoLote.findMany({
     where: loteIds ? { loteId: { in: loteIds } } : undefined,
     select: { loteId: true, etapaOrigemId: true, etapaDestinoId: true, quantidade: true },
   })
-
-  const porLote = new Map<string, Map<string, number>>()
-  const somar = (loteId: string, etapaId: string, delta: number) => {
-    const mapa = porLote.get(loteId) ?? new Map<string, number>()
-    mapa.set(etapaId, (mapa.get(etapaId) ?? 0) + delta)
-    porLote.set(loteId, mapa)
-  }
-
-  for (const m of movimentos) {
-    if (m.etapaDestinoId) somar(m.loteId, m.etapaDestinoId, m.quantidade)
-    if (m.etapaOrigemId) somar(m.loteId, m.etapaOrigemId, -m.quantidade)
-  }
-
-  // etapa zerada não aparece: card com 0 peça no Kanban só polui
-  for (const [loteId, mapa] of porLote) {
-    for (const [etapaId, qtd] of mapa) if (qtd <= 0) mapa.delete(etapaId)
-    if (mapa.size === 0) porLote.delete(loteId)
-  }
-  return porLote
+  return calcularSaldos(movimentos)
 }
 
 async function saldoNaEtapa(loteId: string, etapaId: string): Promise<number> {
-  const saldos = await saldosPorLote([loteId])
-  return saldos.get(loteId)?.get(etapaId) ?? 0
+  return saldoNaEtapaPuro(await saldosPorLote([loteId]), loteId, etapaId)
 }
 
 async function saldoTotal(loteId: string): Promise<number> {
-  const saldos = await saldosPorLote([loteId])
-  let total = 0
-  for (const qtd of saldos.get(loteId)?.values() ?? []) total += qtd
-  return total
+  return saldoTotalPuro(await saldosPorLote([loteId]), loteId)
 }
 
 /**

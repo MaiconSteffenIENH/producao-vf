@@ -8,7 +8,16 @@ Web e celular, multiusuário, acessível por link. Cobre cadastros, planejamento
 
 ## Como rodar local
 
-Pré-requisitos: Node 20+, PostgreSQL (local ou uma conta gratuita no [Neon](https://neon.tech)).
+Um comando:
+
+```bash
+./rodar-local.sh
+```
+
+Ele confere o Node, pergunta se você quer um Postgres no Docker ou um banco no [Neon](https://neon.tech), escreve os `.env`, instala tudo, cria as tabelas, semeia com as peças e esmaltes reais e sobe backend e frontend juntos.
+
+<details>
+<summary>Se preferir na mão</summary>
 
 ```bash
 # 1. Backend
@@ -24,6 +33,16 @@ cd frontend
 cp .env.example .env          # VITE_API_URL=http://localhost:3001
 npm install
 npm run dev                   # http://localhost:5173
+```
+
+</details>
+
+### Testes
+
+```bash
+npm run test:unidade --prefix backend   # regra pura: preço e saldo. Sem banco, roda em segundos
+npm test --prefix backend               # bateria completa, precisa de um banco de teste
+./scripts/validar.sh                    # typecheck + testes + build (o mesmo do hook pre-push)
 ```
 
 Usuário inicial criado pelo seed: **gabi@veraflesch.com.br** / **ceramica123** — o sistema exige trocar a senha no primeiro acesso. Para mudar, use `ADMIN_EMAIL` e `ADMIN_SENHA` antes de rodar o seed.
