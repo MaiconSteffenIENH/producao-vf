@@ -1,10 +1,7 @@
 import { prisma } from '../lib/prisma'
+import { calcularEstoque } from './estoque.service'
 
-/**
- * Resumo da Fase 1. Os números de produção (lotes, perdas, fila do dia) entram
- * na Fase 3 — os campos já saem aqui zerados com `disponivel: false` para o
- * front montar os cards agora e só ligar o dado depois.
- */
+/** Resumo do que está cadastrado, do que falta configurar e do que está na linha. */
 export async function resumo() {
   const [pecasAtivas, pecasInativas, cores, coresAtivas, responsaveis, etapas, materiasPrimas] = await Promise.all([
     prisma.peca.count({ where: { ativo: true } }),
@@ -16,8 +13,8 @@ export async function resumo() {
     prisma.materiaPrima.count({ where: { ativo: true } }),
   ])
 
-  // Peça sem roteiro não pode virar lote na Fase 3 — é o alerta mais útil que
-  // o dashboard consegue dar enquanto a produção não existe.
+  // Peça sem roteiro não pode virar lote — o planejamento até sugere produzir,
+  // mas na hora de abrir o lote o sistema recusa. Melhor avisar antes.
   const semRoteiro = await prisma.peca.findMany({
     where: { ativo: true, roteiro: { none: {} } },
     select: { id: true, nome: true, categoria: { select: { nome: true } } },
@@ -61,12 +58,37 @@ export async function resumo() {
       nome: c.nome,
       pecas: c._count.pecas,
     })),
-    producao: {
-      disponivel: false,
-      motivo: 'O módulo de produção entra na Fase 3.',
-      emAndamento: 0,
-      emBiscoito: 0,
-      prontos: 0,
-    },
+    producao: await resumoProducao(),
+  }
+}
+
+async function resumoProducao() {
+  const [estoque, lotesAbertos, lotesConcluidos, perdas30dias] = await Promise.all([
+    calcularEstoque(),
+    prisma.lote.count({ where: { canceladoEm: null, concluidoEm: null } }),
+    prisma.lote.count({ where: { concluidoEm: { not: null } } }),
+    prisma.movimentoLote.aggregate({
+      where: { tipo: 'perda', criadoEm: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+      _sum: { quantidade: true },
+    }),
+  ])
+
+  let prontos = 0
+  let biscoito = 0
+  let emProducao = 0
+  for (const v of estoque.porPeca.values()) {
+    prontos += v.prontos
+    biscoito += v.biscoito
+    emProducao += v.emProducao
+  }
+
+  return {
+    disponivel: true,
+    lotesAbertos,
+    lotesConcluidos,
+    emProducao,
+    emBiscoito: biscoito,
+    prontos,
+    perdas30dias: perdas30dias._sum.quantidade ?? 0,
   }
 }

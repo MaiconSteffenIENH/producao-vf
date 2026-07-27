@@ -11,6 +11,12 @@ import { useAuth } from './store/auth'
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })))
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })))
 const Pecas = lazy(() => import('./pages/Pecas').then((m) => ({ default: m.Pecas })))
+const Producao = lazy(() => import('./pages/Producao').then((m) => ({ default: m.Producao })))
+const Planejamento = lazy(() => import('./pages/Planejamento').then((m) => ({ default: m.Planejamento })))
+const MeuDia = lazy(() => import('./pages/MeuDia').then((m) => ({ default: m.MeuDia })))
+const Historico = lazy(() => import('./pages/Historico').then((m) => ({ default: m.Historico })))
+const Precos = lazy(() => import('./pages/Precos').then((m) => ({ default: m.Precos })))
+const Canais = lazy(() => import('./pages/Canais').then((m) => ({ default: m.Canais })))
 const Esmaltes = lazy(() => import('./pages/Esmaltes').then((m) => ({ default: m.Esmaltes })))
 const Categorias = lazy(() => import('./pages/Categorias').then((m) => ({ default: m.Categorias })))
 const Responsaveis = lazy(() => import('./pages/Responsaveis').then((m) => ({ default: m.Responsaveis })))
@@ -58,6 +64,12 @@ export function App() {
             >
               <Route path="/" element={<Dashboard />} />
               <Route path="/pecas" element={<Pecas />} />
+              <Route path="/planejamento" element={<Planejamento />} />
+              <Route path="/producao" element={<Producao />} />
+              <Route path="/meu-dia" element={<MeuDia />} />
+              <Route path="/historico" element={<Historico />} />
+              <Route path="/precos" element={<Precos />} />
+              <Route path="/canais" element={<Canais />} />
               <Route path="/esmaltes" element={<Esmaltes />} />
               <Route path="/categorias" element={<Categorias />} />
               <Route path="/responsaveis" element={<Responsaveis />} />

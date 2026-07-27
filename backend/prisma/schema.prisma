@@ -87,7 +87,9 @@ model Cor {
   ativo      Boolean  @default(true)
   criadoEm   DateTime @default(now()) @map("criado_em")
 
-  pecas PecaCor[]
+  pecas      PecaCor[]
+  lotes      Lote[]
+  movimentos MovimentoLote[]
 
   @@map("cores")
 }
@@ -110,7 +112,8 @@ model Responsavel {
   usuario       Usuario?       @relation(fields: [usuarioId], references: [id])
   etapasPadrao  Etapa[]
   roteiros      RoteiroEtapa[]
-  pecasIniciais Peca[]         @relation("responsavelInicial")
+  pecasIniciais Peca[]          @relation("responsavelInicial")
+  movimentos    MovimentoLote[]
 
   @@map("responsaveis")
 }
@@ -131,8 +134,10 @@ model Etapa {
   ativo               Boolean  @default(true)
   criadoEm            DateTime @default(now()) @map("criado_em")
 
-  responsavelPadrao Responsavel?   @relation(fields: [responsavelPadraoId], references: [id])
-  roteiros          RoteiroEtapa[]
+  responsavelPadrao   Responsavel?    @relation(fields: [responsavelPadraoId], references: [id])
+  roteiros            RoteiroEtapa[]
+  movimentosOrigem    MovimentoLote[] @relation("movOrigem")
+  movimentosDestino   MovimentoLote[] @relation("movDestino")
 
   @@map("etapas")
 }
@@ -159,6 +164,8 @@ model Peca {
   responsavelInicial Responsavel?   @relation("responsavelInicial", fields: [responsavelInicialId], references: [id])
   roteiro            RoteiroEtapa[]
   cores              PecaCor[]
+  lotes              Lote[]
+  custo              CustoPeca?
 
   @@index([categoriaId])
   @@map("pecas")
@@ -198,7 +205,8 @@ model PecaCor {
   @@map("peca_cores")
 }
 
-/// Cadastro criado na Fase 1; a tela e o consumo por lote entram na Fase 2.
+/// O planejamento avisa quando cai abaixo do mínimo. O consumo automático
+/// por lote ainda não existe: a baixa é manual.
 model MateriaPrima {
   id            String   @id @default(uuid()) @db.Uuid
   nome          String   @unique
@@ -213,4 +221,175 @@ model MateriaPrima {
   criadoEm      DateTime @default(now()) @map("criado_em")
 
   @@map("materias_primas")
+}
+
+// ═══════════════════════ Fase 3 — Produção ═══════════════════════
+
+/// Um lote é um conjunto de peças iguais andando junto pelo roteiro.
+///
+/// O lote NÃO tem "etapa atual": a movimentação é parcial (30 peças avançam,
+/// 20 ficam), então o que existe é SALDO POR ETAPA, derivado dos movimentos.
+/// Ver `saldosPorEtapa()` em lote.service.ts.
+///
+/// `corId` nasce nulo. A cor só é atribuída na etapa que tem `defineCor`,
+/// que na prática acontece depois da 1ª queima — é assim que o ateliê
+/// trabalha e é o que permite o biscoito ser estoque neutro.
+model Lote {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// código legível curto pra falar em voz alta no ateliê: L-0042
+  codigo       String    @unique
+  pecaId       String    @map("peca_id") @db.Uuid
+  corId        String?   @map("cor_id") @db.Uuid
+  quantidadeInicial Int  @map("quantidade_inicial")
+  /// planejamento | manual | divisao
+  origem       String    @default("manual")
+  loteOrigemId String?   @map("lote_origem_id") @db.Uuid
+  observacao   String?
+  iniciadoEm   DateTime  @default(now()) @map("iniciado_em")
+  concluidoEm  DateTime? @map("concluido_em")
+  canceladoEm  DateTime? @map("cancelado_em")
+  criadoEm     DateTime  @default(now()) @map("criado_em")
+
+  peca        Peca            @relation(fields: [pecaId], references: [id])
+  cor         Cor?            @relation(fields: [corId], references: [id])
+  loteOrigem  Lote?           @relation("divisao", fields: [loteOrigemId], references: [id])
+  divisoes    Lote[]          @relation("divisao")
+  movimentos  MovimentoLote[]
+
+  @@index([pecaId])
+  @@index([corId])
+  @@map("lotes")
+}
+
+/// Livro-razão da produção. Nada é editado: erro se corrige com um
+/// movimento de estorno, e o histórico continua contando a verdade.
+///
+/// etapaOrigemId nulo  = entrada do lote no sistema
+/// etapaDestinoId nulo = saída definitiva (perda ou divisão para outro lote)
+model MovimentoLote {
+  id             String   @id @default(uuid()) @db.Uuid
+  loteId         String   @map("lote_id") @db.Uuid
+  etapaOrigemId  String?  @map("etapa_origem_id") @db.Uuid
+  etapaDestinoId String?  @map("etapa_destino_id") @db.Uuid
+  quantidade     Int
+  /// inicio | avanco | perda | divisao_saida | divisao_entrada | estorno
+  tipo           String
+  /// preenchido quando o movimento passa pela etapa que define a cor
+  corId          String?  @map("cor_id") @db.Uuid
+  responsavelId  String?  @map("responsavel_id") @db.Uuid
+  motivo         String?
+  usuarioId      String?  @map("usuario_id") @db.Uuid
+  usuarioNome    String   @map("usuario_nome")
+  criadoEm       DateTime @default(now()) @map("criado_em")
+
+  lote         Lote         @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  etapaOrigem  Etapa?       @relation("movOrigem", fields: [etapaOrigemId], references: [id])
+  etapaDestino Etapa?       @relation("movDestino", fields: [etapaDestinoId], references: [id])
+  cor          Cor?         @relation(fields: [corId], references: [id])
+  responsavel  Responsavel? @relation(fields: [responsavelId], references: [id])
+
+  @@index([loteId])
+  @@index([criadoEm])
+  @@index([responsavelId, criadoEm])
+  @@map("movimentos_lote")
+}
+
+/// Numerador do código do lote. Uma linha só, travada por UPDATE — sequence
+/// do Postgres pularia números em rollback e o código ficaria feio na parede.
+model Contador {
+  nome  String @id
+  valor Int    @default(0)
+
+  @@map("contadores")
+}
+
+// ═══════════════════════ Fase 4 — Precificação ═══════════════════════
+
+/// Canal de venda com as taxas que corroem a margem. Tudo é editável porque
+/// marketplace muda comissão sem avisar.
+model CanalVenda {
+  id                     String   @id @default(uuid()) @db.Uuid
+  nome                   String   @unique
+  /// comissão do canal sobre o preço de venda
+  comissaoPercentual     Decimal  @default(0) @map("comissao_percentual") @db.Decimal(6, 3)
+  /// taxa fixa por pedido (o que mata a margem em peça barata)
+  taxaFixa               Decimal  @default(0) @map("taxa_fixa") @db.Decimal(10, 2)
+  /// frete que o vendedor banca
+  freteSubsidiado        Decimal  @default(0) @map("frete_subsidiado") @db.Decimal(10, 2)
+  /// investimento em anúncios, como % do preço
+  percentualAds          Decimal  @default(0) @map("percentual_ads") @db.Decimal(6, 3)
+  /// imposto sobre a venda (Simples, MEI…)
+  percentualImposto      Decimal  @default(0) @map("percentual_imposto") @db.Decimal(6, 3)
+  /// antecipação de recebível, se usar
+  percentualAntecipacao  Decimal  @default(0) @map("percentual_antecipacao") @db.Decimal(6, 3)
+  /// margem de lucro alvo sobre o custo
+  margemAlvoPercentual   Decimal  @default(100) @map("margem_alvo_percentual") @db.Decimal(6, 3)
+  moeda                  String   @default("BRL")
+  observacao             String?
+  ativo                  Boolean  @default(true)
+  ordem                  Int      @default(0)
+  criadoEm               DateTime @default(now()) @map("criado_em")
+
+  precos PrecoCanal[]
+  faixas FaixaTaxaCanal[]
+
+  @@map("canais_venda")
+}
+
+/// Custo direto de uma peça. Mão de obra entra como minutos × custo/hora
+/// porque é assim que dá pra conversar com a Vera sobre onde dói.
+model CustoPeca {
+  id                 String   @id @default(uuid()) @db.Uuid
+  pecaId             String   @unique @map("peca_id") @db.Uuid
+  custoArgila        Decimal  @default(0) @map("custo_argila") @db.Decimal(10, 2)
+  custoEsmalte       Decimal  @default(0) @map("custo_esmalte") @db.Decimal(10, 2)
+  custoQueima        Decimal  @default(0) @map("custo_queima") @db.Decimal(10, 2)
+  custoEmbalagem     Decimal  @default(0) @map("custo_embalagem") @db.Decimal(10, 2)
+  minutosMaoDeObra   Int      @default(0) @map("minutos_mao_de_obra")
+  custoHoraMaoDeObra Decimal  @default(0) @map("custo_hora_mao_de_obra") @db.Decimal(10, 2)
+  outrosCustos       Decimal  @default(0) @map("outros_custos") @db.Decimal(10, 2)
+  /// perda usada enquanto não há histórico suficiente; o sistema prefere a real
+  perdaEstimadaPercentual Decimal @default(10) @map("perda_estimada_percentual") @db.Decimal(6, 3)
+  atualizadoEm       DateTime @updatedAt @map("atualizado_em")
+
+  peca   Peca         @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  precos PrecoCanal[]
+
+  @@map("custos_peca")
+}
+
+/// Preço praticado de uma peça num canal. Guardado para comparar com o
+/// sugerido — é aí que aparece a peça que está sendo vendida no prejuízo.
+model PrecoCanal {
+  id           String   @id @default(uuid()) @db.Uuid
+  custoPecaId  String   @map("custo_peca_id") @db.Uuid
+  canalId      String   @map("canal_id") @db.Uuid
+  precoAtual   Decimal? @map("preco_atual") @db.Decimal(10, 2)
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  custoPeca CustoPeca  @relation(fields: [custoPecaId], references: [id], onDelete: Cascade)
+  canal     CanalVenda @relation(fields: [canalId], references: [id], onDelete: Cascade)
+
+  @@unique([custoPecaId, canalId])
+  @@map("precos_canal")
+}
+
+/// Faixa de preço com taxa própria. Shopee e Mercado Livre cobram diferente
+/// conforme o valor do produto — e as peças da VF (R$49 a R$283) atravessam
+/// justamente as faixas onde a regra muda. Um percentual único erraria a conta
+/// exatamente na parte do catálogo que mais importa.
+model FaixaTaxaCanal {
+  id                 String   @id @default(uuid()) @db.Uuid
+  canalId            String   @map("canal_id") @db.Uuid
+  valorMinimo        Decimal  @map("valor_minimo") @db.Decimal(10, 2)
+  /// nulo = sem teto
+  valorMaximo        Decimal? @map("valor_maximo") @db.Decimal(10, 2)
+  comissaoPercentual Decimal  @map("comissao_percentual") @db.Decimal(6, 3)
+  taxaFixa           Decimal  @default(0) @map("taxa_fixa") @db.Decimal(10, 2)
+  freteSubsidiado    Decimal  @default(0) @map("frete_subsidiado") @db.Decimal(10, 2)
+
+  canal CanalVenda @relation(fields: [canalId], references: [id], onDelete: Cascade)
+
+  @@index([canalId])
+  @@map("faixas_taxa_canal")
 }

@@ -13,7 +13,7 @@ export function MateriasPrimas() {
   return (
     <CrudSimples<MateriaPrima>
       titulo="Matérias-primas"
-      descricao="Cadastro pronto para a Fase 2, quando o planejamento passar a sugerir 'comprar mais esmalte'."
+      descricao="O planejamento avisa para comprar quando o estoque cair abaixo do mínimo."
       caminho="materias-primas"
       valoresIniciais={{
         nome: '',

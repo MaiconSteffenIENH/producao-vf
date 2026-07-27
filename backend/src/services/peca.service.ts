@@ -134,8 +134,8 @@ export async function atualizarPeca(id: string, dados: DadosPeca) {
 }
 
 export async function excluirPeca(id: string) {
-  // roteiro e cores caem por cascade; quando existirem lotes (Fase 3),
-  // a exclusão vai virar desativação
+  // roteiro e cores caem por cascade; a FK dos lotes impede apagar peça
+  // que já produziu — nesse caso o certo é desativar
   await prisma.peca.delete({ where: { id } })
 }
 

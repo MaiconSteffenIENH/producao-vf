@@ -18,6 +18,13 @@ const GETS = [
   '/materias-primas',
   '/papeis',
   '/usuarios',
+  '/lotes',
+  '/lotes/kanban',
+  '/lotes?situacao=andamento',
+  '/planejamento',
+  '/agenda',
+  '/precos',
+  '/canais',
 ]
 
 describe('smoke — todos os GET respondem', () => {

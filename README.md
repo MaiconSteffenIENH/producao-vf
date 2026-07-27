@@ -2,7 +2,7 @@
 
 Planejamento e acompanhamento da produção do ateliê **Vera Flesch Cerâmica**.
 
-Web e celular, multiusuário, acessível por link. **Fase 1** (esta entrega): estrutura, login, dashboard e cadastros.
+Web e celular, multiusuário, acessível por link. Cobre cadastros, planejamento, produção em Kanban, tarefas diárias, histórico e preços por canal de venda.
 
 ---
 
@@ -87,12 +87,12 @@ frontend/
   src/lib/format.ts        formatação — fonte única
 docs/
   schema-referencia.sql    o modelo em SQL, para leitura
-  esmalte-*.png            fotos que originaram os hex dos esmaltes
+  esmalte-*.jpg            fotos que originaram os hex dos esmaltes
 ```
 
 ---
 
-## O que já existe (Fase 1)
+## O que já existe
 
 - Login com JWT, senha provisória obrigatória no primeiro acesso, papéis (`gestao`, `producao`, `leitura`) e auditoria de tudo que muda.
 - Dashboard que aponta o que falta configurar: peças sem roteiro, peças sem esmalte, e roteiros que não passam pela etapa que define a cor.
@@ -101,8 +101,33 @@ docs/
 - Cadastro de responsáveis (com capacidade diária, base da meta diária do oleiro), etapas, categorias e matérias-primas.
 - Tema claro/escuro, PWA instalável, puxar-pra-atualizar.
 
-## O que vem depois
+### Planejamento
 
-- **Fase 2 — Planejamento.** Sugestão automática cruzando mínimos, biscoito e lotes em andamento: "produzir 50 Xícaras Andorinha", "esmaltar 20 peças Pistache", "comprar mais esmalte".
-- **Fase 3 — Produção.** Lotes, Kanban por etapa, movimentação parcial, perdas, divisão de lotes. Aqui entram as **tarefas diárias com saldo rolante**: o oleiro abre o app, vê a meta do dia, e o que não sair hoje soma amanhã (o que passar, abate).
-- **Fase 4 — Histórico, relatórios e precificação** com as taxas de Shopee, Mercado Livre e loja própria, usando a perda real medida na Fase 3 para chegar ao custo verdadeiro da peça.
+Sugestões calculadas ao vivo cruzando o mínimo desejado, o que já existe pronto, o que está em biscoito e o que já está a caminho — sem descontar o que está a caminho, o sistema mandaria refazer tudo que ainda está secando. A saída sai no formato que a Gabi pediu: *"Produzir 50 Xícaras Andorinha"*, *"Esmaltar 20 peças Pistache"*, *"Comprar mais esmalte"*. Cada sugestão vira lote com um toque, e mostra se está **não iniciada / em andamento / parcial / concluída** — derivado dos lotes, sem ninguém marcar nada.
+
+### Produção
+
+Quadro Kanban por etapa, com movimentação parcial, registro de perda com motivo, divisão de lote e cancelamento. Cada movimento entra num livro-razão que nunca é editado; o saldo em cada etapa é a soma dele.
+
+O momento crítico é a esmaltação: o lote chega ao biscoito **sem cor**, e ali a Gabi decide o esmalte conforme o que está vendendo. Se ela esmalta só parte, o sistema separa um lote-filho com a cor e mantém o resto neutro — que é exatamente como 40 bowls em biscoito viram 20 Pistache e 20 de outra cor depois.
+
+### Tarefas do dia
+
+O oleiro abre o app e vê quanto precisa fazer hoje. A meta é a capacidade diária ajustada pelo saldo da semana: o que não saiu ontem soma, o que passou abate. O realizado sai dos movimentos que ele registrou — nada é digitado. O saldo zera toda segunda, de propósito.
+
+### Preços por canal
+
+Custo real da peça (material + mão de obra, inflado pela perda) e preço sugerido em cada canal, descontando comissão, taxa fixa, frete subsidiado, anúncios e imposto.
+
+Duas coisas que a maioria das calculadoras erra e que aqui são tratadas:
+
+- **A perda.** Se 12% do que entra no forno não sai vendável, o custo das que sobraram é o custo de todas dividido pelas que sobraram. O sistema usa a perda **medida** no livro-razão quando há amostra suficiente, e a estimada do cadastro enquanto não há.
+- **A faixa de preço.** Shopee e Mercado Livre mudam comissão e taxa fixa conforme o valor do produto, e o catálogo da VF (R$49 a R$283) atravessa essas fronteiras. Como o preço depende da faixa e a faixa depende do preço, o cálculo resolve por ponto fixo.
+
+As taxas vêm pré-carregadas com o que estava valendo em julho/2026 e são **todas editáveis** — marketplace muda comissão sem avisar, então confira antes de republicar preço.
+
+## O que ainda falta
+
+- Protocolo de fotos sem a Gabi presente (depende de calibrar a estação com ela antes da viagem).
+- Relatórios de período e exportação.
+- Amazon Espanha na tabela de preços, quando a operação por lá começar.

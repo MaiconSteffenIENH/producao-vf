@@ -133,3 +133,100 @@ CREATE TABLE materias_primas (
   ativo          BOOLEAN NOT NULL DEFAULT TRUE,
   criado_em      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ═══════════════════ Fase 3 — Produção ═══════════════════
+
+CREATE TABLE contadores (
+  nome  TEXT PRIMARY KEY,
+  valor INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE lotes (
+  id                 UUID PRIMARY KEY,
+  codigo             TEXT NOT NULL UNIQUE,
+  peca_id            UUID NOT NULL REFERENCES pecas (id),
+  cor_id             UUID REFERENCES cores (id),
+  quantidade_inicial INTEGER NOT NULL,
+  origem             TEXT NOT NULL DEFAULT 'manual',
+  lote_origem_id     UUID REFERENCES lotes (id),
+  observacao         TEXT,
+  iniciado_em        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  concluido_em       TIMESTAMPTZ,
+  cancelado_em       TIMESTAMPTZ,
+  criado_em          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX lotes_peca_id_idx ON lotes (peca_id);
+CREATE INDEX lotes_cor_id_idx  ON lotes (cor_id);
+
+-- Livro-razão: etapa_origem nula = entrada no sistema;
+-- etapa_destino nula = saída definitiva (perda ou divisão).
+CREATE TABLE movimentos_lote (
+  id               UUID PRIMARY KEY,
+  lote_id          UUID NOT NULL REFERENCES lotes (id) ON DELETE CASCADE,
+  etapa_origem_id  UUID REFERENCES etapas (id),
+  etapa_destino_id UUID REFERENCES etapas (id),
+  quantidade       INTEGER NOT NULL,
+  tipo             TEXT NOT NULL,
+  cor_id           UUID REFERENCES cores (id),
+  responsavel_id   UUID REFERENCES responsaveis (id),
+  motivo           TEXT,
+  usuario_id       UUID,
+  usuario_nome     TEXT NOT NULL,
+  criado_em        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX movimentos_lote_lote_id_idx   ON movimentos_lote (lote_id);
+CREATE INDEX movimentos_lote_criado_em_idx ON movimentos_lote (criado_em);
+CREATE INDEX movimentos_lote_resp_data_idx ON movimentos_lote (responsavel_id, criado_em);
+
+-- ═══════════════════ Fase 4 — Precificação ═══════════════════
+
+CREATE TABLE canais_venda (
+  id                     UUID PRIMARY KEY,
+  nome                   TEXT NOT NULL UNIQUE,
+  comissao_percentual    DECIMAL(6,3) NOT NULL DEFAULT 0,
+  taxa_fixa              DECIMAL(10,2) NOT NULL DEFAULT 0,
+  frete_subsidiado       DECIMAL(10,2) NOT NULL DEFAULT 0,
+  percentual_ads         DECIMAL(6,3) NOT NULL DEFAULT 0,
+  percentual_imposto     DECIMAL(6,3) NOT NULL DEFAULT 0,
+  percentual_antecipacao DECIMAL(6,3) NOT NULL DEFAULT 0,
+  margem_alvo_percentual DECIMAL(6,3) NOT NULL DEFAULT 100,
+  moeda                  TEXT NOT NULL DEFAULT 'BRL',
+  observacao             TEXT,
+  ativo                  BOOLEAN NOT NULL DEFAULT TRUE,
+  ordem                  INTEGER NOT NULL DEFAULT 0,
+  criado_em              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE faixas_taxa_canal (
+  id                  UUID PRIMARY KEY,
+  canal_id            UUID NOT NULL REFERENCES canais_venda (id) ON DELETE CASCADE,
+  valor_minimo        DECIMAL(10,2) NOT NULL,
+  valor_maximo        DECIMAL(10,2),
+  comissao_percentual DECIMAL(6,3) NOT NULL,
+  taxa_fixa           DECIMAL(10,2) NOT NULL DEFAULT 0,
+  frete_subsidiado    DECIMAL(10,2) NOT NULL DEFAULT 0
+);
+CREATE INDEX faixas_taxa_canal_canal_id_idx ON faixas_taxa_canal (canal_id);
+
+CREATE TABLE custos_peca (
+  id                        UUID PRIMARY KEY,
+  peca_id                   UUID NOT NULL UNIQUE REFERENCES pecas (id) ON DELETE CASCADE,
+  custo_argila              DECIMAL(10,2) NOT NULL DEFAULT 0,
+  custo_esmalte             DECIMAL(10,2) NOT NULL DEFAULT 0,
+  custo_queima              DECIMAL(10,2) NOT NULL DEFAULT 0,
+  custo_embalagem           DECIMAL(10,2) NOT NULL DEFAULT 0,
+  minutos_mao_de_obra       INTEGER NOT NULL DEFAULT 0,
+  custo_hora_mao_de_obra    DECIMAL(10,2) NOT NULL DEFAULT 0,
+  outros_custos             DECIMAL(10,2) NOT NULL DEFAULT 0,
+  perda_estimada_percentual DECIMAL(6,3) NOT NULL DEFAULT 10,
+  atualizado_em             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE precos_canal (
+  id            UUID PRIMARY KEY,
+  custo_peca_id UUID NOT NULL REFERENCES custos_peca (id) ON DELETE CASCADE,
+  canal_id      UUID NOT NULL REFERENCES canais_venda (id) ON DELETE CASCADE,
+  preco_atual   DECIMAL(10,2),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (custo_peca_id, canal_id)
+);

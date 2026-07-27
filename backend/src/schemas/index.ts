@@ -98,3 +98,85 @@ export const usuarioSchema = z.object({
   senha: z.string().min(8).max(72).or(z.literal('')).optional(),
   ativo: z.boolean().default(true),
 })
+
+// ── Produção (Fase 3) ───────────────────────────────────
+export const criarLoteSchema = z.object({
+  pecaId: z.string().uuid('escolha a peça'),
+  quantidade: z.coerce.number().int().min(1, 'quantidade mínima 1').max(99999),
+  observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+  origem: z.enum(['manual', 'planejamento']).default('manual'),
+})
+
+export const avancarLoteSchema = z.object({
+  etapaOrigemId: z.string().uuid(),
+  etapaDestinoId: z.string().uuid(),
+  quantidade: z.coerce.number().int().min(1).max(99999),
+  corId: z.string().uuid().or(z.literal('')).nullable().optional(),
+  responsavelId: z.string().uuid().or(z.literal('')).nullable().optional(),
+  motivo: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+})
+
+export const perdaSchema = z.object({
+  etapaId: z.string().uuid(),
+  quantidade: z.coerce.number().int().min(1).max(99999),
+  motivo: z.string().trim().min(1, 'diga o que aconteceu').max(300),
+})
+
+export const divisaoSchema = z.object({
+  etapaId: z.string().uuid(),
+  quantidade: z.coerce.number().int().min(1).max(99999),
+  motivo: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+})
+
+export const cancelarLoteSchema = z.object({
+  motivo: z.string().trim().min(1, 'diga o motivo').max(300),
+})
+
+// ── Precificação (Fase 4) ───────────────────────────────
+const dinheiro = z.coerce.number().min(0).max(9_999_999)
+const percentual = z.coerce.number().min(0).max(100)
+
+export const custoPecaSchema = z.object({
+  custoArgila: dinheiro.default(0),
+  custoEsmalte: dinheiro.default(0),
+  custoQueima: dinheiro.default(0),
+  custoEmbalagem: dinheiro.default(0),
+  minutosMaoDeObra: z.coerce.number().int().min(0).max(10_000).default(0),
+  custoHoraMaoDeObra: dinheiro.default(0),
+  outrosCustos: dinheiro.default(0),
+  perdaEstimadaPercentual: percentual.default(10),
+  precos: z
+    .array(
+      z.object({
+        canalId: z.string().uuid().or(z.literal('')),
+        precoAtual: z.coerce.number().min(0).max(9_999_999).nullable().optional(),
+      }),
+    )
+    .default([]),
+})
+
+export const canalVendaSchema = z.object({
+  nome: texto(60),
+  comissaoPercentual: percentual.default(0),
+  taxaFixa: dinheiro.default(0),
+  freteSubsidiado: dinheiro.default(0),
+  percentualAds: percentual.default(0),
+  percentualImposto: percentual.default(0),
+  percentualAntecipacao: percentual.default(0),
+  margemAlvoPercentual: z.coerce.number().min(0).max(1000).default(100),
+  moeda: z.string().trim().min(3).max(3).default('BRL'),
+  observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+  ativo: z.boolean().default(true),
+  ordem: z.coerce.number().int().min(0).default(0),
+  faixas: z
+    .array(
+      z.object({
+        valorMinimo: dinheiro.default(0),
+        valorMaximo: z.coerce.number().min(0).max(9_999_999).nullable().optional(),
+        comissaoPercentual: percentual.default(0),
+        taxaFixa: dinheiro.default(0),
+        freteSubsidiado: dinheiro.default(0),
+      }),
+    )
+    .default([]),
+})

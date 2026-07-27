@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
+  CalendarCheck,
   ChevronDown,
+  ClipboardList,
+  History,
   LayoutDashboard,
+  Store,
+  Tags,
   LogOut,
   Menu,
   Moon,
@@ -26,7 +31,18 @@ const GRUPOS: GrupoMenu[] = [
     titulo: 'Produção',
     itens: [
       { para: '/', rotulo: 'Início', icone: LayoutDashboard },
+      { para: '/planejamento', rotulo: 'Planejamento', icone: ClipboardList },
+      { para: '/producao', rotulo: 'Quadro de produção', icone: Boxes },
+      { para: '/meu-dia', rotulo: 'Tarefas do dia', icone: CalendarCheck },
+      { para: '/historico', rotulo: 'Histórico', icone: History },
       { para: '/pecas', rotulo: 'Peças', icone: Package },
+    ],
+  },
+  {
+    titulo: 'Preços',
+    itens: [
+      { para: '/precos', rotulo: 'Preços por canal', icone: Tags },
+      { para: '/canais', rotulo: 'Canais de venda', icone: Store },
     ],
   },
   {
@@ -36,7 +52,7 @@ const GRUPOS: GrupoMenu[] = [
       { para: '/categorias', rotulo: 'Categorias', icone: Shapes },
       { para: '/responsaveis', rotulo: 'Responsáveis', icone: Users },
       { para: '/etapas', rotulo: 'Etapas', icone: Wrench },
-      { para: '/materias-primas', rotulo: 'Matérias-primas', icone: Boxes },
+      { para: '/materias-primas', rotulo: 'Matérias-primas', icone: Package },
     ],
   },
   {

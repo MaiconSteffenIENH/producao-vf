@@ -5,7 +5,7 @@ import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { plural } from '../lib/format'
 import { avisar } from '../components/Toaster'
-import { CabecalhoPagina, Card, Carregando, Etiqueta } from '../components/ui'
+import { CabecalhoPagina, Card, Carregando } from '../components/ui'
 import { useAuth } from '../store/auth'
 
 type Resumo = {
@@ -25,7 +25,15 @@ type Resumo = {
     etapaQueDefineCor: string | null
   }
   porCategoria: { id: string; nome: string; pecas: number }[]
-  producao: { disponivel: boolean; motivo: string; emAndamento: number; emBiscoito: number; prontos: number }
+  producao: {
+    disponivel: boolean
+    lotesAbertos: number
+    lotesConcluidos: number
+    emProducao: number
+    emBiscoito: number
+    prontos: number
+    perdas30dias: number
+  }
 }
 
 function Numero({
@@ -117,7 +125,7 @@ export function Dashboard() {
     <>
       <CabecalhoPagina
         titulo={`Olá, ${nome.split(' ')[0]}`}
-        descricao="Visão geral do que está cadastrado e do que ainda falta configurar."
+        descricao="O que está na linha agora e o que ainda falta configurar."
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -146,14 +154,14 @@ export function Dashboard() {
           </h2>
           {totalPendencias === 0 ? (
             <p className="text-sm text-tinta-fraca">
-              Toda peça ativa tem roteiro, passa pela etapa que define a cor e tem esmaltes associados. O planejamento
-              da Fase 2 já teria o que precisa.
+              Toda peça ativa tem roteiro, passa pela etapa que define a cor e tem esmaltes associados. O
+              planejamento tem tudo de que precisa.
             </p>
           ) : (
             <div className="mt-2 flex flex-col gap-3">
               <ListaPendencia
                 titulo="Peças sem roteiro"
-                explicacao="Sem roteiro a peça não vira lote na Fase 3 — não há por onde ela andar."
+                explicacao="Sem roteiro a peça não vira lote — não há por onde ela andar."
                 itens={pendencias.semRoteiro}
               />
               <ListaPendencia
@@ -185,19 +193,24 @@ export function Dashboard() {
 
       <Card className="mt-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-tinta">Produção</h2>
-          {!producao.disponivel && <Etiqueta cor="#918787">Fase 3</Etiqueta>}
+          <h2 className="text-lg font-semibold text-tinta">Produção agora</h2>
+          <Link to="/producao" className="text-sm text-tinta-fraca underline hover:text-tinta">
+            abrir o quadro
+          </Link>
         </div>
-        <p className="mt-1 text-sm text-tinta-fraca">{producao.motivo}</p>
-        <div className="mt-3 grid grid-cols-3 gap-3 opacity-50">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {[
-            ['Em andamento', producao.emAndamento],
-            ['Em biscoito', producao.emBiscoito],
-            ['Prontas', producao.prontos],
-          ].map(([rotulo, valor]) => (
+            ['Lotes abertos', producao.lotesAbertos, ''],
+            ['Em produção', producao.emProducao, 'peças a caminho'],
+            ['Em biscoito', producao.emBiscoito, 'sem cor, prontas para esmaltar'],
+            ['Prontas', producao.prontos, ''],
+            ['Lotes concluídos', producao.lotesConcluidos, ''],
+            ['Perdas 30 dias', producao.perdas30dias, ''],
+          ].map(([rotulo, valor, ajuda]) => (
             <div key={String(rotulo)} className="rounded-lg bg-superficie-2 p-3">
               <p className="text-xl font-semibold text-tinta">{valor}</p>
               <p className="text-xs text-tinta-fraca">{rotulo}</p>
+              {ajuda && <p className="mt-0.5 text-[11px] text-tinta-fraca">{ajuda}</p>}
             </div>
           ))}
         </div>

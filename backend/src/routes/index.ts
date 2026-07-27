@@ -6,6 +6,10 @@ import * as cadastro from '../services/cadastro.service'
 import * as pecas from '../services/peca.service'
 import * as usuarios from '../services/usuario.service'
 import * as dashboard from '../services/dashboard.service'
+import * as lotes from '../services/lote.service'
+import * as planejamento from '../services/planejamento.service'
+import * as agenda from '../services/agenda.service'
+import * as precos from '../services/preco.service'
 import {
   categoriaSchema,
   corSchema,
@@ -16,6 +20,13 @@ import {
   responsavelSchema,
   trocarSenhaSchema,
   usuarioSchema,
+  criarLoteSchema,
+  avancarLoteSchema,
+  perdaSchema,
+  divisaoSchema,
+  cancelarLoteSchema,
+  custoPecaSchema,
+  canalVendaSchema,
 } from '../schemas'
 
 /** Embrulha handler async para que qualquer throw caia no middleware de erro. */
@@ -174,6 +185,94 @@ for (const c of cruds) {
     }),
   )
 }
+
+
+// ── Produção (Fase 3) ───────────────────────────────────
+rotas.get(
+  '/lotes',
+  rota(async (req, res) => {
+    const { pecaId, corId, etapaId, responsavelId, situacao, mes } = req.query as Record<string, string | undefined>
+    res.json(await lotes.listarLotes({ pecaId, corId, etapaId, responsavelId, situacao, mes }))
+  }),
+)
+rotas.get('/lotes/kanban', rota(async (req, res) => {
+  const { pecaId, corId, responsavelId } = req.query as Record<string, string | undefined>
+  res.json(await lotes.kanban({ pecaId, corId, responsavelId }))
+}))
+rotas.get('/lotes/:id', rota(async (req, res) => void res.json(await lotes.obterLote(req.params.id))))
+rotas.post(
+  '/lotes',
+  rota(async (req, res) => {
+    res.status(201).json(await lotes.criarLote(criarLoteSchema.parse(req.body), req.sessao!))
+  }),
+)
+rotas.post(
+  '/lotes/:id/avancar',
+  rota(async (req, res) => {
+    const dados = avancarLoteSchema.parse(req.body)
+    res.json(await lotes.avancarLote({ ...dados, loteId: req.params.id }, req.sessao!))
+  }),
+)
+rotas.post(
+  '/lotes/:id/perda',
+  rota(async (req, res) => {
+    const dados = perdaSchema.parse(req.body)
+    res.json(await lotes.registrarPerda({ ...dados, loteId: req.params.id }, req.sessao!))
+  }),
+)
+rotas.post(
+  '/lotes/:id/dividir',
+  rota(async (req, res) => {
+    const dados = divisaoSchema.parse(req.body)
+    res.status(201).json(await lotes.dividirLote({ ...dados, loteId: req.params.id }, req.sessao!))
+  }),
+)
+rotas.post(
+  '/lotes/:id/cancelar',
+  rota(async (req, res) => {
+    const { motivo } = cancelarLoteSchema.parse(req.body)
+    res.json(await lotes.cancelarLote(req.params.id, motivo, req.sessao!))
+  }),
+)
+
+// ── Planejamento (Fase 2) ───────────────────────────────
+rotas.get('/planejamento', rota(async (_req, res) => void res.json(await planejamento.sugerir())))
+
+// ── Tarefas diárias ─────────────────────────────────────
+rotas.get('/agenda', rota(async (_req, res) => void res.json(await agenda.agendaDoDia())))
+rotas.get(
+  '/agenda/:responsavelId',
+  rota(async (req, res) => void res.json(await agenda.agendaDoResponsavel(req.params.responsavelId))),
+)
+
+// ── Precificação (Fase 4) ───────────────────────────────
+rotas.get(
+  '/precos',
+  rota(async (req, res) => {
+    const { pecaId } = req.query as Record<string, string | undefined>
+    res.json(await precos.precificar(pecaId))
+  }),
+)
+rotas.put(
+  '/precos/peca/:pecaId',
+  rota(async (req, res) => void res.json(await precos.salvarCusto(req.params.pecaId, custoPecaSchema.parse(req.body)))),
+)
+rotas.get('/canais', rota(async (_req, res) => void res.json(await precos.listarCanais())))
+rotas.post(
+  '/canais',
+  rota(async (req, res) => void res.status(201).json(await precos.salvarCanal(null, canalVendaSchema.parse(req.body)))),
+)
+rotas.put(
+  '/canais/:id',
+  rota(async (req, res) => void res.json(await precos.salvarCanal(req.params.id, canalVendaSchema.parse(req.body)))),
+)
+rotas.delete(
+  '/canais/:id',
+  rota(async (req, res) => {
+    await precos.excluirCanal(req.params.id)
+    res.json({ ok: true })
+  }),
+)
 
 // ── Usuários e papéis (só admin) ────────────────────────
 rotas.get('/papeis', rota(async (_req, res) => void res.json(await usuarios.listarPapeis())))

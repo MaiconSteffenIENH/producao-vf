@@ -18,13 +18,17 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 3. **Biscoito é estoque neutro** (`estoqueIntermediario = true`). Peça parada ali pode virar qualquer cor — é o pulmão que atende uma cor que saiu bem sem começar tudo do zero. Por isso `Peca.qtdMinimaBiscoito` existe separado de `qtdMinimaDesejada`.
 4. **Cada peça tem roteiro próprio.** Xícara Bojudinha passa por alças e colagem; Tortinha vai direto da equipe pra secagem. O roteiro é substituído inteiro no update — é a única forma de reordenar sem colidir com `@@unique([pecaId, ordem])`.
 5. **Conclusão é estado derivado, nunca um campo marcado à mão.** Não iniciada = sugestão sem lote; em andamento = quantidade antes de "Pronto"; parcial = parte pronta, parte não; concluída = pronto ≥ planejado. Checkbox manual apodrece com o uso.
+6. **O saldo do lote NÃO é um campo — é a soma do livro-razão.** `MovimentoLote` é append-only: entrada = `etapaDestinoId`, saída = `etapaOrigemId`. Movimentação parcial, perda e divisão saem de graça disso, e o saldo nunca discorda do histórico porque ele *é* o histórico. Erro se corrige com movimento novo, nunca editando ou apagando.
+7. **Esmaltar parte de um lote divide o lote sozinho.** Se 20 de 40 vão para Pistache, nasce um lote-filho com a cor e o pai continua neutro em biscoito. Sem isso o sistema teria que escolher entre mentir a cor do resto ou proibir a operação mais comum do ateliê.
+8. **Perda medida ganha da perda estimada na precificação** — mas só com amostra mínima (30 peças). Um lote azarado de 6 viraria "50% de perda" e envenenaria o preço.
+9. **Meta diária tem saldo rolante semanal, e zera na segunda.** Dívida acumulada de mês inteiro vira número que ninguém olha.
 
 ## Regras de código
 
 1. **Largura de campo**: `Input`/`Select`/`Textarea` têm `w-full` na classe base, que vence qualquer `w-N` do className. Largura custom = embrulhar em `<div className="w-N">`.
 2. **Tema**: os tokens são semânticos (`fundo`, `superficie`, `tinta`, `marca`, `borda`), não a escala do Tailwind. Texto sobre sólido é `text-contraste` — nunca `text-white`, que não acompanha o tema. Toda UI nova precisa ser conferida no `.dark`.
 3. **Nunca `window.prompt/confirm/alert`**: usar `Modal` e `ConfirmDialog`. Eles pausam o auto-refresh enquanto abertos, então um recarregamento não apaga o que o usuário está digitando.
-4. **Auto-refresh**: listagens usam `useAutoRefresh(() => recarregar(true))` — foco + puxar-pra-atualizar. Polling só com `{ aoVivo: true }`, reservado a telas de dado quente (o Kanban da Fase 3). Nunca passar o loader direto como handler: o evento vira o parâmetro `silencioso`.
+4. **Auto-refresh**: listagens usam `useAutoRefresh(() => recarregar(true))` — foco + puxar-pra-atualizar. Polling só com `{ aoVivo: true }`, reservado a dado quente (quadro de produção a 15s, tarefas do dia a 30s). Nunca passar o loader direto como handler: o evento vira o parâmetro `silencioso`.
 5. **Tela nova entra como chunk lazy** no `App.tsx`. Import estático de página engorda o bundle inicial — o ateliê usa 4G.
 6. **Busca por nome é acento-insensível**: coluna `nome_busca` preenchida com `normalizarBusca()` (`backend/src/lib/busca.ts`), espelhada em `frontend/src/lib/format.ts`. Teclado sem acento precisa achar "Xícara".
 7. **Endpoint GET novo entra no smoke test** (`backend/tests/smoke.test.ts`).

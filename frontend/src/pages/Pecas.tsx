@@ -270,7 +270,7 @@ export function Pecas() {
               <div className="mt-3">
                 <p className="mb-1 text-xs uppercase tracking-wide text-tinta-fraca">Roteiro</p>
                 {peca.roteiro.length === 0 ? (
-                  <p className="text-sm text-alerta">Sem roteiro — não vai virar lote na Fase 3.</p>
+                  <p className="text-sm text-alerta">Sem roteiro — não vira lote.</p>
                 ) : (
                   <p className="text-sm text-tinta">
                     {peca.roteiro.map((r) => r.etapa.nome).join(' → ')}
@@ -399,7 +399,7 @@ export function Pecas() {
                 onChange={(e) => setForm({ ...form, qtdMinimaBiscoito: Number(e.target.value) })}
               />
             </Campo>
-            <Campo rotulo="Preço base (R$)" dica="Referência do site. A precificação com taxas entra na Fase 4.">
+            <Campo rotulo="Preço base (R$)" dica="Referência do site. O preço por canal sai na tela de Preços.">
               <Input
                 type="number"
                 min={0}

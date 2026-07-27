@@ -90,6 +90,72 @@ const MATERIAS_PRIMAS = [
   { nome: 'Caixa de papelão P', tipo: 'embalagem', unidade: 'un', estoqueMinimo: 30 },
 ]
 
+
+/**
+ * Canais de venda com as taxas vigentes em julho/2026, conferidas nas fontes
+ * públicas dos marketplaces. Elas mudam sem aviso — tudo é editável pela tela,
+ * e a data da última conferência fica na observação.
+ *
+ * Repare que as faixas importam: as peças da VF vão de R$49 a R$283 e
+ * atravessam exatamente as fronteiras onde a regra muda. Um percentual único
+ * erraria a conta justamente onde dói.
+ */
+const CANAIS = [
+  {
+    nome: 'Loja própria',
+    comissaoPercentual: 0,
+    taxaFixa: 0,
+    freteSubsidiado: 25, // a loja anuncia frete grátis
+    percentualAds: 0,
+    percentualImposto: 6,
+    percentualAntecipacao: 2,
+    margemAlvoPercentual: 120,
+    ordem: 0,
+    observacao: 'Frete grátis anunciado no site entra como custo. Imposto e antecipação: confirmar com a contabilidade.',
+    faixas: [],
+  },
+  {
+    nome: 'Mercado Livre',
+    comissaoPercentual: 13,
+    taxaFixa: 0,
+    freteSubsidiado: 0,
+    percentualAds: 0,
+    percentualImposto: 6,
+    percentualAntecipacao: 0,
+    margemAlvoPercentual: 120,
+    ordem: 1,
+    observacao:
+      'Clássico ~11-14% por categoria (Premium sobe ~5 pontos). Custo fixo em itens abaixo de R$79. ' +
+      'Acima de R$79 o frete grátis é obrigatório, com subsídio parcial conforme reputação. Conferido em jul/2026.',
+    faixas: [
+      { valorMinimo: 0, valorMaximo: 20, comissaoPercentual: 13, taxaFixa: 5.5, freteSubsidiado: 0 },
+      { valorMinimo: 20.01, valorMaximo: 78.99, comissaoPercentual: 13, taxaFixa: 6, freteSubsidiado: 0 },
+      { valorMinimo: 79, valorMaximo: null, comissaoPercentual: 13, taxaFixa: 0, freteSubsidiado: 18 },
+    ],
+  },
+  {
+    nome: 'Shopee',
+    comissaoPercentual: 14,
+    taxaFixa: 20,
+    freteSubsidiado: 0,
+    percentualAds: 0,
+    percentualImposto: 6,
+    percentualAntecipacao: 0,
+    margemAlvoPercentual: 120,
+    ordem: 2,
+    observacao:
+      'Comissão por faixa + taxa fixa por item, com Programa de Frete Grátis automático. ' +
+      'Campanha em destaque acrescenta ~2,5%. Conferido em jul/2026 — reveja antes de publicar preço.',
+    faixas: [
+      { valorMinimo: 0, valorMaximo: 7.99, comissaoPercentual: 50, taxaFixa: 0, freteSubsidiado: 0 },
+      { valorMinimo: 8, valorMaximo: 79.99, comissaoPercentual: 20, taxaFixa: 4, freteSubsidiado: 0 },
+      { valorMinimo: 80, valorMaximo: 99.99, comissaoPercentual: 14, taxaFixa: 16, freteSubsidiado: 0 },
+      { valorMinimo: 100, valorMaximo: 199.99, comissaoPercentual: 14, taxaFixa: 20, freteSubsidiado: 0 },
+      { valorMinimo: 200, valorMaximo: null, comissaoPercentual: 14, taxaFixa: 26, freteSubsidiado: 0 },
+    ],
+  },
+]
+
 async function main() {
   console.log('▶ Semeando o Produção VF…')
 
@@ -223,6 +289,15 @@ async function main() {
       update: {},
       create: { ...m, nomeBusca: normalizarBusca(m.nome) },
     })
+  }
+
+
+  // ── Canais de venda ─────────────────────────────────────
+  for (const c of CANAIS) {
+    const { faixas, ...campos } = c
+    const existente = await prisma.canalVenda.findUnique({ where: { nome: c.nome } })
+    if (existente) continue
+    await prisma.canalVenda.create({ data: { ...campos, faixas: { create: faixas } } })
   }
 
   const [pecas, cores, etapas] = await Promise.all([
