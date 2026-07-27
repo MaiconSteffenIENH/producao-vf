@@ -1,6 +1,11 @@
 import { prisma } from '../lib/prisma'
 import { naoEncontrado } from '../lib/erros'
 import { saldosPorLote } from './lote.service'
+import {
+  calcularAgenda,
+  inicioDaSemana,
+  inicioDoDia,
+} from '../lib/agenda-calculo'
 
 /*
  * Tarefas diárias com saldo rolante.
@@ -14,22 +19,6 @@ import { saldosPorLote } from './lote.service'
  * responsável registrou. A meta é consequência do trabalho, não um campo.
  */
 
-const DIA_MS = 24 * 60 * 60 * 1000
-
-/** Segunda-feira 00:00 no fuso do ateliê (America/Sao_Paulo, UTC-3). */
-function inicioDaSemana(agora: Date): Date {
-  const local = new Date(agora.getTime() - 3 * 60 * 60 * 1000)
-  const diaDaSemana = (local.getUTCDay() + 6) % 7 // 0 = segunda
-  const segunda = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - diaDaSemana)
-  return new Date(segunda + 3 * 60 * 60 * 1000)
-}
-
-function inicioDoDia(agora: Date): Date {
-  const local = new Date(agora.getTime() - 3 * 60 * 60 * 1000)
-  const meiaNoite = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate())
-  return new Date(meiaNoite + 3 * 60 * 60 * 1000)
-}
-
 export async function agendaDoResponsavel(responsavelId: string, agora = new Date()) {
   const responsavel = await prisma.responsavel.findUnique({ where: { id: responsavelId } })
   if (!responsavel) throw naoEncontrado('Responsável')
@@ -37,49 +26,59 @@ export async function agendaDoResponsavel(responsavelId: string, agora = new Dat
   const capacidade = responsavel.capacidadeDiaria ?? 0
   const comecoSemana = inicioDaSemana(agora)
   const comecoHoje = inicioDoDia(agora)
+  const fimDaSemana = new Date(comecoSemana.getTime() + 7 * 24 * 60 * 60 * 1000)
 
   // Só conta movimento que produz avanço; perda e divisão não são trabalho feito.
-  const movimentos = await prisma.movimentoLote.findMany({
-    where: {
-      responsavelId,
-      criadoEm: { gte: comecoSemana },
-      tipo: { in: ['avanco', 'inicio'] },
-    },
-    select: { quantidade: true, criadoEm: true },
-  })
+  const [movimentos, folgas] = await Promise.all([
+    prisma.movimentoLote.findMany({
+      where: {
+        responsavelId,
+        criadoEm: { gte: comecoSemana },
+        tipo: { in: ['avanco', 'inicio'] },
+      },
+      select: { quantidade: true, criadoEm: true },
+    }),
+    prisma.folga.findMany({
+      where: { responsavelId, data: { gte: comecoSemana, lt: fimDaSemana } },
+      select: { data: true, motivo: true },
+    }),
+  ])
 
   const feitoHoje = movimentos
     .filter((m: { criadoEm: Date }) => m.criadoEm >= comecoHoje)
     .reduce((s: number, m: { quantidade: number }) => s + m.quantidade, 0)
   const feitoNaSemana = movimentos.reduce((s: number, m: { quantidade: number }) => s + m.quantidade, 0)
 
-  // dias já decorridos na semana, contando hoje
-  const diasDecorridos = Math.floor((comecoHoje.getTime() - comecoSemana.getTime()) / DIA_MS) + 1
-  const esperadoAteOntem = capacidade * (diasDecorridos - 1)
-  const feitoAteOntem = feitoNaSemana - feitoHoje
+  // `data` é DATE puro: vem à meia-noite UTC, e é assim que a chave é montada
+  const diasDeFolga = new Set<string>(
+    (folgas as { data: Date }[]).map((f) => f.data.toISOString().slice(0, 10)),
+  )
 
-  // negativo = devendo; positivo = adiantado
-  const saldoAnterior = feitoAteOntem - esperadoAteOntem
-  const metaDeHoje = Math.max(0, capacidade - saldoAnterior)
-  const faltaHoje = Math.max(0, metaDeHoje - feitoHoje)
+  const conta = calcularAgenda({
+    capacidadeDiaria: capacidade,
+    feitoHoje,
+    feitoNaSemana,
+    comecoSemana,
+    comecoHoje,
+    diasDeFolga,
+  })
 
   return {
-    responsavel: { id: responsavel.id, nome: responsavel.nome, cor: responsavel.cor, tipo: responsavel.tipo },
-    capacidadeDiaria: capacidade,
-    saldoAnterior,
-    metaDeHoje,
-    feitoHoje,
-    faltaHoje,
-    feitoNaSemana,
-    esperadoNaSemana: capacidade * 5,
+    responsavel: {
+      id: responsavel.id,
+      nome: responsavel.nome,
+      cor: responsavel.cor,
+      tipo: responsavel.tipo,
+    },
+    ...conta,
     explicacao:
       capacidade === 0
         ? 'Este responsável não tem capacidade diária cadastrada, então não há meta.'
-        : saldoAnterior < 0
-          ? `Meta base de ${capacidade}/dia mais ${Math.abs(saldoAnterior)} que ficaram para trás nesta semana.`
-          : saldoAnterior > 0
-            ? `Meta base de ${capacidade}/dia menos ${saldoAnterior} adiantados nesta semana.`
-            : `Meta base de ${capacidade} peças por dia.`,
+        : conta.explicacao,
+    folgas: (folgas as { data: Date; motivo: string }[]).map((f) => ({
+      data: f.data.toISOString().slice(0, 10),
+      motivo: f.motivo,
+    })),
     fila: await filaDoResponsavel(responsavelId),
   }
 }
@@ -155,4 +154,46 @@ export async function agendaDoDia(agora = new Date()) {
     select: { id: true },
   })
   return Promise.all(responsaveis.map((r: { id: string }) => agendaDoResponsavel(r.id, agora)))
+}
+
+/*
+ * FOLGA — dia em que a pessoa não trabalha.
+ *
+ * Sem isto o saldo rolante cobrava dia em que ninguém estava lá: o oleiro
+ * faltava na quarta e a meta de quinta ficava impossível, com dívida que não
+ * era dele. É o mesmo modo de falha que o reset de segunda evita, em escala
+ * menor e mais injusta.
+ */
+export async function listarFolgas(responsavelId?: string) {
+  return prisma.folga.findMany({
+    where: responsavelId ? { responsavelId } : {},
+    include: { responsavel: { select: { id: true, nome: true, cor: true } } },
+    orderBy: { data: 'desc' },
+    take: 200,
+  })
+}
+
+export async function registrarFolga(dados: {
+  responsavelId: string
+  data: string
+  motivo?: string
+  observacao?: string | null
+}) {
+  // `data` chega como AAAA-MM-DD e é gravada como DATE puro: folga é dia
+  // inteiro, e guardar hora só criaria confusão de fuso na comparação
+  const data = new Date(`${dados.data}T00:00:00.000Z`)
+  return prisma.folga.upsert({
+    where: { responsavelId_data: { responsavelId: dados.responsavelId, data } },
+    update: { motivo: dados.motivo ?? 'folga', observacao: dados.observacao ?? null },
+    create: {
+      responsavelId: dados.responsavelId,
+      data,
+      motivo: dados.motivo ?? 'folga',
+      observacao: dados.observacao ?? null,
+    },
+  })
+}
+
+export async function apagarFolga(id: string) {
+  await prisma.folga.delete({ where: { id } })
 }

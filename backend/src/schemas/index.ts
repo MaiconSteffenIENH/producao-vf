@@ -101,6 +101,7 @@ export const usuarioSchema = z.object({
 
 // ── Produção (Fase 3) ───────────────────────────────────
 export const criarLoteSchema = z.object({
+  encomendaId: z.string().uuid().optional().nullable(),
   pecaId: z.string().uuid('escolha a peça'),
   quantidade: z.coerce.number().int().min(1, 'quantidade mínima 1').max(99999),
   observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
@@ -108,6 +109,7 @@ export const criarLoteSchema = z.object({
 })
 
 export const avancarLoteSchema = z.object({
+  chaveIdempotencia: z.string().trim().min(8).max(80).optional().nullable(),
   etapaOrigemId: z.string().uuid(),
   etapaDestinoId: z.string().uuid(),
   quantidade: z.coerce.number().int().min(1).max(99999),
@@ -117,6 +119,7 @@ export const avancarLoteSchema = z.object({
 })
 
 export const perdaSchema = z.object({
+  chaveIdempotencia: z.string().trim().min(8).max(80).optional().nullable(),
   etapaId: z.string().uuid(),
   quantidade: z.coerce.number().int().min(1).max(99999),
   motivo: z.string().trim().min(1, 'diga o que aconteceu').max(300),
@@ -179,4 +182,88 @@ export const canalVendaSchema = z.object({
       }),
     )
     .default([]),
+})
+
+// ── Fase 4: o que o processo do ateliê pedia ────────────
+
+const dataIso = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'use o formato AAAA-MM-DD')
+
+const competencia = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}$/, 'use o formato AAAA-MM')
+
+/** Chave que o cliente gera antes de mandar, para o reenvio offline não duplicar. */
+const chaveIdempotencia = z.string().trim().min(8).max(80).optional().nullable()
+
+export const segundaSchema = z.object({
+  etapaId: z.string().uuid(),
+  quantidade: z.coerce.number().int().min(1),
+  motivo: texto(200),
+  chaveIdempotencia,
+})
+
+export const folgaSchema = z.object({
+  responsavelId: z.string().uuid(),
+  data: dataIso,
+  motivo: z.enum(['folga', 'feriado', 'atestado', 'outro']).default('folga'),
+  observacao: z.string().trim().max(200).or(z.literal('')).optional().nullable(),
+})
+
+export const queimaSchema = z.object({
+  tipo: z.enum(['biscoito', 'esmalte']),
+  previstaPara: z.string().trim().optional().nullable(),
+  observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+})
+
+export const statusQueimaSchema = z.object({
+  status: z.enum(['planejada', 'carregando', 'queimando', 'concluida', 'cancelada']),
+})
+
+export const vendaSchema = z.object({
+  pecaId: z.string().uuid(),
+  corId: z.string().uuid().optional().nullable(),
+  canalId: z.string().uuid().optional().nullable(),
+  competencia,
+  quantidade: z.coerce.number().int().min(0),
+  valorTotal: z.coerce.number().min(0).max(99_999_999).optional().nullable(),
+})
+
+export const importarVendasSchema = z.object({
+  // o CSV chega como texto no corpo: evita multipart e a Vera pode até colar
+  conteudo: z.string().min(1, 'cole ou envie o conteúdo da planilha').max(5_000_000),
+  canalId: z.string().uuid().optional().nullable(),
+})
+
+export const encomendaSchema = z.object({
+  cliente: texto(120),
+  contato: z.string().trim().max(120).or(z.literal('')).optional().nullable(),
+  status: z.enum(['aberta', 'em_producao', 'pronta', 'entregue', 'cancelada']).optional(),
+  entregarAte: dataIso.optional().nullable(),
+  observacao: z.string().trim().max(500).or(z.literal('')).optional().nullable(),
+  itens: z
+    .array(
+      z.object({
+        pecaId: z.string().uuid(),
+        corId: z.string().uuid().optional().nullable(),
+        quantidade: z.coerce.number().int().min(1),
+      }),
+    )
+    .min(1, 'a encomenda precisa de ao menos um item'),
+})
+
+export const fotoSchema = z.object({
+  status: z.enum(['pendente', 'fotografado', 'enviado', 'editado', 'publicado']).optional(),
+  fotoUrl: z.string().trim().url('informe uma URL válida').or(z.literal('')).optional().nullable(),
+  observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+})
+
+export const pecaInsumoSchema = z.object({
+  materiaPrimaId: z.string().uuid(),
+  quantidadePorPeca: z.coerce.number().min(0).max(99_999),
+  etapaId: z.string().uuid().optional().nullable(),
+  corId: z.string().uuid().optional().nullable(),
 })

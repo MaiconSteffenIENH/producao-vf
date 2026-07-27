@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { conflito, invalido, naoEncontrado } from '../lib/erros'
 import type { Sessao } from '../lib/token'
+import { plural } from '../lib/plural'
 import {
   calcularSaldos,
   saldoNaEtapa as saldoNaEtapaPuro,
@@ -221,7 +222,14 @@ export async function kanban(filtros: { pecaId?: string; corId?: string; respons
 // ─────────────────────────── Comandos ───────────────────────────
 
 export async function criarLote(
-  dados: { pecaId: string; quantidade: number; observacao?: string | null; origem?: string },
+  dados: {
+    pecaId: string
+    quantidade: number
+    observacao?: string | null
+    origem?: string
+    /** lote nascido de encomenda herda o prazo dela e passa na frente */
+    encomendaId?: string | null
+  },
   sessao: Sessao,
 ) {
   const roteiro = await roteiroDaPeca(dados.pecaId)
@@ -234,9 +242,17 @@ export async function criarLote(
         pecaId: dados.pecaId,
         quantidadeInicial: dados.quantidade,
         origem: dados.origem ?? 'manual',
+        encomendaId: dados.encomendaId ?? null,
         observacao: dados.observacao || null,
       },
     })
+    // a encomenda passa a "em produção" assim que o primeiro lote dela nasce
+    if (dados.encomendaId) {
+      await tx.encomenda.updateMany({
+        where: { id: dados.encomendaId, status: 'aberta' },
+        data: { status: 'em_producao' },
+      })
+    }
     await tx.movimentoLote.create({
       data: {
         loteId: lote.id,
@@ -253,6 +269,22 @@ export async function criarLote(
   })
 }
 
+/*
+ * IDEMPOTÊNCIA — o que torna a fila offline segura.
+ *
+ * O ateliê tem sinal ruim. O oleiro registra 40 peças, a requisição sai, o
+ * sinal cai antes da resposta voltar, a fila local reenvia. Sem esta checagem
+ * o reenvio grava 80. E num livro-razão append-only movimento duplicado não se
+ * apaga: se corrige com estorno, e o histórico fica sujo para sempre.
+ *
+ * A chave é gerada pelo CLIENTE antes de mandar, exatamente para sobreviver ao
+ * caso em que a resposta nunca chega.
+ */
+async function movimentoJaGravado(chave: string | null | undefined) {
+  if (!chave) return null
+  return prisma.movimentoLote.findUnique({ where: { chaveIdempotencia: chave } })
+}
+
 export async function avancarLote(
   dados: {
     loteId: string
@@ -262,9 +294,15 @@ export async function avancarLote(
     corId?: string | null
     responsavelId?: string | null
     motivo?: string | null
+    chaveIdempotencia?: string | null
   },
   sessao: Sessao,
 ) {
+  // reenvio da fila offline: devolve o que já foi gravado, no MESMO formato
+  // que a chamada original — a tela não pode ter dois caminhos de resposta
+  const repetido = await movimentoJaGravado(dados.chaveIdempotencia)
+  if (repetido) return { movimento: repetido, loteCriado: null }
+
   const lote = await prisma.lote.findUnique({ where: { id: dados.loteId } })
   if (!lote) throw naoEncontrado('Lote')
   if (lote.canceladoEm) throw conflito('Este lote foi cancelado.')
@@ -277,7 +315,9 @@ export async function avancarLote(
 
   const disponivel = await saldoNaEtapa(dados.loteId, dados.etapaOrigemId)
   if (dados.quantidade > disponivel) {
-    throw conflito(`Só há ${disponivel} peça(s) em ${origem.etapa.nome}. Registre a perda antes, se for o caso.`)
+    throw conflito(
+      `Só há ${plural(disponivel, 'peça')} em ${origem.etapa.nome}. Registre a perda antes, se for o caso.`,
+    )
   }
 
   const tipo = destino.ordem > origem.ordem ? 'avanco' : 'retorno'
@@ -364,6 +404,7 @@ export async function avancarLote(
         motivo: dados.motivo || null,
         usuarioId: sessao.id,
         usuarioNome: sessao.nome,
+        chaveIdempotencia: dados.chaveIdempotencia ?? null,
       },
     })
 
@@ -376,15 +417,24 @@ export async function avancarLote(
 }
 
 export async function registrarPerda(
-  dados: { loteId: string; etapaId: string; quantidade: number; motivo: string },
+  dados: {
+    loteId: string
+    etapaId: string
+    quantidade: number
+    motivo: string
+    chaveIdempotencia?: string | null
+  },
   sessao: Sessao,
 ) {
+  const repetido = await movimentoJaGravado(dados.chaveIdempotencia)
+  if (repetido) return repetido
+
   const lote = await prisma.lote.findUnique({ where: { id: dados.loteId } })
   if (!lote) throw naoEncontrado('Lote')
 
   const disponivel = await saldoNaEtapa(dados.loteId, dados.etapaId)
   if (dados.quantidade > disponivel) {
-    throw conflito(`Só há ${disponivel} peça(s) nesta etapa.`)
+    throw conflito(`Só há ${plural(disponivel, 'peça')} nesta etapa.`)
   }
 
   const movimento = await prisma.movimentoLote.create({
@@ -398,6 +448,65 @@ export async function registrarPerda(
       motivo: dados.motivo,
       usuarioId: sessao.id,
       usuarioNome: sessao.nome,
+      chaveIdempotencia: dados.chaveIdempotencia ?? null,
+    },
+  })
+  await atualizarConclusao(dados.loteId)
+  return movimento
+}
+
+/*
+ * SEGUNDA QUALIDADE.
+ *
+ * Peça com defeito pequeno que não é refugo: vende com desconto, em feira ou
+ * como segunda linha. Antes o lote só tinha dois destinos — avançar ou perder —
+ * e jogar isto na perda fazia três estragos de uma vez: sumia com estoque que
+ * existe, inflava a taxa de perda, e por ela contaminava o custo de todas as
+ * outras peças (lib/precificacao.ts prefere a perda medida).
+ *
+ * Vai para uma etapa terminal do tipo `segunda`, então continua contando como
+ * saldo — é estoque, não sumiço.
+ */
+export async function registrarSegunda(
+  dados: {
+    loteId: string
+    etapaId: string
+    quantidade: number
+    motivo: string
+    chaveIdempotencia?: string | null
+  },
+  sessao: Sessao,
+) {
+  const repetido = await movimentoJaGravado(dados.chaveIdempotencia)
+  if (repetido) return repetido
+
+  const lote = await prisma.lote.findUnique({ where: { id: dados.loteId } })
+  if (!lote) throw naoEncontrado('Lote')
+
+  const destino = await prisma.etapa.findFirst({ where: { tipo: 'segunda', ativo: true } })
+  if (!destino) {
+    throw invalido(
+      'Não há etapa de segunda qualidade cadastrada. Crie uma etapa do tipo "segunda" em Etapas.',
+    )
+  }
+
+  const disponivel = await saldoNaEtapa(dados.loteId, dados.etapaId)
+  if (dados.quantidade > disponivel) {
+    throw conflito(`Só há ${plural(disponivel, 'peça')} nesta etapa.`)
+  }
+
+  const movimento = await prisma.movimentoLote.create({
+    data: {
+      loteId: dados.loteId,
+      etapaOrigemId: dados.etapaId,
+      etapaDestinoId: destino.id,
+      quantidade: dados.quantidade,
+      tipo: 'segunda',
+      corId: lote.corId,
+      motivo: dados.motivo,
+      usuarioId: sessao.id,
+      usuarioNome: sessao.nome,
+      chaveIdempotencia: dados.chaveIdempotencia ?? null,
     },
   })
   await atualizarConclusao(dados.loteId)

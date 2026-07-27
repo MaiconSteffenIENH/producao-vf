@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Brush, Hammer, ShoppingCart } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Brush, Camera, ClipboardCheck, Flame, Hammer, ShoppingCart } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
@@ -7,7 +8,7 @@ import { Botao, CabecalhoPagina, Card, Carregando, Etiqueta, Vazio } from '../co
 import { formaPlural } from '../lib/format'
 
 type Sugestao = {
-  tipo: 'produzir' | 'esmaltar' | 'comprar'
+  tipo: 'produzir' | 'esmaltar' | 'comprar' | 'queimar' | 'fotografar' | 'encomenda'
   titulo: string
   detalhe: string
   quantidade: number
@@ -17,11 +18,22 @@ type Sugestao = {
   corId?: string
   corNome?: string
   corHex?: string
+  encomendaId?: string
+  queimaTipo?: string
   situacao: string
   situacaoDetalhe: string
+  previsao?: string
+  ajustePerda?: { comecar: number; entregar: number; percentual: number; origem: string }
 }
 
-const ICONE = { produzir: Hammer, esmaltar: Brush, comprar: ShoppingCart }
+const ICONE = {
+  produzir: Hammer,
+  esmaltar: Brush,
+  comprar: ShoppingCart,
+  queimar: Flame,
+  fotografar: Camera,
+  encomenda: ClipboardCheck,
+}
 
 const SITUACAO: Record<string, { rotulo: string; cor: string }> = {
   nao_iniciada: { rotulo: 'não iniciada', cor: '#A4402F' },
@@ -34,7 +46,9 @@ export function Planejamento() {
   const [sugestoes, setSugestoes] = useState<Sugestao[]>([])
   const [resumo, setResumo] = useState<Record<string, number>>({})
   const [carregando, setCarregando] = useState(true)
-  const [filtro, setFiltro] = useState<'todas' | 'produzir' | 'esmaltar' | 'comprar'>('todas')
+  const [filtro, setFiltro] = useState<
+    'todas' | 'produzir' | 'esmaltar' | 'comprar' | 'queimar' | 'fotografar' | 'encomenda'
+  >('todas')
   const [abrindo, setAbrindo] = useState<string | null>(null)
 
   const recarregar = useCallback(async (silencioso = false) => {
@@ -63,7 +77,8 @@ export function Planejamento() {
       const { data } = await api.post('/lotes', {
         pecaId: s.pecaId,
         quantidade: s.quantidade,
-        origem: 'planejamento',
+        origem: s.encomendaId ? 'encomenda' : 'planejamento',
+        encomendaId: s.encomendaId ?? null,
         observacao: s.titulo,
       })
       avisar.ok(`Lote ${data.codigo} aberto a partir do planejamento.`)
@@ -86,11 +101,14 @@ export function Planejamento() {
         descricao="O que vale a pena produzir agora, considerando o que já existe e o que já está a caminho."
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {[
-          ['Sugestões', resumo.total ?? 0, 'todas'],
+          ['Tudo', resumo.total ?? 0, 'todas'],
+          ['Encomenda', resumo.encomenda ?? 0, 'encomenda'],
           ['Produzir', resumo.produzir ?? 0, 'produzir'],
           ['Esmaltar', resumo.esmaltar ?? 0, 'esmaltar'],
+          ['Queimar', resumo.queimar ?? 0, 'queimar'],
+          ['Fotografar', resumo.fotografar ?? 0, 'fotografar'],
           ['Comprar', resumo.comprar ?? 0, 'comprar'],
         ].map(([rotulo, valor, chave]) => (
           <button
@@ -109,9 +127,11 @@ export function Planejamento() {
       </div>
 
       {(resumo.urgentes ?? 0) > 0 && (
-        <p className="mb-4 rounded-xl border border-perigo/30 bg-perigo/5 px-4 py-3 text-sm text-tinta">
-          <strong className="text-perigo">{resumo.urgentes}</strong> {formaPlural(resumo.urgentes ?? 0, 'item')} sem nenhuma peça pronta — é o que some
-          da loja primeiro.
+        <p className="mb-4 rounded-xl border border-perigo/30 bg-perigo/5 px-4 py-3 text-sm leading-relaxed text-tinta">
+          <strong className="text-perigo">{resumo.urgentes}</strong>{' '}
+          {formaPlural(resumo.urgentes ?? 0, 'item')} urgente
+          {(resumo.urgentes ?? 0) === 1 ? '' : 's'} — encomenda com prazo, peça sem nenhuma pronta, ou
+          cobertura que acaba antes da reposição chegar.
         </p>
       )}
 
@@ -135,8 +155,8 @@ export function Planejamento() {
                 <span
                   className="grid h-10 w-10 shrink-0 place-items-center rounded-lg"
                   style={{
-                    backgroundColor: s.prioridade === 1 ? '#A4402F22' : '#BBA58C22',
-                    color: s.prioridade === 1 ? '#A4402F' : '#6A6060',
+                    backgroundColor: s.prioridade <= 1 ? '#A4402F22' : '#BBA58C22',
+                    color: s.prioridade <= 1 ? '#A4402F' : '#6A6060',
                   }}
                 >
                   <Icone size={20} />
@@ -154,19 +174,55 @@ export function Planejamento() {
                     )}
                     <Etiqueta cor={situacao.cor}>{situacao.rotulo}</Etiqueta>
                   </div>
-                  <p className="mt-0.5 text-sm text-tinta-fraca">{s.detalhe}</p>
-                  <p className="text-xs text-tinta-fraca">{s.situacaoDetalhe}</p>
+                  <p className="mt-0.5 text-sm leading-relaxed text-tinta-fraca">{s.detalhe}</p>
+                  <p className="text-xs text-tinta-fraca">
+                    {s.situacaoDetalhe}
+                    {s.previsao && ` · fica pronto em ${s.previsao}`}
+                  </p>
+                  {/* a perda é o motivo de o número sugerido ser maior que o que falta */}
+                  {s.ajustePerda && (
+                    <p className="mt-1 text-xs text-alerta">
+                      Começar {s.ajustePerda.comecar} para entregar {s.ajustePerda.entregar}: a perda{' '}
+                      {s.ajustePerda.origem === 'medida' ? 'medida' : 'estimada'} desta peça é{' '}
+                      {String(s.ajustePerda.percentual).replace('.', ',')}%.
+                    </p>
+                  )}
                 </div>
 
-                {s.pecaId && s.tipo !== 'comprar' && (
-                  <Botao
-                    variante="secundario"
-                    onClick={() => abrirLote(s)}
-                    disabled={abrindo === s.titulo}
-                    className="shrink-0"
+                {/* cada tipo leva ao lugar onde a ação acontece: fotografar não
+                    abre lote, e queimar acontece na tela do forno */}
+                {s.tipo === 'fotografar' ? (
+                  <Link
+                    to="/fotos"
+                    className="shrink-0 rounded-xl border border-borda bg-superficie px-3.5 py-2 text-sm text-tinta transition hover:border-marca-clara"
                   >
-                    {abrindo === s.titulo ? 'Abrindo…' : `Abrir lote de ${s.quantidade}`}
-                  </Botao>
+                    Ir para as fotos
+                  </Link>
+                ) : s.tipo === 'queimar' ? (
+                  <Link
+                    to="/forno"
+                    className="shrink-0 rounded-xl border border-borda bg-superficie px-3.5 py-2 text-sm text-tinta transition hover:border-marca-clara"
+                  >
+                    Ir para o forno
+                  </Link>
+                ) : s.tipo === 'comprar' ? (
+                  <Link
+                    to="/materias-primas"
+                    className="shrink-0 rounded-xl border border-borda bg-superficie px-3.5 py-2 text-sm text-tinta transition hover:border-marca-clara"
+                  >
+                    Ver o insumo
+                  </Link>
+                ) : (
+                  s.pecaId && (
+                    <Botao
+                      variante="secundario"
+                      onClick={() => abrirLote(s)}
+                      disabled={abrindo === s.titulo}
+                      className="shrink-0"
+                    >
+                      {abrindo === s.titulo ? 'Abrindo…' : `Abrir lote de ${s.quantidade}`}
+                    </Botao>
+                  )
                 )}
               </Card>
             )
@@ -175,8 +231,10 @@ export function Planejamento() {
       )}
 
       <p className="mt-6 text-xs text-tinta-fraca">
-        A situação de cada item é derivada dos lotes existentes — ninguém precisa marcar nada como feito. Sugestão de
-        esmaltação só aparece quando há biscoito disponível; sem biscoito, a sugestão vira produzir do começo.
+        A situação de cada item é derivada dos lotes existentes — ninguém precisa marcar nada como feito. O
+        biscoito é repartido entre as cores com saldo corrente: a mesma peça em estoque não é prometida duas
+        vezes, e o que não cobre vira sugestão de produzir do começo. A quantidade já vem inflada pela perda,
+        porque começar exatamente o que falta entrega sempre a menos.
       </p>
     </>
   )

@@ -49,6 +49,18 @@ jobs:
       - name: Testes de unidade (sem banco)
         run: npm run test:unidade
 
+      - name: Nomes de modelo e campo batem com o schema
+        working-directory: .
+        run: node scripts/conferir-campos-prisma.mjs
+
+      - name: Migrações aplicam limpo e batem com o schema
+        working-directory: .
+        env:
+          URL: postgresql://postgres:postgres@localhost:5432/producao_vf_conferencia?schema=public
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c 'create database producao_vf_conferencia' || true
+          node scripts/conferir-schema.mjs "$URL"
+
       - name: Testes de integração
         run: npm test
 

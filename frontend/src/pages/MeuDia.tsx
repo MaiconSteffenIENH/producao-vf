@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
-import { CabecalhoPagina, Card, Carregando, Etiqueta, Select, Vazio } from '../components/ui'
+import { CalendarOff } from 'lucide-react'
+import { Botao, CabecalhoPagina, Card, Carregando, Etiqueta, Select, Vazio } from '../components/ui'
 import { useAuth } from '../store/auth'
 
 type Agenda = {
@@ -14,6 +15,9 @@ type Agenda = {
   faltaHoje: number
   feitoNaSemana: number
   esperadoNaSemana: number
+  folgaHoje: boolean
+  diasCobrados: number
+  folgas: { data: string; motivo: string }[]
   explicacao: string
   fila: {
     loteId: string
@@ -43,7 +47,7 @@ function Barra({ feito, meta }: { feito: number; meta: number }) {
   )
 }
 
-function CartaoAgenda({ agenda }: { agenda: Agenda }) {
+function CartaoAgenda({ agenda, aoMarcarFolga }: { agenda: Agenda; aoMarcarFolga: (id: string) => void }) {
   const { saldoAnterior, metaDeHoje, feitoHoje, faltaHoje } = agenda
   return (
     <Card>
@@ -58,6 +62,12 @@ function CartaoAgenda({ agenda }: { agenda: Agenda }) {
           <Etiqueta cor="#3E5C4B">{saldoAnterior} adiantadas</Etiqueta>
         ) : null}
       </div>
+
+      {agenda.folgaHoje && (
+        <p className="mt-3 rounded-xl border border-verde/25 bg-verde/8 px-3.5 py-2.5 text-sm text-tinta">
+          Folga hoje. A meta não corre e nada vira dívida.
+        </p>
+      )}
 
       <div className="mt-3 grid grid-cols-3 gap-3">
         {[
@@ -74,6 +84,17 @@ function CartaoAgenda({ agenda }: { agenda: Agenda }) {
 
       <Barra feito={feitoHoje} meta={metaDeHoje} />
       <p className="mt-2 text-xs text-tinta-fraca">{agenda.explicacao}</p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Botao variante="secundario" onClick={() => aoMarcarFolga(agenda.responsavel.id)}>
+          <CalendarOff size={14} /> Marcar folga hoje
+        </Botao>
+        {(agenda.folgas ?? []).length > 0 && (
+          <span className="text-xs text-tinta-fraca">
+            {agenda.folgas.length} {agenda.folgas.length === 1 ? 'folga' : 'folgas'} nesta semana
+          </span>
+        )}
+      </div>
 
       <div className="mt-4">
         <h3 className="mb-2 text-sm font-semibold text-tinta">Na fila ({agenda.fila.length})</h3>
@@ -140,6 +161,25 @@ export function MeuDia() {
 
   useAutoRefresh(useCallback(() => void recarregar(true), [recarregar]), { aoVivo: true, intervaloMs: 30_000 })
 
+  /*
+   * Folga é o que impede o saldo rolante de cobrar dia em que ninguém estava
+   * no ateliê. Sem isso, faltar na quarta deixava a meta de quinta impossível
+   * e a dívida não era da pessoa.
+   */
+  const marcarFolga = async (responsavelId: string) => {
+    const hoje = new Date()
+    const data = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 10)
+    try {
+      await api.post('/folgas', { responsavelId, data, motivo: 'folga' })
+      avisar.ok('Folga registrada. A meta de hoje não corre.')
+      await recarregar(true)
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para registrar a folga.'))
+    }
+  }
+
   if (carregando) return <Carregando />
 
   const visiveis = foco ? agendas.filter((a) => a.responsavel.id === foco) : agendas
@@ -171,14 +211,16 @@ export function MeuDia() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {visiveis.map((a) => (
-            <CartaoAgenda key={a.responsavel.id} agenda={a} />
+            <CartaoAgenda key={a.responsavel.id} agenda={a} aoMarcarFolga={marcarFolga} />
           ))}
         </div>
       )}
 
       <p className="mt-6 text-xs text-tinta-fraca">
-        O realizado sai dos movimentos registrados na produção — ninguém digita quanto fez. O saldo zera toda segunda,
-        de propósito: dívida acumulada de mês inteiro vira número que ninguém olha.
+        O realizado sai dos movimentos registrados na produção — ninguém digita quanto fez. O saldo zera toda
+        segunda, de propósito: dívida acumulada de mês inteiro vira número que ninguém olha. Dia de folga não é
+        cobrado — sem isso, faltar na quarta tornaria a meta de quinta impossível por uma dívida que não é da
+        pessoa.
       </p>
     </>
   )

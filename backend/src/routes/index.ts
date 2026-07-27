@@ -10,6 +10,10 @@ import * as lotes from '../services/lote.service'
 import * as planejamento from '../services/planejamento.service'
 import * as agenda from '../services/agenda.service'
 import * as precos from '../services/preco.service'
+import * as queimas from '../services/queima.service'
+import * as vendas from '../services/venda.service'
+import * as encomendas from '../services/encomenda.service'
+import * as fotos from '../services/foto.service'
 import {
   categoriaSchema,
   corSchema,
@@ -27,6 +31,14 @@ import {
   cancelarLoteSchema,
   custoPecaSchema,
   canalVendaSchema,
+  segundaSchema,
+  folgaSchema,
+  queimaSchema,
+  statusQueimaSchema,
+  vendaSchema,
+  importarVendasSchema,
+  encomendaSchema,
+  fotoSchema,
 } from '../schemas'
 
 /** Embrulha handler async para que qualquer throw caia no middleware de erro. */
@@ -221,6 +233,13 @@ rotas.post(
   }),
 )
 rotas.post(
+  '/lotes/:id/segunda',
+  rota(async (req, res) => {
+    const dados = segundaSchema.parse(req.body)
+    res.json(await lotes.registrarSegunda({ ...dados, loteId: req.params.id }, req.sessao!))
+  }),
+)
+rotas.post(
   '/lotes/:id/dividir',
   rota(async (req, res) => {
     const dados = divisaoSchema.parse(req.body)
@@ -238,11 +257,126 @@ rotas.post(
 // ── Planejamento (Fase 2) ───────────────────────────────
 rotas.get('/planejamento', rota(async (_req, res) => void res.json(await planejamento.sugerir())))
 
+// ── Forno: a fila e as fornadas ─────────────────────────
+rotas.get('/queimas/fila', rota(async (_req, res) => void res.json(await queimas.filaDasQueimas())))
+rotas.get(
+  '/queimas',
+  rota(async (req, res) => {
+    const { status } = req.query as Record<string, string | undefined>
+    res.json(await queimas.listarQueimas({ status }))
+  }),
+)
+rotas.post(
+  '/queimas',
+  rota(async (req, res) => {
+    res.status(201).json(await queimas.abrirQueima(queimaSchema.parse(req.body)))
+  }),
+)
+rotas.patch(
+  '/queimas/:id/status',
+  rota(async (req, res) => {
+    const { status } = statusQueimaSchema.parse(req.body)
+    res.json(await queimas.atualizarStatusQueima(req.params.id, status))
+  }),
+)
+
+// ── Vendas: o lado que faltava do briefing ──────────────
+rotas.get(
+  '/vendas',
+  rota(async (req, res) => {
+    const { competencia, pecaId } = req.query as Record<string, string | undefined>
+    res.json(await vendas.listarVendas({ competencia, pecaId }))
+  }),
+)
+rotas.get(
+  '/vendas/comparativo',
+  rota(async (_req, res) => void res.json(await vendas.compararProducaoComVendas())),
+)
+rotas.post(
+  '/vendas',
+  rota(async (req, res) => void res.status(201).json(await vendas.salvarVenda(vendaSchema.parse(req.body)))),
+)
+rotas.post(
+  '/vendas/importar',
+  rota(async (req, res) => {
+    const { conteudo, canalId } = importarVendasSchema.parse(req.body)
+    res.json(await vendas.importarVendas(conteudo, canalId ?? null))
+  }),
+)
+rotas.delete(
+  '/vendas/:id',
+  rota(async (req, res) => {
+    await vendas.apagarVenda(req.params.id)
+    res.status(204).end()
+  }),
+)
+
+// ── Encomendas ──────────────────────────────────────────
+rotas.get(
+  '/encomendas',
+  rota(async (req, res) => {
+    const { status } = req.query as Record<string, string | undefined>
+    res.json(await encomendas.listarEncomendas({ status }))
+  }),
+)
+rotas.get(
+  '/encomendas/:id',
+  rota(async (req, res) => void res.json(await encomendas.obterEncomenda(req.params.id))),
+)
+rotas.post(
+  '/encomendas',
+  rota(async (req, res) => {
+    res.status(201).json(await encomendas.criarEncomenda(encomendaSchema.parse(req.body)))
+  }),
+)
+rotas.put(
+  '/encomendas/:id',
+  rota(async (req, res) => {
+    res.json(await encomendas.atualizarEncomenda(req.params.id, encomendaSchema.partial().parse(req.body)))
+  }),
+)
+rotas.delete(
+  '/encomendas/:id',
+  rota(async (req, res) => {
+    await encomendas.apagarEncomenda(req.params.id)
+    res.status(204).end()
+  }),
+)
+
+// ── Fila de fotografia (a etapa da Gabi) ────────────────
+rotas.get('/fotos', rota(async (_req, res) => void res.json(await fotos.filaDeFotos())))
+rotas.patch(
+  '/fotos/:id',
+  rota(async (req, res) => void res.json(await fotos.atualizarFoto(req.params.id, fotoSchema.parse(req.body)))),
+)
+rotas.post(
+  '/fotos/:id/avancar',
+  rota(async (req, res) => void res.json(await fotos.avancarFoto(req.params.id))),
+)
+
 // ── Tarefas diárias ─────────────────────────────────────
 rotas.get('/agenda', rota(async (_req, res) => void res.json(await agenda.agendaDoDia())))
 rotas.get(
   '/agenda/:responsavelId',
   rota(async (req, res) => void res.json(await agenda.agendaDoResponsavel(req.params.responsavelId))),
+)
+rotas.get(
+  '/folgas',
+  rota(async (req, res) => {
+    const { responsavelId } = req.query as Record<string, string | undefined>
+    res.json(await agenda.listarFolgas(responsavelId))
+  }),
+)
+rotas.post(
+  '/folgas',
+  rota(async (req, res) => void res.status(201).json(await agenda.registrarFolga(folgaSchema.parse(req.body)))),
+)
+rotas.delete(
+  '/folgas/:id',
+  rota(async (req, res) => {
+    await agenda.apagarFolga(req.params.id)
+    res.status(204).end()
+  }),
 )
 
 // ── Precificação (Fase 4) ───────────────────────────────

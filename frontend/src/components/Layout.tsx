@@ -20,11 +20,16 @@ import {
   Users,
   Wrench,
   Boxes,
+  Flame,
+  Camera,
+  ClipboardCheck,
+  TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '../store/auth'
 import { EVENTO_ATUALIZAR } from '../lib/useAutoRefresh'
 import { TECLA_ATALHO } from '../lib/plataforma'
 import { Tecla } from './ui'
+import { AvisoFila } from './AvisoFila'
 
 type ItemMenu = { para: string; rotulo: string; icone: typeof Package; somenteAdmin?: boolean }
 type GrupoMenu = { titulo: string; itens: ItemMenu[] }
@@ -37,6 +42,9 @@ const GRUPOS: GrupoMenu[] = [
       { para: '/planejamento', rotulo: 'Planejamento', icone: ClipboardList },
       { para: '/producao', rotulo: 'Quadro de produção', icone: Boxes },
       { para: '/meu-dia', rotulo: 'Tarefas do dia', icone: CalendarCheck },
+      { para: '/forno', rotulo: 'Forno', icone: Flame },
+      { para: '/encomendas', rotulo: 'Encomendas', icone: ClipboardCheck },
+      { para: '/fotos', rotulo: 'Fotos', icone: Camera },
       { para: '/historico', rotulo: 'Histórico', icone: History },
       { para: '/pecas', rotulo: 'Peças', icone: Package },
     ],
@@ -44,6 +52,7 @@ const GRUPOS: GrupoMenu[] = [
   {
     titulo: 'Preços',
     itens: [
+      { para: '/vendas', rotulo: 'Vendas e cobertura', icone: TrendingUp },
       { para: '/precos', rotulo: 'Preços por canal', icone: Tags },
       { para: '/canais', rotulo: 'Canais de venda', icone: Store },
     ],
@@ -321,6 +330,7 @@ export function Layout() {
           CabecalhoPagina já segura a linha num comprimento legível.
         */}
         <main className="relative z-10 mx-auto w-full max-w-[100rem] flex-1 px-4 py-7 sm:px-6">
+          <AvisoFila />
           <Outlet />
         </main>
       </div>

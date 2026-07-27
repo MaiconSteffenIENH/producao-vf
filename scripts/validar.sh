@@ -46,6 +46,17 @@ passo "Backend — gerar Prisma Client"
 passo "Backend — typecheck (tsc)"
 ( cd backend && npx tsc --noEmit )
 
+# Rede extra para o caso de o Prisma Client não poder ser gerado (ambiente sem
+# acesso a binaries.prisma.sh). Sem o client, `prisma.qualquerCoisa` vira `any`
+# e um campo escrito errado compila liso. Este verificador lê o schema pelo
+# parser WASM e confere nome por nome. Roda sempre: é rápido e pega o que o
+# compilador não pega quando o client está desatualizado.
+passo "Backend — nomes de modelo e campo batem com o schema"
+if node scripts/conferir-campos-prisma.mjs; then :; else
+  aviso "Há nome de modelo ou campo fora do schema (acima)."
+  exit 1
+fi
+
 passo "Backend — testes de unidade (regra pura, sem banco)"
 ( cd backend && npm run test:unidade )
 
@@ -61,6 +72,14 @@ else
   aviso "Sem banco de teste no ar — pulando esta bateria."
   aviso "O CI do GitHub roda ela a cada push, então nada fica sem cobertura."
   aviso "Para rodar aqui, aponte DATABASE_URL_TESTE para um Postgres descartável."
+fi
+
+passo "Migrações — aplicam limpo e batem com o schema"
+if banco_de_teste_no_ar; then
+  node scripts/conferir-schema.mjs "$URL_TESTE"
+else
+  aviso "Sem banco no ar — pulando a conferência de migração contra Postgres."
+  aviso "O CI do GitHub roda ela a cada push."
 fi
 
 passo "Frontend — typecheck (tsc -b)"

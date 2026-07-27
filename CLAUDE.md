@@ -23,11 +23,32 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 6. **O saldo do lote NÃO é um campo — é a soma do livro-razão.** `MovimentoLote` é append-only: entrada = `etapaDestinoId`, saída = `etapaOrigemId`. Movimentação parcial, perda e divisão saem de graça disso, e o saldo nunca discorda do histórico porque ele *é* o histórico. Erro se corrige com movimento novo, nunca editando ou apagando.
 7. **Esmaltar parte de um lote divide o lote sozinho.** Se 20 de 40 vão para Pistache, nasce um lote-filho com a cor e o pai continua neutro em biscoito. Sem isso o sistema teria que escolher entre mentir a cor do resto ou proibir a operação mais comum do ateliê.
 8. **Perda medida ganha da perda estimada na precificação** — mas só com amostra mínima (30 peças). Um lote azarado de 6 viraria "50% de perda" e envenenaria o preço.
-9. **Meta diária tem saldo rolante semanal, e zera na segunda.** Dívida acumulada de mês inteiro vira número que ninguém olha.
+9. **Meta diária tem saldo rolante semanal, e zera na segunda.** Dívida acumulada de mês inteiro vira número que ninguém olha. **Dia de folga não é cobrado**: sem isso, faltar na quarta tornava a meta de quinta impossível por uma dívida que não era da pessoa — o mesmo modo de falha do reset semanal, em escala menor.
+10. **O forno é CARGA, não etapa.** Queima junta peças de vários lotes, ocupa volume fixo e trava o forno ~2 dias. Peça não espera o forno — espera o forno **encher**. Daí sai a sugestão que nenhum ateliê calcula de cabeça: "faltam 12 para fechar a carga, e essas 12 adiantam as outras 68". A capacidade vem do responsável `tipo = forno` **daquela etapa** (o ateliê tem um forno para a 1ª queima e outro para a 2ª), e biscoito × esmalte se decide pela posição em relação à etapa que define a cor — nunca pelo nome nem por número de ordem cravado.
+11. **O plano infla pela perda.** "Faltam 50" com 12% de perda vira "começar 57". Não é somar a perda, é dividir pelo aproveitamento: 50 ÷ 0,88. Mesma preferência da precificação — medida quando há amostra, estimada quando não há.
+12. **Biscoito é alocado, não oferecido em duplicidade.** 20 peças em estoque não viram sugestão de esmaltar 20 em três cores. `alocarBiscoito()` reparte com saldo corrente, atendendo primeiro a cor **zerada** (é a que sumiu da loja) e, dentro dela, quem precisa de **menos** (assim mais cores voltam para a prateleira).
+13. **Segunda qualidade é um terceiro destino**, não perda. Peça com defeito pequeno vende com desconto; contá-la como perda sumiria com estoque que existe, inflaria a taxa e por ela contaminaria o custo de todas as outras peças. Vai para etapa `tipo = segunda`, então continua contando como saldo.
+14. **Peça pronta sem foto não é peça vendável.** O ciclo (`pendente → fotografado → enviado → editado → publicado`) mora em `PecaCor` — granularidade peça+cor, não lote: um Bowl Pistache fotografado uma vez serve toda fornada futura. O que precisa de foto nova é combinação que nunca existiu.
+15. **Escrita de produção passa pela fila offline.** O ateliê tem sinal ruim. `enviarComFila()` gera a chave de idempotência no CLIENTE antes de sair; o backend reconhece a chave e devolve o que já gravou em vez de gravar de novo. Num livro-razão append-only isso é decisivo: duplicata não se apaga, se corrige com estorno.
 
 ## Onde mora a regra pura
 
-`backend/src/lib/precificacao.ts` (conta de preço, perda e faixa) e `backend/src/lib/saldos.ts` (agregação do livro-razão) não importam Prisma de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 125 testes em ~3s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+
+| arquivo | o que decide |
+|---|---|
+| `precificacao.ts` | custo, diluição da perda e faixa de taxa do canal |
+| `saldos.ts` | agregação do livro-razão em saldo por etapa |
+| `planejamento-calculo.ts` | alocação do biscoito e inflação pela perda |
+| `queima.ts` | ocupação do forno, "faltam N para fechar", montagem da carga |
+| `cobertura.ts` | velocidade de venda, cobertura em semanas, mínimo sugerido |
+| `previsao.ts` | faixa de dias até ficar pronto, e se cabe no prazo da encomenda |
+| `insumos.ts` | consumo do plano e o que comprar |
+| `agenda-calculo.ts` | meta diária com saldo rolante e folga |
+| `csv-vendas.ts` | leitura da planilha do marketplace |
+| `plural.ts` | plural do português (gêmeo de `frontend/src/lib/format.ts`) |
+
+**Testes de unidade ficam em `backend/tests/unidade/`** e o vitest pega a pasta inteira. A configuração já listou arquivo por arquivo, e isso deixou um teste novo existir sem nunca rodar — o comando dizia "passou". Teste que não roda é pior que teste que não existe.
 
 ## Regras de código
 
@@ -39,7 +60,8 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 6. **Busca por nome é acento-insensível**: coluna `nome_busca` preenchida com `normalizarBusca()` (`backend/src/lib/busca.ts`), espelhada em `frontend/src/lib/format.ts`. Teclado sem acento precisa achar "Xícara".
 7. **Endpoint GET novo entra no smoke test** (`backend/tests/smoke.test.ts`).
 8. **Backend leniente, regra no service**: linha em branco de formulário dinâmico chega ao backend; o zod aceita e o service filtra/dedup/rejeita com 409 ou 422. Schema rígido devolve 400 antes do service poder limpar.
-9. **Migração com SQL manual** (trigger, extensão, backfill): `npx prisma migrate dev --create-only` e editar o SQL. As migrações rodam sozinhas no deploy do Render.
+9. **Migração com SQL manual** (trigger, extensão, backfill): `npx prisma migrate dev --create-only` e editar o SQL. As migrações rodam sozinhas no deploy do Render. **Se o ambiente não alcançar `binaries.prisma.sh`** (403 em sandbox), o Prisma CLI não roda: escreva a migração à mão e rode `node scripts/conferir-schema.mjs <url>`, que aplica tudo num banco limpo e compara coluna a coluna com o DMMF (lido pelo parser WASM, que não precisa de binário). Nesse cenário o `tsc` também perde a inferência do client — `node scripts/conferir-campos-prisma.mjs` confere nome de modelo e de campo, que é o que o compilador deixaria passar.
+11. **Seed roda de novo em banco que já existe.** Por isso `update` é PARCIAL: sobrescrever tudo apagaria os ajustes da Vera (nome de etapa, capacidade real do forno). Mas campo novo, que nasceu nulo na migração, precisa ser preenchido uma vez — senão o recurso fica inerte e ninguém entende por quê. A regra: só preenche o que ainda não tem valor.
 10. **Mobile primeiro**: testar em ~375px. Cabeçalho de página usa `flex flex-col gap-3 sm:flex-row …` — `flex items-center justify-between` puro espreme o título na vertical no celular. Fonte de input não desce de 16px no mobile (o iOS dá zoom e a tela abre ampliada).
 
 ## Detalhe do domínio que a interface precisa respeitar

@@ -6,6 +6,7 @@ import { Toaster } from './components/Toaster'
 import { PaletaComando } from './components/PaletaComando'
 import { Carregando } from './components/ui'
 import { useAuth } from './store/auth'
+import { iniciarFilaOffline } from './lib/filaOffline'
 
 // Toda página é chunk lazy — import estático volta pro bundle inicial e
 // engorda o primeiro carregamento no 4G do ateliê.
@@ -15,6 +16,10 @@ const Pecas = lazy(() => import('./pages/Pecas').then((m) => ({ default: m.Pecas
 const Producao = lazy(() => import('./pages/Producao').then((m) => ({ default: m.Producao })))
 const Planejamento = lazy(() => import('./pages/Planejamento').then((m) => ({ default: m.Planejamento })))
 const MeuDia = lazy(() => import('./pages/MeuDia').then((m) => ({ default: m.MeuDia })))
+const Queimas = lazy(() => import('./pages/Queimas').then((m) => ({ default: m.Queimas })))
+const Vendas = lazy(() => import('./pages/Vendas').then((m) => ({ default: m.Vendas })))
+const Fotos = lazy(() => import('./pages/Fotos').then((m) => ({ default: m.Fotos })))
+const Encomendas = lazy(() => import('./pages/Encomendas').then((m) => ({ default: m.Encomendas })))
 const Historico = lazy(() => import('./pages/Historico').then((m) => ({ default: m.Historico })))
 const Precos = lazy(() => import('./pages/Precos').then((m) => ({ default: m.Precos })))
 const Canais = lazy(() => import('./pages/Canais').then((m) => ({ default: m.Canais })))
@@ -50,6 +55,9 @@ export function App() {
     void recarregarPerfil()
   }, [recarregarPerfil])
 
+  // reenvio do que foi registrado sem sinal no ateliê
+  useEffect(() => iniciarFilaOffline(), [])
+
   return (
     <ErrorBoundary>
       <BrowserRouter>
@@ -68,6 +76,10 @@ export function App() {
               <Route path="/planejamento" element={<Planejamento />} />
               <Route path="/producao" element={<Producao />} />
               <Route path="/meu-dia" element={<MeuDia />} />
+              <Route path="/forno" element={<Queimas />} />
+              <Route path="/encomendas" element={<Encomendas />} />
+              <Route path="/fotos" element={<Fotos />} />
+              <Route path="/vendas" element={<Vendas />} />
               <Route path="/historico" element={<Historico />} />
               <Route path="/precos" element={<Precos />} />
               <Route path="/canais" element={<Canais />} />

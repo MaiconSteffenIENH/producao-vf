@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, Boxes, Plus, Scissors } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Scissors } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { plural } from '../lib/format'
+import { enviarComFila } from '../lib/filaOffline'
 import {
   Botao,
   CabecalhoPagina,
@@ -35,7 +36,7 @@ type Coluna = {
   cartoes: Cartao[]
 }
 
-type Acao = 'avancar' | 'perda' | 'dividir'
+type Acao = 'avancar' | 'perda' | 'segunda' | 'dividir'
 
 const CORES_TIPO: Record<string, string> = {
   producao: '#BBA58C',
@@ -211,27 +212,44 @@ export function Producao() {
     if (!acao) return
     setEnviando(true)
     try {
+      // as três escritas de produção passam pela fila: no ateliê o sinal cai, e
+      // registro perdido é o que faz o oleiro parar de usar o sistema
       if (acao.tipo === 'avancar') {
-        const { data } = await api.post(`/lotes/${acao.cartao.id}/avancar`, {
-          etapaOrigemId: acao.etapaId,
-          etapaDestinoId: form.etapaDestinoId,
-          quantidade: form.quantidade,
-          corId: form.corId || null,
-          responsavelId: form.responsavelId || null,
-          motivo: form.motivo || null,
-        })
-        avisar.ok(
-          data.loteCriado
-            ? `Movido. Parte do lote virou ${data.loteCriado.codigo} com a cor escolhida.`
-            : 'Movido.',
+        const r = await enviarComFila(
+          'post',
+          `/lotes/${acao.cartao.id}/avancar`,
+          {
+            etapaOrigemId: acao.etapaId,
+            etapaDestinoId: form.etapaDestinoId,
+            quantidade: form.quantidade,
+            corId: form.corId || null,
+            responsavelId: form.responsavelId || null,
+            motivo: form.motivo || null,
+          },
+          `Mover ${form.quantidade} de ${acao.cartao.peca.nome} (${acao.cartao.codigo})`,
         )
-      } else if (acao.tipo === 'perda') {
-        await api.post(`/lotes/${acao.cartao.id}/perda`, {
-          etapaId: acao.etapaId,
-          quantidade: form.quantidade,
-          motivo: form.motivo,
-        })
-        avisar.ok('Perda registrada.')
+        const criado = (r.dados as { loteCriado?: { codigo: string } } | undefined)?.loteCriado
+        avisar.ok(
+          r.enfileirado
+            ? 'Sem conexão — guardado. Sobe sozinho quando a rede voltar.'
+            : criado
+              ? `Movido. Parte do lote virou ${criado.codigo} com a cor escolhida.`
+              : 'Movido.',
+        )
+      } else if (acao.tipo === 'perda' || acao.tipo === 'segunda') {
+        const r = await enviarComFila(
+          'post',
+          `/lotes/${acao.cartao.id}/${acao.tipo}`,
+          { etapaId: acao.etapaId, quantidade: form.quantidade, motivo: form.motivo },
+          `${acao.tipo === 'perda' ? 'Perda' : 'Segunda'} de ${form.quantidade} em ${acao.cartao.codigo}`,
+        )
+        avisar.ok(
+          r.enfileirado
+            ? 'Sem conexão — guardado. Sobe sozinho quando a rede voltar.'
+            : acao.tipo === 'perda'
+              ? 'Perda registrada.'
+              : 'Separado como segunda qualidade.',
+        )
       } else {
         const { data } = await api.post(`/lotes/${acao.cartao.id}/dividir`, {
           etapaId: acao.etapaId,
@@ -424,6 +442,13 @@ export function Producao() {
                           <AlertTriangle size={13} /> Perda
                         </button>
                         <button
+                          onClick={() => abrirAcao('segunda', cartao, coluna.etapa.id)}
+                          title="Peça com defeito pequeno que ainda vende — não é perda"
+                          className="inline-flex items-center gap-1 rounded-lg border border-borda px-2 py-1 text-xs text-tinta hover:bg-superficie-2"
+                        >
+                          <BadgeMinus size={13} /> Segunda
+                        </button>
+                        <button
                           onClick={() => abrirAcao('dividir', cartao, coluna.etapa.id)}
                           className="inline-flex items-center gap-1 rounded-lg border border-borda px-2 py-1 text-xs text-tinta hover:bg-superficie-2"
                         >
@@ -499,7 +524,9 @@ export function Producao() {
             ? `Mover ${acao?.cartao.codigo}`
             : acao?.tipo === 'perda'
               ? `Registrar perda em ${acao?.cartao.codigo}`
-              : `Dividir ${acao?.cartao.codigo}`
+              : acao?.tipo === 'segunda'
+                ? `Separar segunda qualidade de ${acao?.cartao.codigo}`
+                : `Dividir ${acao?.cartao.codigo}`
         }
         largura="max-w-lg"
       >
@@ -585,13 +612,25 @@ export function Producao() {
             )}
 
             <Campo
-              rotulo={acao.tipo === 'perda' ? 'O que aconteceu' : 'Observação'}
-              dica={acao.tipo === 'perda' ? 'Esse texto vira o histórico da perda — vale ser específico.' : undefined}
+              rotulo={
+                acao.tipo === 'perda'
+                  ? 'O que aconteceu'
+                  : acao.tipo === 'segunda'
+                    ? 'Qual o defeito'
+                    : 'Observação'
+              }
+              dica={
+                acao.tipo === 'perda'
+                  ? 'Esse texto vira o histórico da perda — vale ser específico.'
+                  : acao.tipo === 'segunda'
+                    ? 'Segunda qualidade continua sendo estoque: vende com desconto e NÃO entra na taxa de perda.'
+                    : undefined
+              }
             >
               <Textarea
                 rows={2}
                 maxLength={300}
-                required={acao.tipo === 'perda'}
+                required={acao.tipo === 'perda' || acao.tipo === 'segunda'}
                 value={form.motivo}
                 onChange={(e) => setForm({ ...form, motivo: e.target.value })}
               />

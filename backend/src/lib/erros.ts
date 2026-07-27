@@ -13,3 +13,5 @@ export class HttpError extends Error {
 export const naoEncontrado = (o: string) => new HttpError(404, `${o} não encontrado.`)
 export const conflito = (msg: string) => new HttpError(409, msg)
 export const invalido = (msg: string, detalhes?: unknown) => new HttpError(422, msg, detalhes)
+/** Regra do ateliê violada — não é erro de digitação, é o processo dizendo não. */
+export const regraDeNegocio = (msg: string) => new HttpError(422, msg)

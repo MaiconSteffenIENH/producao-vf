@@ -90,6 +90,9 @@ model Cor {
   pecas      PecaCor[]
   lotes      Lote[]
   movimentos MovimentoLote[]
+  insumos    PecaInsumo[]
+  vendas     Venda[]
+  itensEncomenda EncomendaItem[]
 
   @@map("cores")
 }
@@ -104,6 +107,13 @@ model Responsavel {
   /// peças/dia — base da meta diária com saldo rolante (o que sobra
   /// de hoje soma amanhã; o que passou da meta abate do dia seguinte)
   capacidadeDiaria Int? @map("capacidade_diaria")
+  /// Só para `tipo = forno`: quantas peças cabem em UMA fornada.
+  /// Não é capacidade por dia — forno não trabalha por dia, trabalha por
+  /// carga. Uma peça não espera o forno, espera o forno encher.
+  capacidadeCarga  Int? @map("capacidade_carga")
+  /// Só para `tipo = forno`: horas do fechar a porta ao poder abrir,
+  /// já contando o resfriamento. Ninguém abre forno antes: trinca.
+  horasPorQueima   Int? @map("horas_por_queima")
   /// login opcional: o Oleiro abre o app e vê só a fila dele
   usuarioId String?  @unique @map("usuario_id") @db.Uuid
   ativo     Boolean  @default(true)
@@ -114,16 +124,50 @@ model Responsavel {
   roteiros      RoteiroEtapa[]
   pecasIniciais Peca[]          @relation("responsavelInicial")
   movimentos    MovimentoLote[]
+  folgas        Folga[]
+  queimas       Queima[]
 
   @@map("responsaveis")
+}
+
+/// Dia em que o responsável não trabalha.
+///
+/// Sem isto, o saldo rolante da agenda transforma folga em dívida: o oleiro
+/// falta na quarta e a meta de quinta fica impossível. O reset de segunda foi
+/// feito exatamente para dívida não se acumular — folga é o mesmo problema
+/// dentro da semana.
+model Folga {
+  id            String   @id @default(uuid()) @db.Uuid
+  responsavelId String   @map("responsavel_id") @db.Uuid
+  /// dia cheio, sem hora — comparado por data no fuso de São Paulo
+  data          DateTime @db.Date
+  /// folga | feriado | atestado | outro
+  motivo        String   @default("folga")
+  observacao    String?
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  responsavel Responsavel @relation(fields: [responsavelId], references: [id], onDelete: Cascade)
+
+  @@unique([responsavelId, data])
+  @@index([data])
+  @@map("folgas")
 }
 
 model Etapa {
   id                  String   @id @default(uuid()) @db.Uuid
   nome                String   @unique
-  /// producao | secagem | queima | estoque | final
+  /// producao | secagem | queima | estoque | final | segunda | foto
+  ///
+  /// `segunda` é destino terminal, como `final`: peça com defeito pequeno que
+  /// vende com desconto. Jogar isso em perda faz três estragos ao mesmo tempo
+  /// — some com estoque que existe, infla a taxa de perda e por ela contamina
+  /// o custo (lib/precificacao.ts usa a perda medida).
   tipo                String   @default("producao")
   ordemPadrao         Int      @default(0) @map("ordem_padrao")
+  /// Etapa que só anda quando o forno enche. O lote não espera a etapa,
+  /// espera a carga fechar — é o que a previsão de data precisa saber para
+  /// não prometer data que o ateliê não cumpre.
+  aguardaCarga        Boolean  @default(false) @map("aguarda_carga")
   /// etapa em que a cor do lote é decidida (Esmaltação).
   /// Antes dela o lote não tem cor — é biscoito neutro.
   defineCor           Boolean  @default(false) @map("define_cor")
@@ -138,6 +182,7 @@ model Etapa {
   roteiros            RoteiroEtapa[]
   movimentosOrigem    MovimentoLote[] @relation("movOrigem")
   movimentosDestino   MovimentoLote[] @relation("movDestino")
+  insumos             PecaInsumo[]
 
   @@map("etapas")
 }
@@ -166,9 +211,40 @@ model Peca {
   cores              PecaCor[]
   lotes              Lote[]
   custo              CustoPeca?
+  insumos            PecaInsumo[]
+  vendas             Venda[]
+  itensEncomenda     EncomendaItem[]
 
   @@index([categoriaId])
   @@map("pecas")
+}
+
+/// Quanto de cada insumo uma peça consome.
+///
+/// Sem isto, "comprar esmalte" só dispara quando o estoque JÁ está baixo —
+/// reação, não previsão. Esmalte tem prazo de entrega; descobrir a falta no
+/// dia da esmaltação é tarde. Com o consumo, a compra vira
+/// "o plano do mês pede 14 kg de Pistache e há 1,2 kg".
+model PecaInsumo {
+  id             String  @id @default(uuid()) @db.Uuid
+  pecaId         String  @map("peca_id") @db.Uuid
+  materiaPrimaId String  @map("materia_prima_id") @db.Uuid
+  /// na unidade da matéria-prima (kg, g, un)
+  quantidadePorPeca Decimal @map("quantidade_por_peca") @db.Decimal(12, 4)
+  /// quando o insumo é consumido — serve para saber se a compra é urgente
+  /// (esmalte gasto na esmaltação) ou pode esperar (argila, gasta no início)
+  etapaId        String? @map("etapa_id") @db.Uuid
+  /// insumo que só vale para uma cor: esmalte Pistache só sai em lote Pistache
+  corId          String? @map("cor_id") @db.Uuid
+
+  peca         Peca         @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  materiaPrima MateriaPrima @relation(fields: [materiaPrimaId], references: [id], onDelete: Cascade)
+  etapa        Etapa?       @relation(fields: [etapaId], references: [id])
+  cor          Cor?         @relation(fields: [corId], references: [id])
+
+  @@unique([pecaId, materiaPrimaId, corId])
+  @@index([materiaPrimaId])
+  @@map("peca_insumos")
 }
 
 /// O fluxo próprio de cada peça. A Xícara Bojudinha passa por alças e
@@ -198,10 +274,28 @@ model PecaCor {
   qtdMinimaDesejada Int     @default(0) @map("qtd_minima_desejada")
   ativo             Boolean @default(true)
 
+  /*
+   * O CICLO DA FOTO — a etapa de produção que ninguém tinha visto.
+   *
+   * Peça pronta sem foto não é peça vendável. O quadro mostrava tudo verde em
+   * "Pronto" enquanto a peça não estava anunciada em lugar nenhum. Com a Gabi
+   * na Espanha isso deixa de ser "ela faz depois" e vira fila com fuso no meio.
+   *
+   * A granularidade certa é AQUI, em peça+cor, e não no lote: um Bowl Pistache
+   * fotografado uma vez serve toda fornada futura. O que precisa de foto nova
+   * é combinação que nunca existiu.
+   */
+  /// pendente | fotografado | enviado | editado | publicado
+  fotoStatus        String  @default("pendente") @map("foto_status")
+  fotoUrl           String? @map("foto_url")
+  fotoObservacao    String? @map("foto_observacao")
+  fotoAtualizadaEm  DateTime? @map("foto_atualizada_em")
+
   peca Peca @relation(fields: [pecaId], references: [id], onDelete: Cascade)
   cor  Cor  @relation(fields: [corId], references: [id])
 
   @@unique([pecaId, corId])
+  @@index([fotoStatus])
   @@map("peca_cores")
 }
 
@@ -217,8 +311,12 @@ model MateriaPrima {
   estoqueAtual  Decimal  @default(0) @map("estoque_atual") @db.Decimal(10, 3)
   estoqueMinimo Decimal  @default(0) @map("estoque_minimo") @db.Decimal(10, 3)
   fornecedor    String?
+  /// dias entre pedir e receber — sem isto a compra "urgente" chega tarde
+  prazoEntregaDias Int   @default(7) @map("prazo_entrega_dias")
   ativo         Boolean  @default(true)
   criadoEm      DateTime @default(now()) @map("criado_em")
+
+  insumos PecaInsumo[]
 
   @@map("materias_primas")
 }
@@ -241,9 +339,12 @@ model Lote {
   pecaId       String    @map("peca_id") @db.Uuid
   corId        String?   @map("cor_id") @db.Uuid
   quantidadeInicial Int  @map("quantidade_inicial")
-  /// planejamento | manual | divisao
+  /// planejamento | manual | divisao | encomenda
   origem       String    @default("manual")
   loteOrigemId String?   @map("lote_origem_id") @db.Uuid
+  /// quando o lote existe por causa de uma encomenda, ele herda o prazo dela
+  /// e passa na frente da produção de estoque no planejamento
+  encomendaId  String?   @map("encomenda_id") @db.Uuid
   observacao   String?
   iniciadoEm   DateTime  @default(now()) @map("iniciado_em")
   concluidoEm  DateTime? @map("concluido_em")
@@ -255,9 +356,12 @@ model Lote {
   loteOrigem  Lote?           @relation("divisao", fields: [loteOrigemId], references: [id])
   divisoes    Lote[]          @relation("divisao")
   movimentos  MovimentoLote[]
+  encomenda   Encomenda?      @relation(fields: [encomendaId], references: [id])
+  queimas     QueimaItem[]
 
   @@index([pecaId])
   @@index([corId])
+  @@index([encomendaId])
   @@map("lotes")
 }
 
@@ -272,7 +376,7 @@ model MovimentoLote {
   etapaOrigemId  String?  @map("etapa_origem_id") @db.Uuid
   etapaDestinoId String?  @map("etapa_destino_id") @db.Uuid
   quantidade     Int
-  /// inicio | avanco | perda | divisao_saida | divisao_entrada | estorno
+  /// inicio | avanco | perda | segunda | divisao_saida | divisao_entrada | estorno
   tipo           String
   /// preenchido quando o movimento passa pela etapa que define a cor
   corId          String?  @map("cor_id") @db.Uuid
@@ -280,6 +384,16 @@ model MovimentoLote {
   motivo         String?
   usuarioId      String?  @map("usuario_id") @db.Uuid
   usuarioNome    String   @map("usuario_nome")
+  /*
+   * Chave que o CLIENTE gera antes de mandar o movimento.
+   *
+   * O app é PWA e o ateliê tem sinal ruim: o oleiro registra 40 peças, a
+   * requisição sai, o sinal cai antes da resposta voltar, a fila local
+   * reenvia. Sem esta chave o reenvio grava 80. E num livro-razão
+   * append-only, movimento duplicado não se apaga — se corrige com estorno,
+   * o que suja o histórico para sempre.
+   */
+  chaveIdempotencia String? @unique @map("chave_idempotencia")
   criadoEm       DateTime @default(now()) @map("criado_em")
 
   lote         Lote         @relation(fields: [loteId], references: [id], onDelete: Cascade)
@@ -332,6 +446,8 @@ model CanalVenda {
 
   precos PrecoCanal[]
   faixas FaixaTaxaCanal[]
+
+  vendas Venda[]
 
   @@map("canais_venda")
 }
@@ -392,4 +508,130 @@ model FaixaTaxaCanal {
 
   @@index([canalId])
   @@map("faixas_taxa_canal")
+}
+
+// ═══════════════════════ Fase 4 — o que o processo pedia ═══════════════════════
+
+/// UMA FORNADA.
+///
+/// Queima não é etapa por onde a peça passa sozinha: é um evento em lote que
+/// junta peças de vários lotes, ocupa um volume fixo e trava o forno por ~2
+/// dias entre aquecer, queimar e esfriar. Modelar como etapa comum escondia
+/// três coisas: quando fica pronto, se cabe, e o maior risco de perda do
+/// ateliê (uma fornada de esmalte ruim leva a carga inteira).
+///
+/// A consequência que mais vale: peça não espera o forno, espera o forno
+/// ENCHER. Daí sai a sugestão que nenhum ateliê calcula de cabeça —
+/// "faltam 12 para fechar a carga; produzir essas 12 adianta as outras 68".
+model Queima {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// código curto para falar em voz alta: Q-0007
+  codigo      String    @unique
+  /// biscoito | esmalte
+  tipo        String
+  /// planejada | carregando | queimando | concluida | cancelada
+  status      String    @default("planejada")
+  fornoId     String?   @map("forno_id") @db.Uuid
+  /// cópia da capacidade do forno no momento em que a fornada foi aberta —
+  /// se a Vera trocar de forno depois, o histórico não muda de sentido
+  capacidade  Int
+  previstaPara DateTime? @map("prevista_para")
+  iniciadaEm  DateTime? @map("iniciada_em")
+  concluidaEm DateTime? @map("concluida_em")
+  observacao  String?
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+
+  forno Responsavel? @relation(fields: [fornoId], references: [id])
+  itens QueimaItem[]
+
+  @@index([status])
+  @@map("queimas")
+}
+
+/// Quanto de cada lote entrou nesta fornada.
+model QueimaItem {
+  id         String @id @default(uuid()) @db.Uuid
+  queimaId   String @map("queima_id") @db.Uuid
+  loteId     String @map("lote_id") @db.Uuid
+  quantidade Int
+
+  queima Queima @relation(fields: [queimaId], references: [id], onDelete: Cascade)
+  lote   Lote   @relation(fields: [loteId], references: [id], onDelete: Cascade)
+
+  @@unique([queimaId, loteId])
+  @@index([loteId])
+  @@map("queima_itens")
+}
+
+/// VENDA REALIZADA.
+///
+/// O briefing pedia "comparar produção com vendas" e isto não existia. Sem
+/// venda, `qtdMinimaDesejada` é um chute que a Vera dá uma vez e nunca revisa,
+/// e todo o planejamento pende dele: o sistema respondia "estou fazendo o que
+/// eu disse?" mas não "estou fazendo as coisas certas?".
+///
+/// Granularidade é o MÊS, de propósito. Mercado Livre e Shopee exportam
+/// planilha mensal; exigir data exata por pedido só criaria trabalho de
+/// digitação que ninguém faz. O que o planejamento precisa é tendência.
+model Venda {
+  id          String   @id @default(uuid()) @db.Uuid
+  pecaId      String   @map("peca_id") @db.Uuid
+  corId       String?  @map("cor_id") @db.Uuid
+  canalId     String?  @map("canal_id") @db.Uuid
+  /// AAAA-MM — o mês de competência
+  competencia String
+  quantidade  Int
+  valorTotal  Decimal? @map("valor_total") @db.Decimal(12, 2)
+  /// manual | importacao
+  origem      String   @default("manual")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  peca  Peca        @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  cor   Cor?        @relation(fields: [corId], references: [id])
+  canal CanalVenda? @relation(fields: [canalId], references: [id])
+
+  /// uma linha por peça+cor+canal+mês: reimportar a mesma planilha corrige
+  /// em vez de duplicar
+  @@unique([pecaId, corId, canalId, competencia])
+  @@index([competencia])
+  @@map("vendas")
+}
+
+/// ENCOMENDA COM PRAZO.
+///
+/// Não estava no briefing. Um jogo sob medida tem data e prioridade, e disputa
+/// o MESMO forno com a produção de estoque. Sem estar no sistema, encomenda
+/// vira post-it na parede que fura a fila sem ninguém saber por quê.
+model Encomenda {
+  id          String    @id @default(uuid()) @db.Uuid
+  codigo      String    @unique
+  cliente     String
+  contato     String?
+  /// aberta | em_producao | pronta | entregue | cancelada
+  status      String    @default("aberta")
+  entregarAte DateTime? @map("entregar_ate") @db.Date
+  observacao  String?
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+  entregueEm  DateTime? @map("entregue_em")
+
+  itens EncomendaItem[]
+  lotes Lote[]
+
+  @@index([status])
+  @@map("encomendas")
+}
+
+model EncomendaItem {
+  id          String @id @default(uuid()) @db.Uuid
+  encomendaId String @map("encomenda_id") @db.Uuid
+  pecaId      String @map("peca_id") @db.Uuid
+  corId       String? @map("cor_id") @db.Uuid
+  quantidade  Int
+
+  encomenda Encomenda @relation(fields: [encomendaId], references: [id], onDelete: Cascade)
+  peca      Peca      @relation(fields: [pecaId], references: [id])
+  cor       Cor?      @relation(fields: [corId], references: [id])
+
+  @@index([encomendaId])
+  @@map("encomenda_itens")
 }

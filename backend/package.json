@@ -29,6 +29,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@prisma/internals": "^6.19.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.17",
@@ -36,6 +37,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.0",
     "@types/supertest": "^7.2.0",
+    "pg": "^8.22.0",
     "prisma": "^6.8.0",
     "supertest": "^7.2.2",
     "tsx": "^4.19.2",

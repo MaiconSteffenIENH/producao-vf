@@ -33,25 +33,47 @@ const CORES = [
 
 const CATEGORIAS = ['Bowls', 'Café', 'Manteigueira Francesa', 'Pratos', 'Saladeiras', 'Utilitários']
 
-const RESPONSAVEIS = [
+const RESPONSAVEIS: {
+  nome: string
+  tipo: string
+  cor: string
+  capacidadeDiaria: number | null
+  capacidadeCarga?: number | null
+  horasPorQueima?: number | null
+}[] = [
   { nome: 'Oleiro', tipo: 'pessoa', cor: '#8C6E4F', capacidadeDiaria: 40 },
   { nome: 'Vera e Equipe', tipo: 'equipe', cor: '#BBA58C', capacidadeDiaria: 30 },
-  { nome: 'Forno 1ª', tipo: 'forno', cor: '#C4703B', capacidadeDiaria: null },
-  { nome: 'Forno 2ª', tipo: 'forno', cor: '#A03E2A', capacidadeDiaria: null },
+  // Forno tem capacidade por CARGA, não por dia — ele não trabalha por dia,
+  // trabalha por fornada. Os números são um chute inicial para o sistema não
+  // nascer mudo; a Vera ajusta com a medida do forno dela.
+  { nome: 'Forno 1ª', tipo: 'forno', cor: '#C4703B', capacidadeDiaria: null, capacidadeCarga: 80, horasPorQueima: 24 },
+  { nome: 'Forno 2ª', tipo: 'forno', cor: '#A03E2A', capacidadeDiaria: null, capacidadeCarga: 70, horasPorQueima: 30 },
 ]
 
-const ETAPAS = [
+const ETAPAS: {
+  nome: string
+  tipo: string
+  ordemPadrao: number
+  responsavel: string | null
+  defineCor?: boolean
+  estoqueIntermediario?: boolean
+  aguardaCarga?: boolean
+}[] = [
   { nome: 'Oleiro', tipo: 'producao', ordemPadrao: 10, responsavel: 'Oleiro' },
   { nome: 'Produção das alças', tipo: 'producao', ordemPadrao: 20, responsavel: 'Vera e Equipe' },
   { nome: 'Colagem', tipo: 'producao', ordemPadrao: 30, responsavel: 'Vera e Equipe' },
   { nome: 'Acabamento', tipo: 'producao', ordemPadrao: 40, responsavel: 'Vera e Equipe' },
   { nome: 'Equipe Vera', tipo: 'producao', ordemPadrao: 15, responsavel: 'Vera e Equipe' },
   { nome: 'Secagem', tipo: 'secagem', ordemPadrao: 50, responsavel: null },
-  { nome: '1ª Queima', tipo: 'queima', ordemPadrao: 60, responsavel: 'Forno 1ª' },
+  { nome: '1ª Queima', tipo: 'queima', ordemPadrao: 60, responsavel: 'Forno 1ª', aguardaCarga: true },
   { nome: 'Biscoito', tipo: 'estoque', ordemPadrao: 70, responsavel: null, estoqueIntermediario: true },
   { nome: 'Esmaltação', tipo: 'producao', ordemPadrao: 80, responsavel: 'Vera e Equipe', defineCor: true },
-  { nome: '2ª Queima', tipo: 'queima', ordemPadrao: 90, responsavel: 'Forno 2ª' },
+  { nome: '2ª Queima', tipo: 'queima', ordemPadrao: 90, responsavel: 'Forno 2ª', aguardaCarga: true },
   { nome: 'Pronto', tipo: 'final', ordemPadrao: 100, responsavel: null },
+  // Destino terminal para peça com defeito pequeno que ainda vende. Sem ela, a
+  // única saída era registrar como perda — e aí some estoque que existe e a
+  // taxa de perda infla, contaminando o custo de todas as outras peças.
+  { nome: 'Segunda qualidade', tipo: 'segunda', ordemPadrao: 110, responsavel: null },
 ]
 
 // Roteiros nomeados — o fluxo muda por peça, conforme o prompt da Gabi
@@ -210,30 +232,57 @@ async function main() {
     })
   }
 
-  // ── Responsáveis ────────────────────────────────────────
+  /*
+   * Responsáveis e etapas usam `update` PARCIAL, e não `update: {}`.
+   *
+   * O seed roda de novo em banco que já existe. Sobrescrever tudo apagaria os
+   * ajustes que a Vera fez (nome de etapa, ordem, capacidade real do forno).
+   * Mas campo NOVO, que nasceu nulo na migração, precisa ser preenchido uma vez
+   * — senão o recurso fica inerte e ninguém entende por quê. A regra: só
+   * preenche o que ainda não tem valor.
+   */
   for (const r of RESPONSAVEIS) {
-    await prisma.responsavel.upsert({
-      where: { nome: r.nome },
-      update: {},
-      create: { ...r, nomeBusca: normalizarBusca(r.nome) },
-    })
+    const existente = await prisma.responsavel.findUnique({ where: { nome: r.nome } })
+    if (!existente) {
+      await prisma.responsavel.create({ data: { ...r, nomeBusca: normalizarBusca(r.nome) } })
+      continue
+    }
+    const faltando: Record<string, unknown> = {}
+    if (r.capacidadeCarga != null && existente.capacidadeCarga == null) {
+      faltando.capacidadeCarga = r.capacidadeCarga
+    }
+    if (r.horasPorQueima != null && existente.horasPorQueima == null) {
+      faltando.horasPorQueima = r.horasPorQueima
+    }
+    if (Object.keys(faltando).length > 0) {
+      await prisma.responsavel.update({ where: { id: existente.id }, data: faltando })
+      console.log(`  ajustado: ${r.nome} (${Object.keys(faltando).join(', ')})`)
+    }
   }
 
   // ── Etapas ──────────────────────────────────────────────
   for (const e of ETAPAS) {
     const resp = e.responsavel ? await prisma.responsavel.findUnique({ where: { nome: e.responsavel } }) : null
-    await prisma.etapa.upsert({
-      where: { nome: e.nome },
-      update: {},
-      create: {
-        nome: e.nome,
-        tipo: e.tipo,
-        ordemPadrao: e.ordemPadrao,
-        defineCor: e.defineCor ?? false,
-        estoqueIntermediario: e.estoqueIntermediario ?? false,
-        responsavelPadraoId: resp?.id ?? null,
-      },
-    })
+    const existente = await prisma.etapa.findUnique({ where: { nome: e.nome } })
+    if (!existente) {
+      await prisma.etapa.create({
+        data: {
+          nome: e.nome,
+          tipo: e.tipo,
+          ordemPadrao: e.ordemPadrao,
+          defineCor: e.defineCor ?? false,
+          estoqueIntermediario: e.estoqueIntermediario ?? false,
+          aguardaCarga: e.aguardaCarga ?? false,
+          responsavelPadraoId: resp?.id ?? null,
+        },
+      })
+      continue
+    }
+    // etapa de queima que veio da versão anterior não sabia esperar carga
+    if (e.aguardaCarga && !existente.aguardaCarga) {
+      await prisma.etapa.update({ where: { id: existente.id }, data: { aguardaCarga: true } })
+      console.log(`  ajustado: etapa ${e.nome} agora aguarda carga do forno`)
+    }
   }
 
   // ── Peças + roteiro + cores disponíveis ────────────────
