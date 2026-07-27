@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Runtime: conexão pooled do Neon (com -pooler).
+  url      = env("DATABASE_URL")
+  // Migrações: conexão DIRETA (sem -pooler). O advisory lock do prisma migrate
+  // não sobrevive ao PgBouncer da pooled e estoura P1002.
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────── Acesso ───────────────────────────
+
+model Usuario {
+  id                 String   @id @default(uuid()) @db.Uuid
+  nome               String
+  email              String   @unique
+  senhaHash          String   @map("senha_hash")
+  papelId            String?  @map("papel_id") @db.Uuid
+  ativo              Boolean  @default(true)
+  // senha provisória: admin criou/resetou → o próximo login exige senha nova
+  precisaTrocarSenha Boolean  @default(false) @map("precisa_trocar_senha")
+  criadoEm           DateTime @default(now()) @map("criado_em")
+
+  papel        Papel?       @relation(fields: [papelId], references: [id])
+  // um usuário pode estar amarrado a um responsável da produção (o Oleiro tem login)
+  responsavel  Responsavel?
+
+  @@map("usuarios")
+}
+
+model Papel {
+  id         String   @id @default(uuid()) @db.Uuid
+  nome       String   @unique
+  admin      Boolean  @default(false)
+  // protegido = não pode ser apagado pela tela (gestao/producao/leitura)
+  protegido  Boolean  @default(false)
+  permissoes Json
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  usuarios Usuario[]
+
+  @@map("papeis")
+}
+
+model LogAtividade {
+  id          String   @id @default(uuid()) @db.Uuid
+  usuarioId   String?  @map("usuario_id") @db.Uuid
+  usuarioNome String   @map("usuario_nome")
+  metodo      String
+  recurso     String
+  caminho     String
+  entidadeId  String?  @map("entidade_id")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  @@index([criadoEm])
+  @@map("logs_atividade")
+}
+
+// ─────────────────────────── Cadastros ───────────────────────────
+
+model Categoria {
+  id       String   @id @default(uuid()) @db.Uuid
+  nome     String   @unique
+  ordem    Int      @default(0)
+  ativo    Boolean  @default(true)
+  criadoEm DateTime @default(now()) @map("criado_em")
+
+  pecas Peca[]
+
+  @@map("categorias")
+}
+
+/// Esmalte. O `hex` serve pro chip na interface, mas esmalte malhado
+/// (Branco vs. Pedra Sabão têm praticamente a MESMA cor média) só se
+/// distingue pela foto — por isso `amostraUrl` e `malhado` existem.
+model Cor {
+  id         String   @id @default(uuid()) @db.Uuid
+  nome       String   @unique
+  nomeBusca  String   @default("") @map("nome_busca")
+  hex        String   @default("#CCCCCC")
+  amostraUrl String?  @map("amostra_url")
+  malhado    Boolean  @default(false)
+  observacao String?
+  ativo      Boolean  @default(true)
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  pecas PecaCor[]
+
+  @@map("cores")
+}
+
+model Responsavel {
+  id        String   @id @default(uuid()) @db.Uuid
+  nome      String   @unique
+  nomeBusca String   @default("") @map("nome_busca")
+  /// pessoa | equipe | forno
+  tipo      String   @default("pessoa")
+  cor       String   @default("#BBA58C")
+  /// peças/dia — base da meta diária com saldo rolante (o que sobra
+  /// de hoje soma amanhã; o que passou da meta abate do dia seguinte)
+  capacidadeDiaria Int? @map("capacidade_diaria")
+  /// login opcional: o Oleiro abre o app e vê só a fila dele
+  usuarioId String?  @unique @map("usuario_id") @db.Uuid
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  usuario       Usuario?       @relation(fields: [usuarioId], references: [id])
+  etapasPadrao  Etapa[]
+  roteiros      RoteiroEtapa[]
+  pecasIniciais Peca[]         @relation("responsavelInicial")
+
+  @@map("responsaveis")
+}
+
+model Etapa {
+  id                  String   @id @default(uuid()) @db.Uuid
+  nome                String   @unique
+  /// producao | secagem | queima | estoque | final
+  tipo                String   @default("producao")
+  ordemPadrao         Int      @default(0) @map("ordem_padrao")
+  /// etapa em que a cor do lote é decidida (Esmaltação).
+  /// Antes dela o lote não tem cor — é biscoito neutro.
+  defineCor           Boolean  @default(false) @map("define_cor")
+  /// etapa que representa estoque parado (Biscoito) — o lote pode ficar aqui
+  /// indefinidamente até a demanda dizer de que cor ele vai ser
+  estoqueIntermediario Boolean @default(false) @map("estoque_intermediario")
+  responsavelPadraoId String?  @map("responsavel_padrao_id") @db.Uuid
+  ativo               Boolean  @default(true)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+
+  responsavelPadrao Responsavel?   @relation(fields: [responsavelPadraoId], references: [id])
+  roteiros          RoteiroEtapa[]
+
+  @@map("etapas")
+}
+
+model Peca {
+  id                   String   @id @default(uuid()) @db.Uuid
+  nome                 String   @unique
+  nomeBusca            String   @default("") @map("nome_busca")
+  categoriaId          String   @map("categoria_id") @db.Uuid
+  responsavelInicialId String?  @map("responsavel_inicial_id") @db.Uuid
+  /// dias do início ao "Pronto" (a loja anuncia ~30 dias)
+  tempoMedioDias       Int      @default(30) @map("tempo_medio_dias")
+  /// mínimo desejado de peças PRONTAS (somando todas as cores)
+  qtdMinimaDesejada    Int      @default(0) @map("qtd_minima_desejada")
+  /// mínimo desejado em BISCOITO — o pulmão que permite atender
+  /// uma cor que saiu bem sem começar tudo do zero
+  qtdMinimaBiscoito    Int      @default(0) @map("qtd_minima_biscoito")
+  precoBase            Decimal? @map("preco_base") @db.Decimal(10, 2)
+  observacao           String?
+  ativo                Boolean  @default(true)
+  criadoEm             DateTime @default(now()) @map("criado_em")
+
+  categoria          Categoria      @relation(fields: [categoriaId], references: [id])
+  responsavelInicial Responsavel?   @relation("responsavelInicial", fields: [responsavelInicialId], references: [id])
+  roteiro            RoteiroEtapa[]
+  cores              PecaCor[]
+
+  @@index([categoriaId])
+  @@map("pecas")
+}
+
+/// O fluxo próprio de cada peça. A Xícara Bojudinha passa por alças e
+/// colagem; a Tortinha vai direto da equipe pra secagem.
+model RoteiroEtapa {
+  id            String @id @default(uuid()) @db.Uuid
+  pecaId        String @map("peca_id") @db.Uuid
+  etapaId       String @map("etapa_id") @db.Uuid
+  ordem         Int
+  responsavelId String? @map("responsavel_id") @db.Uuid
+  diasEstimados Int    @default(1) @map("dias_estimados")
+
+  peca        Peca         @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  etapa       Etapa        @relation(fields: [etapaId], references: [id])
+  responsavel Responsavel? @relation(fields: [responsavelId], references: [id])
+
+  @@unique([pecaId, ordem])
+  @@index([pecaId])
+  @@map("roteiro_etapas")
+}
+
+/// Quais esmaltes existem para a peça, e o mínimo desejado por cor.
+model PecaCor {
+  id                String  @id @default(uuid()) @db.Uuid
+  pecaId            String  @map("peca_id") @db.Uuid
+  corId             String  @map("cor_id") @db.Uuid
+  qtdMinimaDesejada Int     @default(0) @map("qtd_minima_desejada")
+  ativo             Boolean @default(true)
+
+  peca Peca @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  cor  Cor  @relation(fields: [corId], references: [id])
+
+  @@unique([pecaId, corId])
+  @@map("peca_cores")
+}
+
+/// Cadastro criado na Fase 1; a tela e o consumo por lote entram na Fase 2.
+model MateriaPrima {
+  id            String   @id @default(uuid()) @db.Uuid
+  nome          String   @unique
+  nomeBusca     String   @default("") @map("nome_busca")
+  /// argila | esmalte | oxido | embalagem | outro
+  tipo          String   @default("esmalte")
+  unidade       String   @default("kg")
+  estoqueAtual  Decimal  @default(0) @map("estoque_atual") @db.Decimal(10, 3)
+  estoqueMinimo Decimal  @default(0) @map("estoque_minimo") @db.Decimal(10, 3)
+  fornecedor    String?
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  @@map("materias_primas")
+}

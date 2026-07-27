@@ -1,0 +1,42 @@
+{
+  "name": "producao-vf-backend",
+  "version": "1.0.0",
+  "description": "API do sistema de produção do ateliê Vera Flesch Cerâmica",
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "prisma generate",
+    "seed": "tsx prisma/seed.ts",
+    "test": "DATABASE_URL=\"${DATABASE_URL_TESTE:-postgresql://postgres@localhost:5432/producao_vf_teste?schema=public}\" DIRECT_URL=\"${DATABASE_URL_TESTE:-postgresql://postgres@localhost:5432/producao_vf_teste?schema=public}\" vitest run",
+    "test:watch": "DATABASE_URL=\"${DATABASE_URL_TESTE:-postgresql://postgres@localhost:5432/producao_vf_teste?schema=public}\" vitest"
+  },
+  "prisma": { "seed": "tsx prisma/seed.ts" },
+  "dependencies": {
+    "@prisma/client": "^6.8.0",
+    "bcryptjs": "^3.0.2",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.8.1",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.0",
+    "@types/supertest": "^7.2.0",
+    "prisma": "^6.8.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.8"
+  }
+}

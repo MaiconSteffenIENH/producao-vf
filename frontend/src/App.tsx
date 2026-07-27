@@ -1,0 +1,83 @@
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Layout } from './components/Layout'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { Toaster } from './components/Toaster'
+import { Carregando } from './components/ui'
+import { useAuth } from './store/auth'
+
+// Toda página é chunk lazy — import estático volta pro bundle inicial e
+// engorda o primeiro carregamento no 4G do ateliê.
+const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })))
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })))
+const Pecas = lazy(() => import('./pages/Pecas').then((m) => ({ default: m.Pecas })))
+const Esmaltes = lazy(() => import('./pages/Esmaltes').then((m) => ({ default: m.Esmaltes })))
+const Categorias = lazy(() => import('./pages/Categorias').then((m) => ({ default: m.Categorias })))
+const Responsaveis = lazy(() => import('./pages/Responsaveis').then((m) => ({ default: m.Responsaveis })))
+const Etapas = lazy(() => import('./pages/Etapas').then((m) => ({ default: m.Etapas })))
+const MateriasPrimas = lazy(() => import('./pages/MateriasPrimas').then((m) => ({ default: m.MateriasPrimas })))
+const Usuarios = lazy(() => import('./pages/Usuarios').then((m) => ({ default: m.Usuarios })))
+const Ajustes = lazy(() => import('./pages/Ajustes').then((m) => ({ default: m.Ajustes })))
+
+function Protegida({ children }: { children: React.ReactNode }) {
+  const { perfil, carregando } = useAuth()
+  const local = useLocation()
+  if (carregando) return <Carregando texto="Entrando…" />
+  if (!perfil) return <Navigate to="/entrar" state={{ de: local.pathname }} replace />
+  // senha provisória: não deixa circular antes de trocar
+  if (perfil.precisaTrocarSenha && local.pathname !== '/ajustes') {
+    return <Navigate to="/ajustes" replace />
+  }
+  return <>{children}</>
+}
+
+function SomenteAdmin({ children }: { children: React.ReactNode }) {
+  const admin = useAuth((e) => e.perfil?.admin ?? false)
+  if (!admin) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
+export function App() {
+  const recarregarPerfil = useAuth((e) => e.recarregarPerfil)
+  useEffect(() => {
+    void recarregarPerfil()
+  }, [recarregarPerfil])
+
+  return (
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Suspense fallback={<Carregando />}>
+          <Routes>
+            <Route path="/entrar" element={<Login />} />
+            <Route
+              element={
+                <Protegida>
+                  <Layout />
+                </Protegida>
+              }
+            >
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/pecas" element={<Pecas />} />
+              <Route path="/esmaltes" element={<Esmaltes />} />
+              <Route path="/categorias" element={<Categorias />} />
+              <Route path="/responsaveis" element={<Responsaveis />} />
+              <Route path="/etapas" element={<Etapas />} />
+              <Route path="/materias-primas" element={<MateriasPrimas />} />
+              <Route
+                path="/usuarios"
+                element={
+                  <SomenteAdmin>
+                    <Usuarios />
+                  </SomenteAdmin>
+                }
+              />
+              <Route path="/ajustes" element={<Ajustes />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+        <Toaster />
+      </BrowserRouter>
+    </ErrorBoundary>
+  )
+}

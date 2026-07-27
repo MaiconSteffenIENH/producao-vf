@@ -1,0 +1,87 @@
+@import 'tailwindcss';
+
+/*
+ * Tema da VF Cerâmicas.
+ *
+ * Os tokens são SEMÂNTICOS (fundo, superficie, tinta, marca…), não a escala
+ * de cinza do Tailwind. Isso evita de saída o bug clássico de dark mode em que
+ * `text-white` num botão sólido vira texto escuro: aqui `text-contraste` é
+ * sempre o contraste correto do fundo em que está.
+ *
+ * Paleta tirada do CSS da loja ceramicavf.com.br e da logo.
+ */
+@theme {
+  --color-fundo: #f2f1ed; /* fundo das telas */
+  --color-superficie: #ffffff; /* cards e campos */
+  --color-superficie-2: #faf9f6; /* faixas alternadas, cabeçalho de tabela */
+  --color-marca: #bba58c; /* areia tostado — header, sidebar, botão primário */
+  --color-marca-escura: #a08b73;
+  --color-marca-clara: #d6c6b0;
+  --color-tinta: #6a6060; /* texto principal */
+  --color-tinta-fraca: #918787; /* texto secundário */
+  --color-borda: #e2ded6;
+  --color-ouro: #b8963e; /* logo e destaques */
+  --color-verde: #3e5c4b; /* estados positivos e títulos de campanha */
+  --color-alerta: #b4703a;
+  --color-perigo: #a4402f;
+  --color-contraste: #ffffff; /* texto sobre superfícies sólidas escuras */
+
+  --font-titulo: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.dark {
+  --color-fundo: #221f1e;
+  --color-superficie: #2d2927;
+  --color-superficie-2: #363130;
+  --color-marca: #8f7a63;
+  --color-marca-escura: #7a6753;
+  --color-marca-clara: #4a4038;
+  --color-tinta: #ece7e0;
+  --color-tinta-fraca: #b0a69d;
+  --color-borda: #443d39;
+  --color-ouro: #d3ae52;
+  --color-verde: #7ea78c;
+  --color-alerta: #d69259;
+  --color-perigo: #d8705c;
+  --color-contraste: #ffffff;
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fundo);
+  color: var(--color-tinta);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-titulo);
+  letter-spacing: 0.01em;
+}
+
+/*
+ * Zoom ao focar campo no iOS: fonte menor que 16px faz o Safari dar zoom
+ * automático e a tela "abre ampliada". Não baixar disso no mobile.
+ */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Rolagem suave sem pular no iOS dentro do PWA */
+* {
+  -webkit-tap-highlight-color: transparent;
+}

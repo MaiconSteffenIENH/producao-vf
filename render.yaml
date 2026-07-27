@@ -1,0 +1,25 @@
+# Blueprint do Render (backend). Conecte o repositório no dashboard do Render e
+# ele lê este arquivo; preencha os valores sync:false em Environment.
+services:
+  - type: web
+    name: producao-vf-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    region: virginia # mesma costa do banco Neon (us-east-1) — latência mínima
+    # --include=dev: o Render pula devDependencies quando NODE_ENV=production,
+    # mas o build precisa de typescript e do prisma CLI
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # Neon, conexão POOLED (com -pooler)
+      - key: DIRECT_URL
+        sync: false # Neon, conexão DIRETA (sem -pooler) — usada pelas migrations
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false # ex.: https://producao-vf.vercel.app
+      - key: NODE_ENV
+        value: production

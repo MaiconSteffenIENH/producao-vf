@@ -1,0 +1,241 @@
+import { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcryptjs'
+import { normalizarBusca } from '../src/lib/busca'
+
+const prisma = new PrismaClient()
+
+/**
+ * Esmaltes. Os hex foram medidos das fotos reais das peças (mediana da
+ * superfície, descartando brilho e o fundo de palhinha).
+ *
+ * Atenção: Branco (#D0CDCB) e Pedra Sabão (#CFCEC8) têm praticamente a MESMA
+ * cor média — o que separa os dois é a densidade das pintas. Por isso os dois
+ * entram com `malhado: true` e a interface mostra foto de amostra, não só o chip.
+ */
+const CORES = [
+  // Medidos das fotos que a Gabi mandou (mediana da superfície, descartando
+  // sombra e brilho). A luz de cada foto varia, então todos precisam de uma
+  // conferência final com a peça na mão sob luz neutra.
+  { nome: 'Branco', hex: '#D9D7DA', malhado: true, observacao: 'Pintas esparsas. Praticamente a mesma cor do Pedra Sabão no chip — distinga pela foto.' },
+  { nome: 'Pedra Sabão', hex: '#D5D2CA', malhado: true, observacao: 'Pintas marrons densas, fundo levemente creme. Confunde com o Branco no chip.' },
+  { nome: 'Pistache', hex: '#A7C0BC', malhado: true, observacao: 'Verde-água acinzentado com pintas finas.' },
+  { nome: 'Azul Safira', hex: '#4E94E0', malhado: false, observacao: 'Azul médio vibrante, superfície uniforme.' },
+  { nome: 'Búzios', hex: '#2C4162', malhado: true, observacao: 'Azul-preto profundo com mescla azul clara.' },
+  { nome: 'Atacama', hex: '#8B5A4E', malhado: true, observacao: 'Marrom terroso avermelhado, muito malhado.' },
+  { nome: 'Vitória Régia', hex: '#7B8062', malhado: true, observacao: 'Verde musgo acinzentado, borda com barro aparente.' },
+  { nome: 'Coral', hex: '#D9776B', malhado: true, observacao: 'Rosa coral com pintas pretas; base da peça fica sem esmalte.' },
+  // Vistos só no site — hex aproximado, a conferir com peça na mão
+  { nome: 'Areia', hex: '#E3CE9B', malhado: true, observacao: 'Hex aproximado (tirado do site) — conferir com peça real.' },
+  { nome: 'Azul Água Marinho', hex: '#A9CBDD', malhado: true, observacao: 'Hex aproximado (tirado do site) — conferir com peça real.' },
+  { nome: 'Violeta', hex: '#D9B7BC', malhado: true, observacao: 'Hex aproximado (tirado do site) — conferir com peça real.' },
+  { nome: 'Preta', hex: '#3A3634', malhado: false, observacao: 'Hex aproximado (tirado do site) — conferir com peça real.' },
+]
+
+const CATEGORIAS = ['Bowls', 'Café', 'Manteigueira Francesa', 'Pratos', 'Saladeiras', 'Utilitários']
+
+const RESPONSAVEIS = [
+  { nome: 'Oleiro', tipo: 'pessoa', cor: '#8C6E4F', capacidadeDiaria: 40 },
+  { nome: 'Vera e Equipe', tipo: 'equipe', cor: '#BBA58C', capacidadeDiaria: 30 },
+  { nome: 'Forno 1ª', tipo: 'forno', cor: '#C4703B', capacidadeDiaria: null },
+  { nome: 'Forno 2ª', tipo: 'forno', cor: '#A03E2A', capacidadeDiaria: null },
+]
+
+const ETAPAS = [
+  { nome: 'Oleiro', tipo: 'producao', ordemPadrao: 10, responsavel: 'Oleiro' },
+  { nome: 'Produção das alças', tipo: 'producao', ordemPadrao: 20, responsavel: 'Vera e Equipe' },
+  { nome: 'Colagem', tipo: 'producao', ordemPadrao: 30, responsavel: 'Vera e Equipe' },
+  { nome: 'Acabamento', tipo: 'producao', ordemPadrao: 40, responsavel: 'Vera e Equipe' },
+  { nome: 'Equipe Vera', tipo: 'producao', ordemPadrao: 15, responsavel: 'Vera e Equipe' },
+  { nome: 'Secagem', tipo: 'secagem', ordemPadrao: 50, responsavel: null },
+  { nome: '1ª Queima', tipo: 'queima', ordemPadrao: 60, responsavel: 'Forno 1ª' },
+  { nome: 'Biscoito', tipo: 'estoque', ordemPadrao: 70, responsavel: null, estoqueIntermediario: true },
+  { nome: 'Esmaltação', tipo: 'producao', ordemPadrao: 80, responsavel: 'Vera e Equipe', defineCor: true },
+  { nome: '2ª Queima', tipo: 'queima', ordemPadrao: 90, responsavel: 'Forno 2ª' },
+  { nome: 'Pronto', tipo: 'final', ordemPadrao: 100, responsavel: null },
+]
+
+// Roteiros nomeados — o fluxo muda por peça, conforme o prompt da Gabi
+const ROTEIRO_PADRAO = ['Oleiro', 'Acabamento', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
+const ROTEIRO_COM_ALCA = ['Oleiro', 'Produção das alças', 'Colagem', 'Acabamento', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
+const ROTEIRO_EQUIPE = ['Equipe Vera', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
+
+/**
+ * Peças. A COR NÃO faz parte do nome: no site é "Bowl Pistache", aqui é
+ * peça `Bowl` com o esmalte `Pistache` disponível. É isso que permite o
+ * planejamento dizer "esmaltar 20 peças Pistache" em vez de listar SKU a SKU.
+ */
+const PECAS = [
+  { nome: 'Bowl', categoria: 'Bowls', roteiro: ROTEIRO_PADRAO, precoBase: 283, minimo: 12, minBiscoito: 20 },
+  { nome: 'Bowl Recortado', categoria: 'Bowls', roteiro: ROTEIRO_PADRAO, precoBase: 159, minimo: 8, minBiscoito: 15 },
+  { nome: 'Bule', categoria: 'Café', roteiro: ROTEIRO_COM_ALCA, precoBase: 218, minimo: 6, minBiscoito: 10 },
+  { nome: 'Açucareiro', categoria: 'Café', roteiro: ROTEIRO_PADRAO, precoBase: 129, minimo: 8, minBiscoito: 12 },
+  { nome: 'Conjunto Xícara e Passador', categoria: 'Café', roteiro: ROTEIRO_COM_ALCA, precoBase: 153, minimo: 8, minBiscoito: 12 },
+  { nome: 'Copinho de Café', categoria: 'Café', roteiro: ROTEIRO_PADRAO, precoBase: 49, minimo: 24, minBiscoito: 40 },
+  { nome: 'Xícara de Cafezinho', categoria: 'Café', roteiro: ROTEIRO_COM_ALCA, precoBase: 69, minimo: 24, minBiscoito: 40 },
+  { nome: 'Xícara Bojudinha', categoria: 'Café', roteiro: ROTEIRO_COM_ALCA, precoBase: null, minimo: 20, minBiscoito: 30 },
+  { nome: 'Xícara Andorinha', categoria: 'Café', roteiro: ROTEIRO_COM_ALCA, precoBase: null, minimo: 50, minBiscoito: 60 },
+  { nome: 'Manteigueira Francesa', categoria: 'Manteigueira Francesa', roteiro: ROTEIRO_PADRAO, precoBase: 159, minimo: 10, minBiscoito: 16 },
+  { nome: 'Prato de Refeição', categoria: 'Pratos', roteiro: ROTEIRO_PADRAO, precoBase: 143, minimo: 16, minBiscoito: 24 },
+  { nome: 'Prato de Pão', categoria: 'Pratos', roteiro: ROTEIRO_PADRAO, precoBase: 107, minimo: 16, minBiscoito: 24 },
+  { nome: 'Saladeira', categoria: 'Saladeiras', roteiro: ROTEIRO_PADRAO, precoBase: 239, minimo: 6, minBiscoito: 10 },
+  { nome: 'Porta Guardanapo', categoria: 'Utilitários', roteiro: ROTEIRO_PADRAO, precoBase: 144, minimo: 10, minBiscoito: 16 },
+  { nome: 'Tortinha', categoria: 'Utilitários', roteiro: ROTEIRO_EQUIPE, precoBase: null, minimo: 30, minBiscoito: 40 },
+]
+
+const MATERIAS_PRIMAS = [
+  { nome: 'Argila de alta temperatura', tipo: 'argila', unidade: 'kg', estoqueMinimo: 50 },
+  { nome: 'Esmalte Branco', tipo: 'esmalte', unidade: 'kg', estoqueMinimo: 5 },
+  { nome: 'Esmalte Pistache', tipo: 'esmalte', unidade: 'kg', estoqueMinimo: 5 },
+  { nome: 'Esmalte Azul Safira', tipo: 'esmalte', unidade: 'kg', estoqueMinimo: 5 },
+  { nome: 'Caixa de papelão P', tipo: 'embalagem', unidade: 'un', estoqueMinimo: 30 },
+]
+
+async function main() {
+  console.log('▶ Semeando o Produção VF…')
+
+  // ── Papéis ──────────────────────────────────────────────
+  const permissoesGestao = { tudo: true }
+  const permissoesProducao = { pecas: 'ler', producao: 'escrever', cadastros: 'ler', planejamento: 'ler' }
+  const permissoesLeitura = { pecas: 'ler', producao: 'ler', cadastros: 'ler' }
+
+  const gestao = await prisma.papel.upsert({
+    where: { nome: 'gestao' },
+    update: {},
+    create: { nome: 'gestao', admin: true, protegido: true, permissoes: permissoesGestao },
+  })
+  await prisma.papel.upsert({
+    where: { nome: 'producao' },
+    update: {},
+    create: { nome: 'producao', admin: false, protegido: true, permissoes: permissoesProducao },
+  })
+  await prisma.papel.upsert({
+    where: { nome: 'leitura' },
+    update: {},
+    create: { nome: 'leitura', admin: false, protegido: true, permissoes: permissoesLeitura },
+  })
+
+  // ── Usuário inicial ─────────────────────────────────────
+  const email = process.env.ADMIN_EMAIL ?? 'gabi@veraflesch.com.br'
+  const senha = process.env.ADMIN_SENHA ?? 'ceramica123'
+  await prisma.usuario.upsert({
+    where: { email },
+    update: {},
+    create: {
+      nome: 'Gabi',
+      email,
+      senhaHash: await bcrypt.hash(senha, 10),
+      papelId: gestao.id,
+      precisaTrocarSenha: true,
+    },
+  })
+  console.log(`  usuário inicial: ${email} / ${senha} (troca obrigatória no 1º login)`)
+
+  // ── Categorias ──────────────────────────────────────────
+  for (const [i, nome] of CATEGORIAS.entries()) {
+    await prisma.categoria.upsert({ where: { nome }, update: {}, create: { nome, ordem: i } })
+  }
+
+  // ── Cores ───────────────────────────────────────────────
+  for (const c of CORES) {
+    await prisma.cor.upsert({
+      where: { nome: c.nome },
+      update: { hex: c.hex, malhado: c.malhado, observacao: c.observacao },
+      create: { ...c, nomeBusca: normalizarBusca(c.nome) },
+    })
+  }
+
+  // ── Responsáveis ────────────────────────────────────────
+  for (const r of RESPONSAVEIS) {
+    await prisma.responsavel.upsert({
+      where: { nome: r.nome },
+      update: {},
+      create: { ...r, nomeBusca: normalizarBusca(r.nome) },
+    })
+  }
+
+  // ── Etapas ──────────────────────────────────────────────
+  for (const e of ETAPAS) {
+    const resp = e.responsavel ? await prisma.responsavel.findUnique({ where: { nome: e.responsavel } }) : null
+    await prisma.etapa.upsert({
+      where: { nome: e.nome },
+      update: {},
+      create: {
+        nome: e.nome,
+        tipo: e.tipo,
+        ordemPadrao: e.ordemPadrao,
+        defineCor: e.defineCor ?? false,
+        estoqueIntermediario: e.estoqueIntermediario ?? false,
+        responsavelPadraoId: resp?.id ?? null,
+      },
+    })
+  }
+
+  // ── Peças + roteiro + cores disponíveis ────────────────
+  const todasCores = await prisma.cor.findMany()
+  for (const p of PECAS) {
+    const categoria = await prisma.categoria.findUniqueOrThrow({ where: { nome: p.categoria } })
+    const primeiraEtapa = await prisma.etapa.findUniqueOrThrow({ where: { nome: p.roteiro[0] } })
+
+    const peca = await prisma.peca.upsert({
+      where: { nome: p.nome },
+      update: {},
+      create: {
+        nome: p.nome,
+        nomeBusca: normalizarBusca(p.nome),
+        categoriaId: categoria.id,
+        responsavelInicialId: primeiraEtapa.responsavelPadraoId,
+        tempoMedioDias: 30,
+        qtdMinimaDesejada: p.minimo,
+        qtdMinimaBiscoito: p.minBiscoito,
+        precoBase: p.precoBase,
+      },
+    })
+
+    const jaTemRoteiro = await prisma.roteiroEtapa.count({ where: { pecaId: peca.id } })
+    if (jaTemRoteiro === 0) {
+      for (const [i, nomeEtapa] of p.roteiro.entries()) {
+        const etapa = await prisma.etapa.findUniqueOrThrow({ where: { nome: nomeEtapa } })
+        await prisma.roteiroEtapa.create({
+          data: {
+            pecaId: peca.id,
+            etapaId: etapa.id,
+            ordem: i + 1,
+            responsavelId: etapa.responsavelPadraoId,
+            diasEstimados: etapa.tipo === 'secagem' ? 5 : 1,
+          },
+        })
+      }
+    }
+
+    const jaTemCor = await prisma.pecaCor.count({ where: { pecaId: peca.id } })
+    if (jaTemCor === 0) {
+      // toda peça começa aceitando todos os esmaltes; a Gabi ajusta pela tela
+      for (const cor of todasCores) {
+        await prisma.pecaCor.create({ data: { pecaId: peca.id, corId: cor.id } })
+      }
+    }
+  }
+
+  // ── Matérias-primas ─────────────────────────────────────
+  for (const m of MATERIAS_PRIMAS) {
+    await prisma.materiaPrima.upsert({
+      where: { nome: m.nome },
+      update: {},
+      create: { ...m, nomeBusca: normalizarBusca(m.nome) },
+    })
+  }
+
+  const [pecas, cores, etapas] = await Promise.all([
+    prisma.peca.count(),
+    prisma.cor.count(),
+    prisma.etapa.count(),
+  ])
+  console.log(`✅ Pronto — ${pecas} peças, ${cores} esmaltes, ${etapas} etapas.`)
+}
+
+main()
+  .catch((e) => {
+    console.error(e)
+    process.exit(1)
+  })
+  .finally(() => prisma.$disconnect())
