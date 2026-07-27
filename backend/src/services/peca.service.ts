@@ -159,15 +159,20 @@ export async function duplicarPeca(id: string) {
       observacao: original.observacao,
       ativo: false, // nasce inativa: obriga a revisar antes de entrar no planejamento
       roteiro: {
-        create: original.roteiro.map((r) => ({
-          etapaId: r.etapaId,
-          ordem: r.ordem,
-          responsavelId: r.responsavelId,
-          diasEstimados: r.diasEstimados,
-        })),
+        create: original.roteiro.map(
+          (r: { etapaId: string; ordem: number; responsavelId: string | null; diasEstimados: number }) => ({
+            etapaId: r.etapaId,
+            ordem: r.ordem,
+            responsavelId: r.responsavelId,
+            diasEstimados: r.diasEstimados,
+          }),
+        ),
       },
       cores: {
-        create: original.cores.map((c) => ({ corId: c.corId, qtdMinimaDesejada: c.qtdMinimaDesejada })),
+        create: original.cores.map((c: { corId: string; qtdMinimaDesejada: number }) => ({
+          corId: c.corId,
+          qtdMinimaDesejada: c.qtdMinimaDesejada,
+        })),
       },
     },
     include: incluirTudo,

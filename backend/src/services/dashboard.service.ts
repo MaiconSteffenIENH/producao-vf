@@ -56,7 +56,11 @@ export async function resumo() {
       semEtapaDeCor,
       etapaQueDefineCor: etapaCor?.nome ?? null,
     },
-    porCategoria: porCategoria.map((c) => ({ id: c.id, nome: c.nome, pecas: c._count.pecas })),
+    porCategoria: porCategoria.map((c: { id: string; nome: string; _count: { pecas: number } }) => ({
+      id: c.id,
+      nome: c.nome,
+      pecas: c._count.pecas,
+    })),
     producao: {
       disponivel: false,
       motivo: 'O módulo de produção entra na Fase 3.',
