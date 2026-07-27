@@ -9,7 +9,14 @@ services:
     region: virginia # mesma costa do banco Neon (us-east-1) — latência mínima
     # --include=dev: o Render pula devDependencies quando NODE_ENV=production,
     # mas o build precisa de typescript e do prisma CLI
-    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    # A checagem de migrations vem primeiro de propósito: sem a pasta versionada,
+    # o `migrate deploy` do start não faz nada e a API sobe com o banco vazio —
+    # que quebra em toda requisição com um erro confuso de "tabela não existe".
+    # Falhar aqui, no build, com mensagem clara, é muito mais barato.
+    buildCommand: >-
+      test -d prisma/migrations && test -n "$(ls -A prisma/migrations)" ||
+      { echo 'ERRO: backend/prisma/migrations nao esta no repositorio. Rode ./rodar-local.sh e commite a pasta.'; exit 1; } &&
+      npm ci --include=dev && npx prisma generate && npm run build
     startCommand: npx prisma migrate deploy && node dist/server.js
     healthCheckPath: /health
     envVars:

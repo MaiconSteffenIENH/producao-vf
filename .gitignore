@@ -8,3 +8,4 @@ backend/dist/
 frontend/dist/
 frontend/dev-dist/
 *.tsbuildinfo
+.npm-cache/

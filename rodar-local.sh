@@ -8,11 +8,30 @@
 #
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+RAIZ="$(pwd)"
 
 passo()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$1"; }
 ok()     { printf '\033[1;32m  ✓ %s\033[0m\n' "$1"; }
 aviso()  { printf '\033[1;33m  ! %s\033[0m\n' "$1"; }
 erro()   { printf '\n\033[1;31m✗ %s\033[0m\n' "$1"; exit 1; }
+
+# Instala tolerando o problema mais comum no macOS: ~/.npm/_cacache com
+# arquivos pertencendo ao root (sobra de um "sudo npm install" antigo). O npm
+# então falha com EACCES/EEXIST ao tentar reescrever o próprio cache. Um cache
+# dentro do projeto contorna sem precisar de sudo e sem mexer no seu sistema.
+instalar() {
+  local pasta="$1"
+  ( cd "$pasta" && npm install ) && return 0
+
+  aviso "npm install falhou — provavelmente o cache global. Tentando com um cache do projeto…"
+  ( cd "$pasta" && npm install --cache "$RAIZ/.npm-cache" ) && {
+    ok "Instalado usando .npm-cache (o cache global segue quebrado; veja o final)"
+    CACHE_QUEBRADO=1
+    return 0
+  }
+  return 1
+}
+CACHE_QUEBRADO=0
 
 # ─────────────────────────── 1. Node ───────────────────────────
 passo "Conferindo o Node"
@@ -75,10 +94,10 @@ fi
 
 # ─────────────────────── 3. Dependências ───────────────────────
 passo "Instalando dependências do backend"
-( cd backend && npm install ) || erro "npm install do backend falhou."
+instalar backend || erro "npm install do backend falhou mesmo com cache alternativo. Veja o log acima."
 
 passo "Instalando dependências do frontend"
-( cd frontend && npm install ) || erro "npm install do frontend falhou."
+instalar frontend || erro "npm install do frontend falhou mesmo com cache alternativo."
 
 # ──────────────────── 4. Banco: tabelas e seed ─────────────────
 passo "Gerando o Prisma Client"
@@ -90,6 +109,7 @@ if [ -d backend/prisma/migrations ]; then
 else
   # primeira vez: cria a migração oficial, que é a que o Render vai aplicar
   ( cd backend && npx prisma migrate dev --name inicial ) || erro "migrate dev falhou."
+  MIGRACAO_NOVA=1
 fi
 
 passo "Semeando com as peças e esmaltes do ateliê"
@@ -112,6 +132,18 @@ echo
 PID_API=$!
 ( cd frontend && npm run dev ) &
 PID_WEB=$!
+
+if [ "$MIGRACAO_NOVA" = "1" ]; then
+  aviso "A migração inicial foi criada em backend/prisma/migrations."
+  aviso "COMMITE essa pasta antes de publicar — sem ela o Render sobe com o banco vazio:"
+  aviso "  git add backend/prisma/migrations && git commit -m 'chore: migracao inicial' && git push"
+  echo
+fi
+
+if [ "$CACHE_QUEBRADO" = "1" ]; then
+  aviso "Seu cache global do npm está com dono errado (sobra de algum sudo npm install)."
+  aviso "Para consertar de vez, um dia calmo:  sudo chown -R \$(id -u):\$(id -g) ~/.npm"
+fi
 
 encerrar() { kill "$PID_API" "$PID_WEB" 2>/dev/null; wait 2>/dev/null; echo; ok "Encerrado."; }
 trap encerrar INT TERM

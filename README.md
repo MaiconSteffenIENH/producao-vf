@@ -53,6 +53,17 @@ Usuário inicial criado pelo seed: **gabi@veraflesch.com.br** / **ceramica123** 
 
 ## Publicar
 
+Passo a passo completo em **[docs/DEPLOY.md](docs/DEPLOY.md)**. Antes de começar:
+
+```bash
+./preparar-deploy.sh
+```
+
+Ele confere o que costuma dar errado (principalmente a migração não commitada, que faz a API subir com o banco vazio) e imprime as variáveis prontas para colar no Render e na Vercel.
+
+<details>
+<summary>Resumo</summary>
+
 ### Banco — Neon (grátis)
 
 Crie o projeto e pegue as duas strings de conexão:
@@ -87,6 +98,8 @@ Root directory `frontend`, framework Vite. Variável de ambiente:
 O `vercel.json` já reescreve as rotas para `index.html` (SPA).
 
 Depois de subir, a Vera abre o link no celular e adiciona à tela de início — é PWA.
+
+</details>
 
 ---
 
