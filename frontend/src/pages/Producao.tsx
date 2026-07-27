@@ -5,6 +5,7 @@ import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { plural } from '../lib/format'
 import { enviarComFila } from '../lib/filaOffline'
+import { useArrastar } from '../lib/useArrastar'
 import {
   Botao,
   CabecalhoPagina,
@@ -29,6 +30,8 @@ type Cartao = {
   peca: { id: string; nome: string; categoria: { nome: string } }
   cor: Cor | null
   loteOrigem: { id: string; codigo: string } | null
+  /** etapas do roteiro desta peça, tirando a atual — para onde o arrasto pode ir */
+  destinosPermitidos: string[]
 }
 type Coluna = {
   etapa: { id: string; nome: string; tipo: string; defineCor: boolean; estoqueIntermediario: boolean }
@@ -194,16 +197,38 @@ export function Producao() {
 
   const etapaPorId = useMemo(() => new Map(etapas.map((e) => [e.id, e])), [etapas])
 
-  const abrirAcao = (tipo: Acao, cartao: Cartao, etapaId: string) => {
+  const abrirAcao = (tipo: Acao, cartao: Cartao, etapaId: string, destinoId?: string) => {
     setAcao({ tipo, cartao, etapaId })
     setForm({
       quantidade: cartao.quantidade,
-      etapaDestinoId: cartao.proximaEtapaId ?? '',
+      // arrastar já escolhe o destino; clicar em "Mover" propõe a próxima do roteiro
+      etapaDestinoId: destinoId ?? cartao.proximaEtapaId ?? '',
       corId: cartao.cor?.id ?? '',
       responsavelId: cartao.responsavelSugeridoId ?? '',
       motivo: '',
     })
   }
+
+  /*
+   * ARRASTAR O CARTÃO ATÉ A COLUNA.
+   *
+   * Soltar NÃO grava direto: abre a confirmação com destino e quantidade cheia
+   * já preenchidos, e um clique fecha. Duas razões, as duas do domínio:
+   *
+   * - O quadro fica aberto o dia todo no ateliê, em tela sensível ao toque. Um
+   *   arrasto sem querer viraria movimento gravado, e no livro-razão isso não
+   *   se apaga — se corrige com estorno, que suja o histórico para sempre.
+   * - Arrastar sozinho não resolve os dois casos mais comuns: escolher o
+   *   esmalte quando a etapa define a cor, e mover só parte do lote. Abrindo o
+   *   mesmo modal, os três caminhos terminam no mesmo lugar.
+   */
+  const { estado: arrasto, pegar } = useArrastar<Cartao & { etapaOrigemId: string }>({
+    destinosDe: (c) => c.destinosPermitidos ?? [],
+    aoSoltar: (c, etapaDestinoId) => abrirAcao('avancar', c, c.etapaOrigemId, etapaDestinoId),
+    // o mesmo trilho que os degradês medem: chegando perto da borda, ele anda
+    // sozinho, e é isso que torna o arrasto utilizável num celular de 390px
+    trilho,
+  })
 
   const destinoDefineCor = Boolean(form.etapaDestinoId && etapaPorId.get(form.etapaDestinoId)?.defineCor)
 
@@ -296,7 +321,7 @@ export function Producao() {
     <>
       <CabecalhoPagina
         titulo="Produção"
-        descricao="Onde cada lote está agora. Toque no cartão para mover, perder ou dividir."
+        descricao="Onde cada lote está agora. Arraste o cartão até a etapa, ou use os botões dele para mover, perder ou dividir."
         acoes={
           <>
             <div className="min-w-0 sm:w-52">
@@ -362,7 +387,20 @@ export function Producao() {
               <section
                 key={coluna.etapa.id}
                 data-etapa={coluna.etapa.id}
-                className="w-[16rem] shrink-0 snap-start"
+                // o alvo é lido do DOM na hora de soltar (elementsFromPoint), e
+                // não de uma lista de retângulos em estado — assim o quadro pode
+                // rolar no meio do arrasto sem as áreas saírem do lugar
+                data-alvo-arrasto={coluna.etapa.id}
+                className={`w-[16rem] shrink-0 snap-start rounded-2xl transition-colors duration-150 ${
+                  arrasto.item
+                    ? arrasto.alvo === coluna.etapa.id
+                      ? 'bg-marca/12 outline-2 outline-dashed outline-marca'
+                      : arrasto.item.destinosPermitidos?.includes(coluna.etapa.id)
+                        ? 'bg-marca/5 outline-2 outline-dashed outline-marca-clara'
+                        : // fora do roteiro da peça: apagada, para nem tentar
+                          'opacity-40'
+                    : ''
+                }`}
               >
                 <header
                   // top-0, não top-14: o `overflow-x` faz deste bloco o próprio
@@ -395,10 +433,34 @@ export function Producao() {
                 </header>
 
                 <div className="flex flex-col gap-2">
+                  {/*
+                    A PRÉVIA — o encaixe que mostra onde o cartão vai parar.
+                    Fica no TOPO da coluna de propósito: cartão dentro de etapa
+                    não tem ordem nenhuma (o saldo é uma soma), então "no fim da
+                    fila" seria uma ordem inventada. No topo ela aparece logo
+                    abaixo do cabeçalho, onde o olho já está.
+                  */}
+                  {arrasto.alvo === coluna.etapa.id && arrasto.item && (
+                    <div className="anima-aparecer flex flex-col items-center justify-center gap-0.5 rounded-2xl border-2 border-dashed border-marca bg-marca/10 px-3.5 py-5 text-center">
+                      <span className="text-sm font-medium text-marca-escura">
+                        {arrasto.item.peca.nome}
+                      </span>
+                      <span className="text-xs text-marca-escura">
+                        {plural(arrasto.item.quantidade, 'peça')} entram aqui
+                      </span>
+                    </div>
+                  )}
+
                   {coluna.cartoes.map((cartao) => (
                     <article
                       key={cartao.id}
-                      className="anima-surgir rounded-2xl border border-borda bg-superficie p-3.5 shadow-baixa transition-all duration-200 hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media"
+                      {...pegar({ ...cartao, etapaOrigemId: coluna.etapa.id })}
+                      className={`anima-surgir rounded-2xl border border-borda bg-superficie p-3.5 shadow-baixa transition-all duration-200 ${
+                        arrasto.item?.id === cartao.id && arrasto.item?.etapaOrigemId === coluna.etapa.id
+                          ? // o original vira contorno vazado: mostra de onde saiu
+                            'border-dashed opacity-35'
+                          : 'cursor-grab hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media active:cursor-grabbing'
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -457,7 +519,7 @@ export function Producao() {
                       </div>
                     </article>
                   ))}
-                  {coluna.cartoes.length === 0 && (
+                  {coluna.cartoes.length === 0 && !(arrasto.alvo === coluna.etapa.id) && (
                     <p className="rounded-xl border border-dashed border-borda px-3 py-6 text-center text-xs text-tinta-fraca">
                       vazio
                     </p>
@@ -469,6 +531,55 @@ export function Producao() {
             </div>
           </div>
         </>
+      )}
+
+      <p className="mt-6 text-xs leading-relaxed text-tinta-fraca">
+        Arrastar acende só as etapas do roteiro daquela peça — as outras apagam, porque o sistema recusaria o
+        movimento de qualquer jeito. Soltar não grava direto: abre a confirmação já preenchida, e um clique
+        fecha. É de propósito. O quadro fica aberto o dia inteiro em tela de toque, e no livro-razão um
+        movimento gravado sem querer não se apaga — se corrige com estorno, que fica no histórico para sempre.
+      </p>
+
+      {/*
+        O CARTÃO FANTASMA que segue o dedo.
+        `position: fixed` + `pointer-events-none`: ele não pode interceptar o
+        elementsFromPoint que descobre a coluna sob o ponteiro, senão o alvo
+        seria sempre o próprio fantasma.
+      */}
+      {arrasto.item && (
+        <div
+          aria-hidden
+          // deslocado do ponteiro, e não centrado nele: centrado, o fantasma
+          // tapava justamente a prévia que ele deveria ajudar a enxergar
+          className="pointer-events-none fixed z-[80] w-[13rem] rotate-2 rounded-2xl border border-marca bg-superficie p-3 opacity-95 shadow-alta"
+          style={{ left: arrasto.x + 18, top: arrasto.y + 14 }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-tinta">{arrasto.item.peca.nome}</p>
+              <p className="text-xs text-tinta-fraca">{arrasto.item.codigo}</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-marca/15 px-2.5 py-0.5 font-titulo text-base leading-6 text-tinta">
+              {arrasto.item.quantidade}
+            </span>
+          </div>
+          {arrasto.item.cor ? (
+            <div className="mt-2">
+              <ChipCor
+                nome={arrasto.item.cor.nome}
+                hex={arrasto.item.cor.hex}
+                amostraUrl={arrasto.item.cor.amostraUrl}
+                malhado={arrasto.item.cor.malhado}
+                tamanho={14}
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-tinta-fraca">sem cor definida</p>
+          )}
+          <p className="mt-2 text-[11px] text-marca">
+            {arrasto.alvo ? 'solte para mover' : 'arraste até uma etapa do roteiro'}
+          </p>
+        </div>
       )}
 
       {/* ── novo lote ─────────────────────────────── */}

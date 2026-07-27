@@ -203,6 +203,15 @@ export async function kanban(filtros: { pecaId?: string; corId?: string; respons
           quantidade: saldos.get(lote.id)?.get(etapa.id) ?? 0,
           responsavelSugeridoId: atual?.responsavelId ?? null,
           proximaEtapaId: proxima?.etapaId ?? null,
+          /*
+           * Para onde ESTE cartão pode ir. Sai daqui e não da tela porque quem
+           * conhece o roteiro da peça é o backend — `avancarLote` recusa etapa
+           * fora dele. Mandando a lista junto, o arrasto acende só as colunas
+           * que aceitam o cartão, em vez de deixar a pessoa soltar e tomar erro.
+           */
+          destinosPermitidos: roteiro
+            .filter((r) => r.etapaId !== etapa.id)
+            .map((r) => r.etapaId),
         }
       })
     return {
