@@ -174,7 +174,7 @@ export function PaletaComando() {
               setMarcado(0)
             }}
             placeholder="Buscar tela, peça ou esmalte…"
-            className="w-full bg-transparent py-4 text-tinta outline-none placeholder:text-tinta-fraca"
+            className="w-full bg-transparent py-4 text-[15px] text-tinta outline-none placeholder:text-tinta-fraca"
           />
           <Tecla>esc</Tecla>
         </div>

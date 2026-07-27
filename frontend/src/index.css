@@ -152,8 +152,15 @@ h3 {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Foco visível e da marca — teclado é caminho de primeira classe, não sobra */
-:focus-visible {
+/*
+ * Foco visível e da marca — teclado é caminho de primeira classe, não sobra.
+ *
+ * Fora campo de texto. Input/Select/Textarea já têm o próprio realce de foco
+ * (borda marca + anel suave, em `baseCampo`); somar este contorno por cima
+ * desenhava uma caixa dupla — bem visível na paleta de comandos, onde o campo
+ * é para parecer só uma linha de digitação, e não um formulário.
+ */
+:focus-visible:not(input):not(textarea):not(select) {
   outline: 2px solid var(--color-marca);
   outline-offset: 2px;
   border-radius: 6px;
