@@ -237,7 +237,7 @@ export function Canais() {
         <form onSubmit={salvar} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Campo rotulo="Nome">
-              <Input required maxLength={60} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+              <Input caixaAlta required maxLength={60} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
             </Campo>
             <Campo rotulo="Margem de lucro alvo (%)" dica="Sobre o custo real, já com a perda embutida.">
               <Input

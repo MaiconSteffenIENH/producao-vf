@@ -190,6 +190,31 @@ const CANAIS = [
   },
 ]
 
+
+/*
+ * BUSCA POR NOME SEM DIFERENCIAR MAIÚSCULA.
+ *
+ * Os nomes de cadastro passaram a subir para caixa alta quando alguém edita
+ * pela tela. Se estes scripts continuassem procurando o texto exato, um
+ * "1ª Queima" que virou "1ª QUEIMA" deixaria de ser encontrado — e o seed,
+ * não achando, CRIARIA outra etapa com o mesmo papel. Duas "1ª Queima" no
+ * banco é o tipo de estrago que só aparece semanas depois, no relatório.
+ */
+const acharEtapa = (nome: string) =>
+  prisma.etapa.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+const acharResponsavel = (nome: string) =>
+  prisma.responsavel.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+const acharCategoria = (nome: string) =>
+  prisma.categoria.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+const acharPeca = (nome: string) =>
+  prisma.peca.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+const acharCor = (nome: string) =>
+  prisma.cor.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+const acharMateriaPrima = (nome: string) =>
+  prisma.materiaPrima.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+const acharCanal = (nome: string) =>
+  prisma.canalVenda.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+
 async function main() {
   console.log('▶ Semeando o Produção VF…')
 
@@ -254,7 +279,7 @@ async function main() {
    * preenche o que ainda não tem valor.
    */
   for (const r of RESPONSAVEIS) {
-    const existente = await prisma.responsavel.findUnique({ where: { nome: r.nome } })
+    const existente = await acharResponsavel(r.nome)
     if (!existente) {
       await prisma.responsavel.create({ data: { ...r, nomeBusca: normalizarBusca(r.nome) } })
       continue
@@ -274,8 +299,8 @@ async function main() {
 
   // ── Etapas ──────────────────────────────────────────────
   for (const e of ETAPAS) {
-    const resp = e.responsavel ? await prisma.responsavel.findUnique({ where: { nome: e.responsavel } }) : null
-    const existente = await prisma.etapa.findUnique({ where: { nome: e.nome } })
+    const resp = e.responsavel ? await acharResponsavel(e.responsavel) : null
+    const existente = await acharEtapa(e.nome)
     if (!existente) {
       await prisma.etapa.create({
         data: {
@@ -311,8 +336,8 @@ async function main() {
   // ── Peças + roteiro + cores disponíveis ────────────────
   const todasCores = await prisma.cor.findMany()
   for (const p of PECAS) {
-    const categoria = await prisma.categoria.findUniqueOrThrow({ where: { nome: p.categoria } })
-    const primeiraEtapa = await prisma.etapa.findUniqueOrThrow({ where: { nome: p.roteiro[0] } })
+    const categoria = await acharCategoria(p.categoria)
+    const primeiraEtapa = await acharEtapa(p.roteiro[0])
 
     const peca = await prisma.peca.upsert({
       where: { nome: p.nome },
@@ -332,7 +357,7 @@ async function main() {
     const jaTemRoteiro = await prisma.roteiroEtapa.count({ where: { pecaId: peca.id } })
     if (jaTemRoteiro === 0) {
       for (const [i, nomeEtapa] of p.roteiro.entries()) {
-        const etapa = await prisma.etapa.findUniqueOrThrow({ where: { nome: nomeEtapa } })
+        const etapa = await acharEtapa(nomeEtapa)
         await prisma.roteiroEtapa.create({
           data: {
             pecaId: peca.id,
@@ -367,7 +392,7 @@ async function main() {
   // ── Canais de venda ─────────────────────────────────────
   for (const c of CANAIS) {
     const { faixas, ...campos } = c
-    const existente = await prisma.canalVenda.findUnique({ where: { nome: c.nome } })
+    const existente = await acharCanal(c.nome)
     if (existente) continue
     await prisma.canalVenda.create({ data: { ...campos, faixas: { create: faixas } } })
   }

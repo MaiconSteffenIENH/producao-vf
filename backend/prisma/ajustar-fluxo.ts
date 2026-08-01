@@ -27,13 +27,25 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+/*
+ * BUSCA POR NOME SEM DIFERENCIAR MAIÚSCULA.
+ *
+ * Os nomes de cadastro passaram a subir para caixa alta quando alguém edita
+ * pela tela. Se estes scripts continuassem procurando o texto exato, um
+ * "1ª Queima" que virou "1ª QUEIMA" deixaria de ser encontrado — e o seed,
+ * não achando, CRIARIA outra etapa com o mesmo papel. Duas "1ª Queima" no
+ * banco é o tipo de estrago que só aparece semanas depois, no relatório.
+ */
+const acharEtapa = (nome: string) =>
+  prisma.etapa.findFirst({ where: { nome: { equals: nome, mode: 'insensitive' } } })
+
 const ANTES_DA_SECAGEM = ['Produção das alças', 'Colagem']
 
 async function main() {
   console.log('')
-  const acabamento = await prisma.etapa.findUnique({ where: { nome: 'Acabamento' } })
-  const secagem = await prisma.etapa.findUnique({ where: { nome: 'Secagem' } })
-  const responsavelOleiro = await prisma.responsavel.findFirst({ where: { nome: 'Oleiro' } })
+  const acabamento = await acharEtapa('Acabamento')
+  const secagem = await acharEtapa('Secagem')
+  const responsavelOleiro = await prisma.responsavel.findFirst({ where: { nome: { equals: 'Oleiro', mode: 'insensitive' } } })
 
   // ── 1. Acabamento sai dos roteiros ──
   if (!acabamento) {
@@ -57,7 +69,7 @@ async function main() {
   }
 
   // ── 2. as alças são do oleiro ──
-  const alcas = await prisma.etapa.findUnique({ where: { nome: 'Produção das alças' } })
+  const alcas = await acharEtapa('Produção das alças')
   if (alcas && responsavelOleiro && alcas.responsavelPadraoId !== responsavelOleiro.id) {
     await prisma.etapa.update({ where: { id: alcas.id }, data: { responsavelPadraoId: responsavelOleiro.id } })
     await prisma.roteiroEtapa.updateMany({ where: { etapaId: alcas.id }, data: { responsavelId: responsavelOleiro.id } })
@@ -68,7 +80,7 @@ async function main() {
   // posição desejada de cada etapa de alça: Produção das alças = 0, Colagem = 1
   const posicaoAlca = new Map<string, number>()
   for (const e of await prisma.etapa.findMany({
-    where: { nome: { in: ANTES_DA_SECAGEM } },
+    where: { OR: ANTES_DA_SECAGEM.map((n) => ({ nome: { equals: n, mode: 'insensitive' as const } })) },
     select: { id: true, nome: true },
   })) {
     posicaoAlca.set(e.id, ANTES_DA_SECAGEM.indexOf(e.nome))
@@ -86,7 +98,7 @@ async function main() {
    * Só sai de quem tem alça. Prato, bowl e saladeira continuam começando no
    * Oleiro, que lá é a única parada dele.
    */
-  const etapaOleiro = await prisma.etapa.findUnique({ where: { nome: 'Oleiro' } })
+  const etapaOleiro = await acharEtapa('Oleiro')
   const alcasId = alcas?.id ?? null
 
   const pecas = await prisma.peca.findMany({ select: { id: true, nome: true } })

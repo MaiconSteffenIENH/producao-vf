@@ -423,6 +423,12 @@ export function CrudSimples<T extends Registro>({
                   type={campo.tipo === 'url' ? 'url' : 'text'}
                   required={campo.obrigatorio}
                   maxLength={120}
+                  /*
+                   * Caixa alta no campo "nome" e em mais nenhum. Link em
+                   * maiúscula não abre, e a observação é para ser lida — frase
+                   * inteira em caixa alta cansa quem vai ler o histórico.
+                   */
+                  caixaAlta={campo.tipo === 'texto' && campo.nome === 'nome'}
                   value={String(valor ?? '')}
                   onChange={(e) => definir(campo.nome, e.target.value)}
                 />

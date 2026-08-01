@@ -340,6 +340,7 @@ export function Pecas() {
               <Input
                 required
                 maxLength={80}
+                caixaAlta
                 value={form.nome}
                 onChange={(e) => setForm({ ...form, nome: e.target.value })}
               />

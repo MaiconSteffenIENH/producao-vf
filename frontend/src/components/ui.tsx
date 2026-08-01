@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import { caixaAltaAoDigitar } from '../lib/nomes'
 
 /*
  * ATENÇÃO — largura de campo.
@@ -16,9 +17,49 @@ const baseCampo =
   'hover:border-marca-clara focus:border-marca focus:ring-4 focus:ring-marca/12 ' +
   'disabled:cursor-not-allowed disabled:opacity-60'
 
-export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className = '', ...props }, ref) => <input ref={ref} {...props} className={`${className} ${baseCampo}`} />,
-)
+/*
+ * `caixaAlta` liga o campo de NOME: o texto vira maiúscula sozinho, sem caps
+ * lock.
+ *
+ * A conversão acontece ao SAIR DO CAMPO, e não a cada tecla. Tentei a cada
+ * tecla primeiro, apostando que maiúscula em português não muda o comprimento
+ * do texto (ç→Ç, ã→Ã) e por isso o cursor ficaria quieto. Não fica: reescrever
+ * o valor dentro do onChange faz o React reposicionar o cursor no fim depois
+ * de renderizar, e guardar/devolver a posição não resolveu de forma confiável.
+ * Digitando "de" no meio de "PRATO PÃO" saía "PRATO DPÃOE".
+ *
+ * Campo que briga com quem digita é pior do que campo que não ajuda. No blur o
+ * cursor já saiu, então não há o que atrapalhar — e o resultado para quem usa é
+ * o mesmo: ninguém precisa segurar o shift.
+ *
+ * `text-transform` mostra o efeito enquanto se digita, e `autoCapitalize`
+ * manda o teclado do celular já abrir em maiúscula. O VALOR é convertido de
+ * verdade no blur: só o CSS deixaria o banco com o texto minúsculo, a lista
+ * pareceria certa e a busca não acharia.
+ */
+export const Input = forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement> & { caixaAlta?: boolean }
+>(({ className = '', caixaAlta: emCaixaAlta = false, onChange, onBlur, style, ...props }, ref) => (
+  <input
+    ref={ref}
+    {...props}
+    autoCapitalize={emCaixaAlta ? 'characters' : props.autoCapitalize}
+    style={emCaixaAlta ? { textTransform: 'uppercase', ...style } : style}
+    onChange={onChange}
+    onBlur={(e) => {
+      if (emCaixaAlta && onChange) {
+        const arrumado = caixaAltaAoDigitar(e.target.value)
+        if (arrumado !== e.target.value) {
+          e.target.value = arrumado
+          onChange(e as unknown as React.ChangeEvent<HTMLInputElement>)
+        }
+      }
+      onBlur?.(e)
+    }}
+    className={`${className} ${baseCampo}`}
+  />
+))
 Input.displayName = 'Input'
 
 export const Textarea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(

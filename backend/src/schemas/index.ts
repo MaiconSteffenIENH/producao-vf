@@ -1,6 +1,18 @@
 import { z } from 'zod'
+import { caixaAlta } from '../lib/nomes'
 
 const texto = (max = 120) => z.string().trim().min(1, 'obrigatório').max(max)
+
+/*
+ * Nome de cadastro, normalizado no SERVIDOR também.
+ *
+ * A tela já sobe para maiúscula enquanto se digita, mas quem manda o dado não
+ * é sempre a tela: importação de planilha, um cliente antigo em cache, um
+ * curl. Se a regra vivesse só no navegador, o banco acabaria com "PRATO DE
+ * PÃO" e "Prato de Pão" convivendo — dois nomes para a mesma peça, e a busca
+ * achando um deles.
+ */
+const nomeDeCadastro = (max = 120) => texto(max).transform(caixaAlta)
 const hex = z
   .string()
   .trim()
@@ -19,7 +31,7 @@ export const trocarSenhaSchema = z.object({
 
 // ── Cadastros simples ───────────────────────────────────
 export const categoriaSchema = z.object({
-  nome: texto(60),
+  nome: nomeDeCadastro(60),
   ordem: z.coerce.number().int().min(0).default(0),
   ativo: z.boolean().default(true),
 })
@@ -37,7 +49,7 @@ export const ordenacaoSchema = z.object({
 })
 
 export const corSchema = z.object({
-  nome: texto(60),
+  nome: nomeDeCadastro(60),
   hex: hex.default('#CCCCCC'),
   amostraUrl: z.string().trim().url('link inválido').or(z.literal('')).optional().nullable(),
   malhado: z.boolean().default(false),
@@ -46,7 +58,7 @@ export const corSchema = z.object({
 })
 
 export const responsavelSchema = z.object({
-  nome: texto(60),
+  nome: nomeDeCadastro(60),
   tipo: z.enum(['pessoa', 'equipe', 'forno']).default('pessoa'),
   cor: hex.default('#BBA58C'),
   capacidadeDiaria: z.coerce.number().int().min(0).max(9999).nullable().optional(),
@@ -55,7 +67,7 @@ export const responsavelSchema = z.object({
 })
 
 export const etapaSchema = z.object({
-  nome: texto(60),
+  nome: nomeDeCadastro(60),
   // `segunda` e `foto` estavam no schema do banco e faltavam aqui — sem uma
   // etapa do tipo `segunda` cadastrada, o botão "Segunda" do quadro devolve
   // erro, e não havia como criá-la pela tela
@@ -74,7 +86,7 @@ export const etapaSchema = z.object({
 })
 
 export const materiaPrimaSchema = z.object({
-  nome: texto(80),
+  nome: nomeDeCadastro(80),
   tipo: z.enum(['argila', 'esmalte', 'oxido', 'embalagem', 'outro']).default('esmalte'),
   unidade: z.string().trim().min(1).max(10).default('kg'),
   estoqueAtual: z.coerce.number().min(0).default(0),
@@ -98,7 +110,7 @@ export const pecaCorItemSchema = z.object({
 })
 
 export const pecaSchema = z.object({
-  nome: texto(80),
+  nome: nomeDeCadastro(80),
   categoriaId: z.string().uuid('escolha uma categoria'),
   responsavelInicialId: z.string().uuid().or(z.literal('')).nullable().optional(),
   tempoMedioDias: z.coerce.number().int().min(1).max(365).default(30),
@@ -113,7 +125,7 @@ export const pecaSchema = z.object({
 
 // ── Usuário ─────────────────────────────────────────────
 export const usuarioSchema = z.object({
-  nome: texto(80),
+  nome: nomeDeCadastro(80),
   email: z.string().trim().email('e-mail inválido'),
   papelId: z.string().uuid('escolha um papel'),
   senha: z.string().min(8).max(72).or(z.literal('')).optional(),
@@ -189,7 +201,7 @@ export const custoPecaSchema = z.object({
 })
 
 export const canalVendaSchema = z.object({
-  nome: texto(60),
+  nome: nomeDeCadastro(60),
   comissaoPercentual: percentual.default(0),
   taxaFixa: dinheiro.default(0),
   freteSubsidiado: dinheiro.default(0),

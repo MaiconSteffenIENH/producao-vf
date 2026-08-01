@@ -217,6 +217,7 @@ export function Encomendas() {
             <Campo rotulo="Cliente">
               <Input
                 required
+                caixaAlta
                 value={form.cliente}
                 onChange={(e) => setForm({ ...form, cliente: e.target.value })}
                 placeholder="Restaurante Ateliê"
