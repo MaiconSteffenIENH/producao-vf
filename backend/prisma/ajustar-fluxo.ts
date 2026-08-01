@@ -33,7 +33,7 @@ async function main() {
   console.log('')
   const acabamento = await prisma.etapa.findUnique({ where: { nome: 'Acabamento' } })
   const secagem = await prisma.etapa.findUnique({ where: { nome: 'Secagem' } })
-  const oleiro = await prisma.responsavel.findFirst({ where: { nome: 'Oleiro' } })
+  const responsavelOleiro = await prisma.responsavel.findFirst({ where: { nome: 'Oleiro' } })
 
   // ── 1. Acabamento sai dos roteiros ──
   if (!acabamento) {
@@ -58,9 +58,9 @@ async function main() {
 
   // ── 2. as alças são do oleiro ──
   const alcas = await prisma.etapa.findUnique({ where: { nome: 'Produção das alças' } })
-  if (alcas && oleiro && alcas.responsavelPadraoId !== oleiro.id) {
-    await prisma.etapa.update({ where: { id: alcas.id }, data: { responsavelPadraoId: oleiro.id } })
-    await prisma.roteiroEtapa.updateMany({ where: { etapaId: alcas.id }, data: { responsavelId: oleiro.id } })
+  if (alcas && responsavelOleiro && alcas.responsavelPadraoId !== responsavelOleiro.id) {
+    await prisma.etapa.update({ where: { id: alcas.id }, data: { responsavelPadraoId: responsavelOleiro.id } })
+    await prisma.roteiroEtapa.updateMany({ where: { etapaId: alcas.id }, data: { responsavelId: responsavelOleiro.id } })
     console.log('  "Produção das alças" passou para o Oleiro.')
   }
 
@@ -74,8 +74,24 @@ async function main() {
     posicaoAlca.set(e.id, ANTES_DA_SECAGEM.indexOf(e.nome))
   }
 
+  /*
+   * NA PEÇA COM ALÇA, O OLEIRO SOLTO SAI DO ROTEIRO.
+   *
+   * "Produção das alças" JÁ é o trabalho do oleiro nessas peças: ele torneia o
+   * corpo e faz as alças na mesma parada. Deixar a etapa "Oleiro" separada
+   * produzia `Produção das alças → Colagem → Oleiro → Secagem`, com o oleiro
+   * DEPOIS da colagem — e a secagem em quarto lugar, quando o pedido era que
+   * ela fosse a terceira.
+   *
+   * Só sai de quem tem alça. Prato, bowl e saladeira continuam começando no
+   * Oleiro, que lá é a única parada dele.
+   */
+  const etapaOleiro = await prisma.etapa.findUnique({ where: { nome: 'Oleiro' } })
+  const alcasId = alcas?.id ?? null
+
   const pecas = await prisma.peca.findMany({ select: { id: true, nome: true } })
   let mexidos = 0
+  let oleiroRemovido = 0
   for (const peca of pecas) {
     const linhas = await prisma.roteiroEtapa.findMany({
       where: { pecaId: peca.id },
@@ -83,6 +99,24 @@ async function main() {
       select: { id: true, ordem: true, etapaId: true },
     })
     if (linhas.length === 0) continue
+
+    // tira o Oleiro solto de quem passa por "Produção das alças"
+    if (etapaOleiro && alcasId && linhas.some((l) => l.etapaId === alcasId)) {
+      const noOleiro = linhas.find((l) => l.etapaId === etapaOleiro.id)
+      if (noOleiro) {
+        const parado = await saldoNaEtapa(peca.id, etapaOleiro.id)
+        if (parado > 0) {
+          console.log(
+            `  ATENÇÃO: ${peca.nome} tem ${parado} peça(s) parada(s) no Oleiro — ` +
+              'mantive a etapa no roteiro. Mova pelo quadro e rode de novo.',
+          )
+        } else {
+          await prisma.roteiroEtapa.delete({ where: { id: noOleiro.id } })
+          linhas.splice(linhas.indexOf(noOleiro), 1)
+          oleiroRemovido++
+        }
+      }
+    }
 
     let ordenadas = linhas
     if (secagem && linhas.some((l) => posicaoAlca.has(l.etapaId))) {
@@ -108,6 +142,9 @@ async function main() {
     })
     mexidos++
   }
+  if (oleiroRemovido > 0) {
+    console.log(`  "Oleiro" saiu de ${oleiroRemovido} roteiro(s) com alça — quem faz a alça é ele.`)
+  }
   console.log(`  ${mexidos} roteiro(s) renumerados.`)
 
   // ── retrato final ──
@@ -122,6 +159,27 @@ async function main() {
     console.log(`  ${peca.nome}: ${linhas.map((l) => l.etapa.nome).join(' → ')}`)
   }
   console.log('')
+}
+
+/**
+ * Quanto está parado numa etapa, para todos os lotes de uma peça.
+ *
+ * Entrada menos saída, direto do livro-razão — o mesmo raciocínio do resto do
+ * sistema. Tirar do roteiro uma etapa que ainda tem peça em cima deixaria o
+ * lote num lugar por onde a peça já não passa, e ele sumiria do quadro.
+ */
+async function saldoNaEtapa(pecaId: string, etapaId: string): Promise<number> {
+  const [entradas, saidas] = await Promise.all([
+    prisma.movimentoLote.aggregate({
+      _sum: { quantidade: true },
+      where: { etapaDestinoId: etapaId, lote: { pecaId } },
+    }),
+    prisma.movimentoLote.aggregate({
+      _sum: { quantidade: true },
+      where: { etapaOrigemId: etapaId, lote: { pecaId } },
+    }),
+  ])
+  return (entradas._sum.quantidade ?? 0) - (saidas._sum.quantidade ?? 0)
 }
 
 main()

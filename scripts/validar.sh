@@ -80,6 +80,24 @@ passo "Backend — typecheck (tsc)"
 # e um campo escrito errado compila liso. Este verificador lê o schema pelo
 # parser WASM e confere nome por nome. Roda sempre: é rápido e pega o que o
 # compilador não pega quando o client está desatualizado.
+passo "Backend — scripts do prisma/ compilam"
+#
+# O tsconfig do backend inclui só `src/**/*`, então seed.ts, ajustar-fluxo.ts e
+# limpar-producao.ts NUNCA passavam pelo compilador — e eles falam com o banco
+# tanto quanto qualquer service. Já custou duas vezes: um `contador.chave` (o
+# campo se chama `nome`) e dois `const oleiro` no mesmo escopo, que quebraria o
+# script na primeira linha.
+#
+# AVISA em vez de barrar, de propósito. Esta checagem nasceu depois do resto do
+# código; se ela achar coisa antiga, o certo é consertar com calma, não travar
+# o push de quem só queria publicar outra coisa.
+if ! ( cd backend && npx tsc --noEmit --skipLibCheck --module esnext --target es2022 \
+        --moduleResolution bundler prisma/*.ts 2>&1 | grep -v node_modules | head -20 | grep . ); then
+  :
+else
+  aviso "Há erro de tipo nos scripts de prisma/ (acima). Não barra o push, mas conserte."
+fi
+
 passo "Backend — nomes de modelo e campo batem com o schema"
 if node scripts/conferir-campos-prisma.mjs; then :; else
   aviso "Há nome de modelo ou campo fora do schema (acima)."

@@ -5,6 +5,18 @@ import { conflito, invalido, naoEncontrado } from '../lib/erros'
 import { CHAVES_DE_MODULO, listaDoPapel } from '../lib/modulos'
 import type { usuarioSchema } from '../schemas'
 
+/*
+ * O TIPO DO CAMPO JSON, escrito à mão em vez de `Record<string, unknown>`.
+ *
+ * `unknown` admite `undefined`, e `undefined` não existe em JSON — o Prisma
+ * recusa a atribuição por isso, e está certo em recusar. Escrever a forma de
+ * verdade resolve sem `as any` e sem depender de `Prisma.InputJsonValue`, que
+ * só existe quando o client foi gerado (no ambiente sem engine, não existe, e
+ * o arquivo deixaria de compilar por outro motivo).
+ */
+type ValorJson = string | number | boolean | null | ValorJson[] | { [chave: string]: ValorJson }
+type ObjetoJson = { [chave: string]: ValorJson }
+
 const SEM_SENHA = {
   id: true,
   nome: true,
@@ -80,9 +92,9 @@ export async function definirModulosDoPapel(papelId: string, corpo: unknown): Pr
     throw invalido('Envie a lista de módulos do papel, ou nulo para ele voltar a ver tudo.')
   }
 
-  const permissoes: Record<string, unknown> =
+  const permissoes: ObjetoJson =
     typeof papel.permissoes === 'object' && papel.permissoes !== null && !Array.isArray(papel.permissoes)
-      ? { ...papel.permissoes }
+      ? ({ ...papel.permissoes } as ObjetoJson)
       : {}
 
   // o resto do `permissoes` é preservado: ele guarda outras chaves do papel, e
