@@ -99,7 +99,7 @@ function MapaDoFluxo({
                     <span className="text-[10px] uppercase tracking-wider text-ouro">cor</span>
                   )}
                   {coluna.etapa.estoqueIntermediario && (
-                    <span className="text-[10px] uppercase tracking-wider text-verde">pulmão</span>
+                    <span className="text-[10px] uppercase tracking-wider text-verde">estoque</span>
                   )}
                 </span>
                 <span className="mt-1 block truncate text-xs text-tinta-fraca">{coluna.etapa.nome}</span>
@@ -427,7 +427,7 @@ export function Producao() {
                         title="Estoque neutro: atende qualquer cor que sair na frente"
                         className="rounded-md bg-verde/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-verde"
                       >
-                        pulmão
+                        estoque
                       </span>
                     )}
                     <span className="text-sm font-semibold text-tinta">{coluna.total}</span>

@@ -60,10 +60,10 @@ const ETAPAS: {
   aguardaCarga?: boolean
 }[] = [
   { nome: 'Oleiro', tipo: 'producao', ordemPadrao: 10, responsavel: 'Oleiro' },
-  { nome: 'Produção das alças', tipo: 'producao', ordemPadrao: 20, responsavel: 'Vera e Equipe' },
-  { nome: 'Colagem', tipo: 'producao', ordemPadrao: 30, responsavel: 'Vera e Equipe' },
-  { nome: 'Acabamento', tipo: 'producao', ordemPadrao: 40, responsavel: 'Vera e Equipe' },
   { nome: 'Equipe Vera', tipo: 'producao', ordemPadrao: 15, responsavel: 'Vera e Equipe' },
+  // a peça com alça sai do torno já com as alças; quem faz é o oleiro
+  { nome: 'Produção das alças', tipo: 'producao', ordemPadrao: 20, responsavel: 'Oleiro' },
+  { nome: 'Colagem', tipo: 'producao', ordemPadrao: 30, responsavel: 'Vera e Equipe' },
   { nome: 'Secagem', tipo: 'secagem', ordemPadrao: 50, responsavel: null },
   { nome: '1ª Queima', tipo: 'queima', ordemPadrao: 60, responsavel: 'Forno 1ª', aguardaCarga: true },
   { nome: 'Biscoito', tipo: 'estoque', ordemPadrao: 70, responsavel: null, estoqueIntermediario: true },
@@ -77,8 +77,19 @@ const ETAPAS: {
 ]
 
 // Roteiros nomeados — o fluxo muda por peça, conforme o prompt da Gabi
-const ROTEIRO_PADRAO = ['Oleiro', 'Acabamento', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
-const ROTEIRO_COM_ALCA = ['Oleiro', 'Produção das alças', 'Colagem', 'Acabamento', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
+/*
+ * Os três caminhos do ateliê. Acabamento saiu: é rápido demais para virar
+ * parada no quadro, e etapa que ninguém registra só atrasa o lote na tela.
+ *
+ * Biscoito FICA. Não é passo de produção — é o estoque neutro onde a peça
+ * espera a demanda dizer de que cor ela vai ser, e é dele que o planejamento
+ * tira o biscoito para repartir entre as cores.
+ */
+const ROTEIRO_PADRAO = ['Oleiro', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
+// xícara, bule e passador: o oleiro faz corpo e alças, a equipe cola, e só
+// então seca — por isso a secagem é a TERCEIRA parada, e não a segunda
+const ROTEIRO_COM_ALCA = ['Produção das alças', 'Colagem', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
+// peça que nasce na mão da equipe: o lote já abre na coluna dela
 const ROTEIRO_EQUIPE = ['Equipe Vera', 'Secagem', '1ª Queima', 'Biscoito', 'Esmaltação', '2ª Queima', 'Pronto']
 
 /**

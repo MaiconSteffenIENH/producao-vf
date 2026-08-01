@@ -10,6 +10,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "seed": "tsx prisma/seed.ts",
+    "ajustar-fluxo": "tsx prisma/ajustar-fluxo.ts",
     "limpar-producao": "tsx prisma/limpar-producao.ts",
     "test": "DATABASE_URL=\"${DATABASE_URL_TESTE:-postgresql://postgres@localhost:5432/producao_vf_teste?schema=public}\" DIRECT_URL=\"${DATABASE_URL_TESTE:-postgresql://postgres@localhost:5432/producao_vf_teste?schema=public}\" vitest run",
     "test:watch": "DATABASE_URL=\"${DATABASE_URL_TESTE:-postgresql://postgres@localhost:5432/producao_vf_teste?schema=public}\" vitest",
