@@ -117,13 +117,22 @@ function limparTextoENotas(texto) {
 }
 
 const arquivos = []
-;(function varrer(dir) {
+const varrer = (dir) => {
   for (const nome of readdirSync(dir)) {
     const caminho = join(dir, nome)
-    if (statSync(caminho).isDirectory()) varrer(caminho)
-    else if (nome.endsWith('.ts')) arquivos.push(caminho)
+    if (statSync(caminho).isDirectory()) {
+      if (nome === 'migrations' || nome === 'node_modules') continue
+      varrer(caminho)
+    } else if (nome.endsWith('.ts')) arquivos.push(caminho)
   }
-})(join(raiz, 'backend/src'))
+}
+varrer(join(raiz, 'backend/src'))
+/*
+ * prisma/ entra junto. O seed e o limpar-producao falam com o banco tanto
+ * quanto qualquer service, e não passam pelo tsc com tipos de verdade — foi
+ * exatamente aí que `contador.chave` (o campo se chama `nome`) passou batido.
+ */
+varrer(join(raiz, 'backend/prisma'))
 
 const problemas = []
 let modelosVistos = 0

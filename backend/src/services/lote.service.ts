@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma'
 import { conflito, invalido, naoEncontrado } from '../lib/erros'
 import type { Sessao } from '../lib/token'
 import { plural } from '../lib/plural'
+import { avaliarExclusao } from '../lib/exclusao-lote'
 import {
   calcularSaldos,
   saldoNaEtapa as saldoNaEtapaPuro,
@@ -633,4 +634,80 @@ async function atualizarConclusao(loteId: string) {
     // um retorno de etapa reabre o lote
     await prisma.lote.update({ where: { id: loteId }, data: { concluidoEm: null } })
   }
+}
+
+/*
+ * ─────────────────────────── EXCLUIR ───────────────────────────
+ *
+ * Apagar de verdade, e não cancelar. Cancelar joga o saldo restante como
+ * PERDA, e a perda medida da peça alimenta em silêncio a quantidade que o
+ * planejamento manda produzir e o custo real na precificação — limpar lote de
+ * teste não pode encarecer o produto. A regra do que pode e do que some junto
+ * mora em lib/exclusao-lote.ts, sem Prisma, para poder ser testada.
+ *
+ * A exclusão em si não some do sistema: todo DELETE cai no log de atividade
+ * (quem, quando, qual lote) pelo middleware de auditoria.
+ */
+
+/** Retrato do lote para a confirmação — não apaga nada. */
+export async function previaDaExclusao(id: string) {
+  const lote = await prisma.lote.findUnique({
+    where: { id },
+    include: {
+      peca: { select: { nome: true } },
+      cor: { select: { nome: true, hex: true } },
+      divisoes: { select: { codigo: true }, orderBy: { codigo: 'asc' } },
+      queimas: { select: { queima: { select: { codigo: true, status: true } } } },
+      encomenda: { select: { id: true, codigo: true, status: true } },
+      _count: { select: { movimentos: true } },
+    },
+  })
+  if (!lote) throw naoEncontrado('Lote')
+
+  const outrosLotes = lote.encomendaId
+    ? await prisma.lote.count({ where: { encomendaId: lote.encomendaId, id: { not: id } } })
+    : 0
+
+  const saldos = (await saldosPorLote([id])).get(id) ?? new Map<string, number>()
+  const avaliacao = avaliarExclusao({
+    codigo: lote.codigo,
+    movimentos: lote._count.movimentos,
+    divisoes: lote.divisoes,
+    fornadas: lote.queimas.map((q: { queima: { codigo: string; status: string } }) => q.queima),
+    encomenda: lote.encomenda ? { codigo: lote.encomenda.codigo, outrosLotes } : null,
+  })
+
+  return {
+    id: lote.id,
+    codigo: lote.codigo,
+    peca: lote.peca.nome,
+    cor: lote.cor,
+    quantidadeInicial: lote.quantidadeInicial,
+    saldo: [...saldos.values()].reduce((s, q) => s + q, 0),
+    movimentos: lote._count.movimentos,
+    ...avaliacao,
+  }
+}
+
+export async function excluirLote(id: string) {
+  const previa = await previaDaExclusao(id)
+  if (!previa.pode) throw conflito(previa.impedimento ?? 'Este lote não pode ser apagado.')
+
+  const lote = await prisma.lote.findUnique({
+    where: { id },
+    select: { encomendaId: true, encomenda: { select: { status: true } } },
+  })
+  if (!lote) throw naoEncontrado('Lote')
+
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // movimentos e itens de fornada saem por cascade (onDelete: Cascade)
+    await tx.lote.delete({ where: { id } })
+
+    // a encomenda só virou "em produção" porque este lote existia
+    if (previa.soltarEncomenda && lote.encomendaId && lote.encomenda?.status === 'em_producao') {
+      await tx.encomenda.update({ where: { id: lote.encomendaId }, data: { status: 'aberta' } })
+    }
+  })
+
+  return { ok: true, codigo: previa.codigo, movimentosApagados: previa.movimentos }
 }

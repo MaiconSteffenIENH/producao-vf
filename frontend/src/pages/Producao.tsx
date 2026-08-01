@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Scissors } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Scissors, Trash2 } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { plural } from '../lib/format'
 import { enviarComFila } from '../lib/filaOffline'
 import { useArrastar } from '../lib/useArrastar'
+import { ConfirmarExclusaoLote } from '../components/ConfirmarExclusaoLote'
 import {
   Botao,
   CabecalhoPagina,
@@ -128,6 +129,7 @@ export function Producao() {
   const [filtroPeca, setFiltroPeca] = useState('')
   const [filtroCor, setFiltroCor] = useState('')
 
+  const [paraApagar, setParaApagar] = useState<string | null>(null)
   const [novoAberto, setNovoAberto] = useState(false)
   const [novo, setNovo] = useState({ pecaId: '', quantidade: 20, observacao: '' })
 
@@ -516,6 +518,14 @@ export function Producao() {
                         >
                           <Scissors size={13} /> Dividir
                         </button>
+                        <button
+                          onClick={() => setParaApagar(cartao.id)}
+                          title="Lote aberto por engano — apaga de vez, e nada dele vira perda"
+                          aria-label={`Apagar lote ${cartao.codigo}`}
+                          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-borda px-2 py-1 text-xs text-tinta-fraca hover:border-perigo/40 hover:bg-perigo/5 hover:text-perigo"
+                        >
+                          <Trash2 size={13} /> Apagar
+                        </button>
                       </div>
                     </article>
                   ))}
@@ -758,6 +768,12 @@ export function Producao() {
           </form>
         )}
       </Modal>
+
+      <ConfirmarExclusaoLote
+        loteId={paraApagar}
+        aoFechar={() => setParaApagar(null)}
+        aoApagar={() => void recarregar()}
+      />
     </>
   )
 }

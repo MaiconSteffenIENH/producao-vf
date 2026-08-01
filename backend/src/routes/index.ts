@@ -246,6 +246,14 @@ rotas.post(
     res.status(201).json(await lotes.dividirLote({ ...dados, loteId: req.params.id }, req.sessao!))
   }),
 )
+rotas.get(
+  '/lotes/:id/exclusao',
+  rota(async (req, res) => void res.json(await lotes.previaDaExclusao(req.params.id))),
+)
+rotas.delete(
+  '/lotes/:id',
+  rota(async (req, res) => void res.json(await lotes.excluirLote(req.params.id))),
+)
 rotas.post(
   '/lotes/:id/cancelar',
   rota(async (req, res) => {

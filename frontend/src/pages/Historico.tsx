@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { dataBr } from '../lib/format'
 import { avisar } from '../components/Toaster'
 import { Botao, CabecalhoPagina, Carregando, ChipCor, Etiqueta, Input, Modal, Select, Vazio } from '../components/ui'
+import { ConfirmarExclusaoLote } from '../components/ConfirmarExclusaoLote'
 
 type Lote = {
   id: string
@@ -63,6 +65,7 @@ export function Historico() {
   const [filtros, setFiltros] = useState({ pecaId: '', corId: '', etapaId: '', situacao: '', mes: '' })
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null)
   const [paraCancelar, setParaCancelar] = useState<Lote | null>(null)
+  const [paraApagar, setParaApagar] = useState<string | null>(null)
   const [motivoCancelar, setMotivoCancelar] = useState('')
 
   const recarregar = useCallback(
@@ -316,8 +319,25 @@ export function Historico() {
               </ul>
             </div>
 
-            {!detalhe.canceladoEm && !detalhe.concluidoEm && (
-              <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {/*
+               * Apagar fica ao lado de cancelar de propósito, porque as duas
+               * ações são fáceis de confundir e fazem coisas opostas: cancelar
+               * transforma o que sobrou em PERDA (e a perda medida entra no
+               * plano e no preço); apagar tira o lote do mapa sem tocar em
+               * nenhuma conta. Lote de teste é caso de apagar, não de cancelar.
+               */}
+              <Botao
+                variante="secundario"
+                onClick={() => {
+                  const alvo = detalhe.id
+                  setDetalhe(null)
+                  setParaApagar(alvo)
+                }}
+              >
+                <Trash2 size={15} /> Apagar lote
+              </Botao>
+              {!detalhe.canceladoEm && !detalhe.concluidoEm && (
                 <Botao
                   variante="perigo"
                   onClick={() => {
@@ -328,8 +348,8 @@ export function Historico() {
                 >
                   Cancelar lote
                 </Botao>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </Modal>
@@ -360,6 +380,12 @@ export function Historico() {
           </Botao>
         </div>
       </Modal>
+
+      <ConfirmarExclusaoLote
+        loteId={paraApagar}
+        aoFechar={() => setParaApagar(null)}
+        aoApagar={() => void recarregar()}
+      />
     </>
   )
 }
