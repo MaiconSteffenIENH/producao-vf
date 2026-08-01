@@ -19,6 +19,10 @@ const ROTULO_TIPO: Record<string, string> = {
   queima: 'Queima',
   estoque: 'Estoque',
   final: 'Final',
+  // sem uma etapa deste tipo cadastrada, o botão "Segunda" do quadro dá erro —
+  // e até agora não havia como criá-la por aqui
+  segunda: 'Segunda qualidade',
+  foto: 'Foto',
 }
 
 export function Etapas() {
@@ -43,6 +47,9 @@ export function Etapas() {
         ordemPadrao: 0,
         defineCor: false,
         estoqueIntermediario: false,
+        aguardaCarga: false,
+        capacidadeCarga: null,
+        horasPorQueima: null,
         responsavelPadraoId: '',
         ativo: true,
       }}
@@ -66,6 +73,32 @@ export function Etapas() {
           tipo: 'select',
           opcoes: responsaveis,
           permiteVazio: true,
+        },
+        /*
+         * Os três campos do forno. A capacidade mora na ETAPA e não num
+         * responsável do tipo forno: a pergunta que a tela do Forno faz é
+         * "cabe mais NESTA queima?", e o ateliê tem um forno para a 1ª e
+         * outro para a 2ª, de tamanhos diferentes. Sem a capacidade
+         * preenchida, a fila do forno não aparece — de propósito, porque
+         * chutar um número que a Vera tomaria por verdade é pior que calar.
+         */
+        {
+          nome: 'aguardaCarga',
+          rotulo: 'Espera o forno encher',
+          tipo: 'booleano',
+          dica: 'Marque nas queimas. A peça não espera a etapa, espera a carga fechar — é isso que põe a etapa na fila do Forno e o que a previsão de prazo usa para não prometer data que o ateliê não cumpre.',
+        },
+        {
+          nome: 'capacidadeCarga',
+          rotulo: 'Capacidade por carga (peças)',
+          tipo: 'numero',
+          dica: 'Quantas peças cabem numa fornada desta queima. Sem este número a fila do Forno não aparece.',
+        },
+        {
+          nome: 'horasPorQueima',
+          rotulo: 'Horas por queima',
+          tipo: 'numero',
+          dica: 'De aquecer a esfriar. Serve para a previsão saber quanto o forno fica ocupado.',
         },
         {
           nome: 'defineCor',

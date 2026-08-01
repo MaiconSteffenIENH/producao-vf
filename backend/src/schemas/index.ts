@@ -56,10 +56,19 @@ export const responsavelSchema = z.object({
 
 export const etapaSchema = z.object({
   nome: texto(60),
-  tipo: z.enum(['producao', 'secagem', 'queima', 'estoque', 'final']).default('producao'),
+  // `segunda` e `foto` estavam no schema do banco e faltavam aqui — sem uma
+  // etapa do tipo `segunda` cadastrada, o botão "Segunda" do quadro devolve
+  // erro, e não havia como criá-la pela tela
+  tipo: z
+    .enum(['producao', 'secagem', 'queima', 'estoque', 'final', 'segunda', 'foto'])
+    .default('producao'),
   ordemPadrao: z.coerce.number().int().min(0).default(0),
   defineCor: z.boolean().default(false),
   estoqueIntermediario: z.boolean().default(false),
+  // do forno: a carga é da ETAPA, não de um responsável de mentira
+  aguardaCarga: z.boolean().default(false),
+  capacidadeCarga: z.coerce.number().int().min(0).max(99999).nullable().optional(),
+  horasPorQueima: z.coerce.number().int().min(0).max(999).nullable().optional(),
   responsavelPadraoId: z.string().uuid().nullable().optional(),
   ativo: z.boolean().default(true),
 })

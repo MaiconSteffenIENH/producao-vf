@@ -50,16 +50,16 @@ type EtapaCrua = {
   nome: string
   defineCor: boolean
   ordemPadrao: number
-  responsavelPadrao: { id: string; nome: string; capacidadeCarga: number | null } | null
+  capacidadeCarga: number | null
 }
 
 export async function filaDasQueimas(agora = new Date()): Promise<FilaDeQueima[]> {
   const [etapas, etapaDaCor] = await Promise.all([
-    // a capacidade vem do forno DAQUELA etapa: o ateliê tem um forno para a 1ª
-    // queima e outro para a 2ª, e eles não têm o mesmo tamanho
+    // a capacidade vem DA ETAPA: o ateliê tem um forno para a 1ª queima e
+    // outro para a 2ª, e eles não têm o mesmo tamanho
     prisma.etapa.findMany({
       where: { aguardaCarga: true, ativo: true },
-      include: { responsavelPadrao: { select: { id: true, nome: true, capacidadeCarga: true } } },
+      select: { id: true, nome: true, defineCor: true, ordemPadrao: true, capacidadeCarga: true },
     }),
     prisma.etapa.findFirst({ where: { defineCor: true, ativo: true } }),
   ])
@@ -100,10 +100,10 @@ export async function filaDasQueimas(agora = new Date()): Promise<FilaDeQueima[]
     const grupo = porTipo.get(tipo)!
     grupo.etapaIds.push(etapa.id)
     // a maior capacidade entre as etapas do mesmo tipo — normalmente é uma só
-    const cap = etapa.responsavelPadrao?.capacidadeCarga ?? 0
+    const cap = etapa.capacidadeCarga ?? 0
     if (cap > grupo.capacidade) {
       grupo.capacidade = cap
-      grupo.forno = etapa.responsavelPadrao?.nome ?? null
+      grupo.forno = etapa.nome
     }
   }
 
@@ -183,14 +183,13 @@ export async function abrirQueima(dados: {
   // o forno é o da PRIMEIRA etapa desta fila — é dela que sai a capacidade
   const etapa = await prisma.etapa.findUnique({
     where: { id: fila.etapaIds[0] },
-    include: { responsavelPadrao: { select: { id: true, capacidadeCarga: true } } },
+    select: { id: true, nome: true, capacidadeCarga: true },
   })
-  const forno = (etapa as { responsavelPadrao: { id: string; capacidadeCarga: number | null } | null } | null)
-    ?.responsavelPadrao
-  const capacidade = forno?.capacidadeCarga ?? 0
+  const capacidade = etapa?.capacidadeCarga ?? 0
   if (capacidade <= 0) {
     throw regraDeNegocio(
-      'Cadastre a capacidade por carga do forno desta etapa em Responsáveis antes de abrir uma fornada.',
+      `Preencha "Capacidade por carga" na etapa ${etapa?.nome ?? 'de queima'}, em Etapas, ` +
+        'antes de abrir uma fornada.',
     )
   }
 
@@ -202,7 +201,8 @@ export async function abrirQueima(dados: {
       codigo,
       tipo: dados.tipo,
       status: 'carregando',
-      fornoId: forno?.id ?? null,
+      // o forno deixou de ser um responsável: quem executa a carga é a etapa
+      fornoId: null,
       capacidade,
       previstaPara: dados.previstaPara ? new Date(dados.previstaPara) : null,
       observacao: dados.observacao ?? null,

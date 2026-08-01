@@ -196,6 +196,17 @@ model Etapa {
   /// etapa que representa estoque parado (Biscoito) — o lote pode ficar aqui
   /// indefinidamente até a demanda dizer de que cor ele vai ser
   estoqueIntermediario Boolean @default(false) @map("estoque_intermediario")
+  /// Quantas peças cabem numa carga desta queima.
+  ///
+  /// Mora na ETAPA, e não num responsável do tipo forno, porque é dela que a
+  /// pergunta é feita: "cabe mais nesta queima?". O ateliê tem um forno para a
+  /// 1ª e outro para a 2ª, de tamanhos diferentes, e amarrar a capacidade à
+  /// etapa é o que permite os dois números coexistirem sem ninguém escolher
+  /// "a capacidade do ateliê". Antes isso era um Responsavel de mentira, que
+  /// aparecia junto com gente na tela de Responsáveis e nunca teve campo.
+  capacidadeCarga     Int?     @map("capacidade_carga")
+  /// Quanto tempo a carga ocupa o forno, de aquecer a esfriar.
+  horasPorQueima      Int?     @map("horas_por_queima")
   responsavelPadraoId String?  @map("responsavel_padrao_id") @db.Uuid
   ativo               Boolean  @default(true)
   criadoEm            DateTime @default(now()) @map("criado_em")

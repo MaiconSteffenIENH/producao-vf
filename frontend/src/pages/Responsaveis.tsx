@@ -12,6 +12,12 @@ type Responsavel = Registro & {
   usuario?: { id: string; nome: string; email: string } | null
 }
 
+/*
+ * "Forno" continua aqui só para LER o histórico: os fornos antigos ficaram
+ * inativos e os movimentos que os citam continuam mostrando o nome certo.
+ * Ele saiu das opções de criação — forno deixou de ser um responsável de
+ * mentira e virou configuração da própria etapa de queima, em Etapas.
+ */
 const ROTULO_TIPO: Record<string, string> = { pessoa: 'Pessoa', equipe: 'Equipe', forno: 'Forno' }
 
 export function Responsaveis() {
@@ -30,7 +36,7 @@ export function Responsaveis() {
   return (
     <CrudSimples<Responsavel>
       titulo="Responsáveis"
-      descricao="Quem executa cada etapa: o oleiro, a equipe da Vera e os dois fornos."
+      descricao="Quem executa cada etapa: o oleiro e a equipe da Vera. O forno não entra aqui — a capacidade de cada carga fica na própria etapa de queima, em Etapas."
       caminho="responsaveis"
       aoCarregarAuxiliares={carregarUsuarios}
       valoresIniciais={{ nome: '', tipo: 'pessoa', cor: '#BBA58C', capacidadeDiaria: null, usuarioId: '', ativo: true }}
@@ -43,7 +49,6 @@ export function Responsaveis() {
           opcoes: [
             { valor: 'pessoa', rotulo: 'Pessoa' },
             { valor: 'equipe', rotulo: 'Equipe' },
-            { valor: 'forno', rotulo: 'Forno' },
           ],
         },
         { nome: 'cor', rotulo: 'Cor de identificação', tipo: 'cor', dica: 'Usada nos cartões do Kanban.' },

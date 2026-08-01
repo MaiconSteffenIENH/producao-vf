@@ -43,11 +43,10 @@ const RESPONSAVEIS: {
 }[] = [
   { nome: 'Oleiro', tipo: 'pessoa', cor: '#8C6E4F', capacidadeDiaria: 40 },
   { nome: 'Vera e Equipe', tipo: 'equipe', cor: '#BBA58C', capacidadeDiaria: 30 },
-  // Forno tem capacidade por CARGA, não por dia — ele não trabalha por dia,
-  // trabalha por fornada. Os números são um chute inicial para o sistema não
-  // nascer mudo; a Vera ajusta com a medida do forno dela.
-  { nome: 'Forno 1ª', tipo: 'forno', cor: '#C4703B', capacidadeDiaria: null, capacidadeCarga: 80, horasPorQueima: 24 },
-  { nome: 'Forno 2ª', tipo: 'forno', cor: '#A03E2A', capacidadeDiaria: null, capacidadeCarga: 70, horasPorQueima: 30 },
+  // O forno NÃO entra aqui. Ele não é gente nem equipe, e ficava na lista de
+  // responsáveis só para emprestar a capacidade para a etapa de queima. Agora
+  // a capacidade mora na própria etapa — que é de quem a pergunta é feita:
+  // "cabe mais NESTA queima?".
 ]
 
 const ETAPAS: {
@@ -58,6 +57,8 @@ const ETAPAS: {
   defineCor?: boolean
   estoqueIntermediario?: boolean
   aguardaCarga?: boolean
+  capacidadeCarga?: number
+  horasPorQueima?: number
 }[] = [
   { nome: 'Oleiro', tipo: 'producao', ordemPadrao: 10, responsavel: 'Oleiro' },
   { nome: 'Equipe Vera', tipo: 'producao', ordemPadrao: 15, responsavel: 'Vera e Equipe' },
@@ -65,10 +66,10 @@ const ETAPAS: {
   { nome: 'Produção das alças', tipo: 'producao', ordemPadrao: 20, responsavel: 'Oleiro' },
   { nome: 'Colagem', tipo: 'producao', ordemPadrao: 30, responsavel: 'Vera e Equipe' },
   { nome: 'Secagem', tipo: 'secagem', ordemPadrao: 50, responsavel: null },
-  { nome: '1ª Queima', tipo: 'queima', ordemPadrao: 60, responsavel: 'Forno 1ª', aguardaCarga: true },
+  { nome: '1ª Queima', tipo: 'queima', ordemPadrao: 60, responsavel: null, aguardaCarga: true, capacidadeCarga: 80, horasPorQueima: 24 },
   { nome: 'Biscoito', tipo: 'estoque', ordemPadrao: 70, responsavel: null, estoqueIntermediario: true },
   { nome: 'Esmaltação', tipo: 'producao', ordemPadrao: 80, responsavel: 'Vera e Equipe', defineCor: true },
-  { nome: '2ª Queima', tipo: 'queima', ordemPadrao: 90, responsavel: 'Forno 2ª', aguardaCarga: true },
+  { nome: '2ª Queima', tipo: 'queima', ordemPadrao: 90, responsavel: null, aguardaCarga: true, capacidadeCarga: 70, horasPorQueima: 30 },
   { nome: 'Pronto', tipo: 'final', ordemPadrao: 100, responsavel: null },
   // Destino terminal para peça com defeito pequeno que ainda vende. Sem ela, a
   // única saída era registrar como perda — e aí some estoque que existe e a
@@ -284,6 +285,8 @@ async function main() {
           defineCor: e.defineCor ?? false,
           estoqueIntermediario: e.estoqueIntermediario ?? false,
           aguardaCarga: e.aguardaCarga ?? false,
+          capacidadeCarga: e.capacidadeCarga ?? null,
+          horasPorQueima: e.horasPorQueima ?? null,
           responsavelPadraoId: resp?.id ?? null,
         },
       })
@@ -293,6 +296,15 @@ async function main() {
     if (e.aguardaCarga && !existente.aguardaCarga) {
       await prisma.etapa.update({ where: { id: existente.id }, data: { aguardaCarga: true } })
       console.log(`  ajustado: etapa ${e.nome} agora aguarda carga do forno`)
+    }
+    // só preenche o que está VAZIO: número que a Vera mediu não se sobrescreve
+    // com o chute do seed
+    if (e.capacidadeCarga && existente.capacidadeCarga == null) {
+      await prisma.etapa.update({
+        where: { id: existente.id },
+        data: { capacidadeCarga: e.capacidadeCarga, horasPorQueima: e.horasPorQueima ?? null },
+      })
+      console.log(`  ajustado: etapa ${e.nome} recebeu capacidade de carga ${e.capacidadeCarga}`)
     }
   }
 
