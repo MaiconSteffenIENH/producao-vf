@@ -20,6 +20,7 @@ import {
   etapaSchema,
   loginSchema,
   materiaPrimaSchema,
+  ordenacaoSchema,
   pecaSchema,
   responsavelSchema,
   trocarSenhaSchema,
@@ -179,6 +180,27 @@ const cruds: Crud[] = [
   },
 ]
 
+/*
+ * A ordem das listas, definida arrastando a linha na tela.
+ *
+ * ESTAS DUAS ROTAS PRECISAM VIR ANTES DO `for (const c of cruds)`. O laço
+ * registra `PUT /categorias/:id`, e o Express casa na ordem em que as rotas
+ * foram registradas: se o laço vier primeiro, "ordem" é lido como um id, o
+ * zod do cadastro recusa o corpo e o arrasto morre num 400 sem sentido.
+ */
+rotas.put(
+  '/categorias/ordem',
+  rota(async (req, res) => {
+    res.json(await cadastro.reordenarCategorias(ordenacaoSchema.parse(req.body).ids))
+  }),
+)
+rotas.put(
+  '/etapas/ordem',
+  rota(async (req, res) => {
+    res.json(await cadastro.reordenarEtapas(ordenacaoSchema.parse(req.body).ids))
+  }),
+)
+
 for (const c of cruds) {
   rotas.get(`/${c.caminho}`, rota(async (_req, res) => void res.json(await c.listar())))
   rotas.post(
@@ -203,8 +225,11 @@ for (const c of cruds) {
 rotas.get(
   '/lotes',
   rota(async (req, res) => {
-    const { pecaId, corId, etapaId, responsavelId, situacao, mes } = req.query as Record<string, string | undefined>
-    res.json(await lotes.listarLotes({ pecaId, corId, etapaId, responsavelId, situacao, mes }))
+    const { pecaId, corId, etapaId, responsavelId, situacao, mes, motivoPerda } =
+      req.query as Record<string, string | undefined>
+    res.json(
+      await lotes.listarLotes({ pecaId, corId, etapaId, responsavelId, situacao, mes, motivoPerda }),
+    )
   }),
 )
 rotas.get('/lotes/kanban', rota(async (req, res) => {

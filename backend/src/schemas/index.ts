@@ -24,6 +24,18 @@ export const categoriaSchema = z.object({
   ativo: z.boolean().default(true),
 })
 
+/**
+ * Os ids na ordem nova, do jeito que o arrasto deixou a lista na tela.
+ *
+ * Leniente de propósito, como o resto: lista vazia, id repetido e id que já
+ * não existe passam por aqui e são resolvidos em `lib/ordenacao.ts`. Recusar
+ * no zod devolveria um 400 genérico justamente onde o service tem uma frase
+ * em pt-BR explicando que a lista mudou por baixo de quem arrastou.
+ */
+export const ordenacaoSchema = z.object({
+  ids: z.array(z.string()).default([]),
+})
+
 export const corSchema = z.object({
   nome: texto(60),
   hex: hex.default('#CCCCCC'),
@@ -122,7 +134,16 @@ export const perdaSchema = z.object({
   chaveIdempotencia: z.string().trim().min(8).max(80).optional().nullable(),
   etapaId: z.string().uuid(),
   quantidade: z.coerce.number().int().min(1).max(99999),
+  // o relato escrito continua obrigatório: a lista de motivos agrupa para
+  // somar, mas é o texto que explica o caso para quem ler daqui a três meses
   motivo: z.string().trim().min(1, 'diga o que aconteceu').max(300),
+  /*
+   * Motivo tipado solto aqui de propósito, e conferido contra a lista canônica
+   * no service (lib/motivos-perda.ts). Um `z.enum` devolveria 400 com mensagem
+   * de biblioteca, em inglês, antes de o service poder explicar em pt-BR o que
+   * vale — e a lista é editada num arquivo só, não em dois.
+   */
+  motivoTipo: z.string().trim().max(40).or(z.literal('')).optional().nullable(),
 })
 
 export const divisaoSchema = z.object({

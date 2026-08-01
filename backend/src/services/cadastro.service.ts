@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma'
 import { normalizarBusca } from '../lib/busca'
 import { conflito } from '../lib/erros'
+import { calcularNovaOrdem, type Reordenacao } from '../lib/ordenacao'
 import type { z } from 'zod'
 import type {
   categoriaSchema,
@@ -11,6 +12,20 @@ import type {
 } from '../schemas'
 
 const vazioParaNulo = (v: string | null | undefined) => (v ? v : null)
+
+/**
+ * Arrasto feito sobre uma lista que não existe mais é recusado inteiro.
+ *
+ * Se um id sumiu, a tela de quem arrastou está velha — e a posição para onde a
+ * linha foi solta era relativa a linhas que já não estão lá. Gravar assim mesmo
+ * produziria uma ordem que ninguém pediu, e o pior é que ela pareceria certa
+ * para quem soltou. O cliente recarrega e refaz o gesto, que custa dois
+ * segundos.
+ */
+function recusarSeAListaMudou(resultado: Reordenacao, oQue: string) {
+  if (resultado.desconhecidos.length === 0) return
+  throw conflito(`A lista de ${oQue} mudou desde que esta tela abriu. Atualize a página e arraste de novo.`)
+}
 
 // ─────────────────────────── Categorias ───────────────────────────
 
@@ -25,6 +40,34 @@ export async function excluirCategoria(id: string) {
   const emUso = await prisma.peca.count({ where: { categoriaId: id } })
   if (emUso > 0) throw conflito(`Esta categoria está em ${emUso} peça(s). Mude as peças de categoria antes.`)
   await prisma.categoria.delete({ where: { id } })
+}
+
+/**
+ * A ordem das categorias, arrastada na tela.
+ *
+ * A leitura usa o MESMO `orderBy` da listagem: é a ordem que estava na tela de
+ * quem arrastou, e é o desempate que decide onde encostar quem não foi citado.
+ */
+export async function reordenarCategorias(ids: string[]) {
+  const atuais: { id: string; ordem: number }[] = await prisma.categoria.findMany({
+    select: { id: true, ordem: true },
+    orderBy: [{ ordem: 'asc' }, { nome: 'asc' }],
+  })
+
+  const resultado = calcularNovaOrdem(atuais, ids)
+  recusarSeAListaMudou(resultado, 'categorias')
+  if (resultado.gravar.length === 0) return { atualizados: 0 }
+
+  /*
+   * Uma escrita por linha, e todas juntas. Nenhuma das duas tabelas tem índice
+   * único em ordem, então cada UPDATE passa sozinho — o que torna a falha no
+   * meio silenciosa: metade renumerada, metade não, e a lista volta com duas
+   * linhas na mesma posição sem nenhum erro na tela.
+   */
+  await prisma.$transaction(
+    resultado.gravar.map(({ id, ordem }) => prisma.categoria.update({ where: { id }, data: { ordem } })),
+  )
+  return { atualizados: resultado.gravar.length }
 }
 
 // ─────────────────────────── Esmaltes (cores) ───────────────────────────
@@ -129,6 +172,35 @@ export async function excluirEtapa(id: string) {
   const emUso = await prisma.roteiroEtapa.count({ where: { etapaId: id } })
   if (emUso > 0) throw conflito(`Esta etapa está em ${emUso} roteiro(s) de peça. Tire dos roteiros antes.`)
   await prisma.etapa.delete({ where: { id } })
+}
+
+/**
+ * A ordem sugerida das etapas, arrastada na tela.
+ *
+ * Renumerar de 1 em diante é seguro para quem lê `ordemPadrao`: a queima
+ * decide biscoito × esmalte comparando a posição da etapa com a da etapa que
+ * define a cor (`queima.service.ts`), e comparação só depende da ordem
+ * relativa — que o arrasto preserva por construção. O roteiro de cada peça tem
+ * ordem própria e não é tocado aqui.
+ */
+export async function reordenarEtapas(ids: string[]) {
+  const atuais: { id: string; ordemPadrao: number }[] = await prisma.etapa.findMany({
+    select: { id: true, ordemPadrao: true },
+    orderBy: [{ ordemPadrao: 'asc' }, { nome: 'asc' }],
+  })
+
+  // o campo da etapa se chama `ordemPadrao`; a regra pura fala só em `ordem`
+  const resultado = calcularNovaOrdem(
+    atuais.map((etapa) => ({ id: etapa.id, ordem: etapa.ordemPadrao })),
+    ids,
+  )
+  recusarSeAListaMudou(resultado, 'etapas')
+  if (resultado.gravar.length === 0) return { atualizados: 0 }
+
+  await prisma.$transaction(
+    resultado.gravar.map(({ id, ordem }) => prisma.etapa.update({ where: { id }, data: { ordemPadrao: ordem } })),
+  )
+  return { atualizados: resultado.gravar.length }
 }
 
 /**

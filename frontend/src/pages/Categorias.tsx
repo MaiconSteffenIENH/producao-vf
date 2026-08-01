@@ -8,10 +8,17 @@ export function Categorias() {
       titulo="Categorias"
       descricao="Os grupos que aparecem no site: Bowls, Café, Pratos…"
       caminho="categorias"
+      // a ordem se resolve arrastando a linha; o campo do modal virou exceção
+      campoOrdem="ordem"
       valoresIniciais={{ nome: '', ordem: 0, ativo: true }}
       campos={[
         { nome: 'nome', rotulo: 'Nome', tipo: 'texto', obrigatorio: true },
-        { nome: 'ordem', rotulo: 'Ordem', tipo: 'numero', dica: 'Menor aparece primeiro nas listas.' },
+        {
+          nome: 'ordem',
+          rotulo: 'Ordem',
+          tipo: 'numero',
+          dica: 'Menor aparece primeiro nas listas. O caminho normal é arrastar a linha.',
+        },
         { nome: 'ativo', rotulo: 'Ativa', tipo: 'booleano' },
       ]}
       colunas={[

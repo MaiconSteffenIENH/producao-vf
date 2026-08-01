@@ -5,6 +5,7 @@ import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { plural } from '../lib/format'
 import { enviarComFila } from '../lib/filaOffline'
+import { MOTIVOS_PERDA, ajudaDoMotivo } from '../lib/motivos-perda'
 import { useArrastar } from '../lib/useArrastar'
 import { ConfirmarExclusaoLote } from '../components/ConfirmarExclusaoLote'
 import {
@@ -155,7 +156,14 @@ export function Producao() {
   }, [medirRolagem, colunas])
 
   const [acao, setAcao] = useState<{ tipo: Acao; cartao: Cartao; etapaId: string } | null>(null)
-  const [form, setForm] = useState({ quantidade: 0, etapaDestinoId: '', corId: '', responsavelId: '', motivo: '' })
+  const [form, setForm] = useState({
+    quantidade: 0,
+    etapaDestinoId: '',
+    corId: '',
+    responsavelId: '',
+    motivo: '',
+    motivoTipo: '',
+  })
   const [enviando, setEnviando] = useState(false)
 
   const recarregar = useCallback(
@@ -208,6 +216,9 @@ export function Producao() {
       corId: cartao.cor?.id ?? '',
       responsavelId: cartao.responsavelSugeridoId ?? '',
       motivo: '',
+      // nunca vem preenchido: motivo herdado da perda anterior seria diagnóstico
+      // por descuido, e é justamente a soma por motivo que ficaria mentindo
+      motivoTipo: '',
     })
   }
 
@@ -267,7 +278,18 @@ export function Producao() {
         const r = await enviarComFila(
           'post',
           `/lotes/${acao.cartao.id}/${acao.tipo}`,
-          { etapaId: acao.etapaId, quantidade: form.quantidade, motivo: form.motivo },
+          {
+            etapaId: acao.etapaId,
+            quantidade: form.quantidade,
+            motivo: form.motivo,
+            /*
+             * O motivo tipado viaja no corpo GUARDADO pela fila, e não só na
+             * requisição: sem ele aqui, a perda registrada sem sinal subiria
+             * dias depois sem diagnóstico nenhum — e no livro-razão isso não se
+             * edita depois. Segunda qualidade não é perda e não recebe motivo.
+             */
+            ...(acao.tipo === 'perda' ? { motivoTipo: form.motivoTipo } : {}),
+          },
           `${acao.tipo === 'perda' ? 'Perda' : 'Segunda'} de ${form.quantidade} em ${acao.cartao.codigo}`,
         )
         avisar.ok(
@@ -492,39 +514,57 @@ export function Producao() {
                         <p className="mt-1 text-[11px] text-tinta-fraca">veio do {cartao.loteOrigem.codigo}</p>
                       )}
 
-                      <div className="mt-3 flex flex-wrap gap-1">
+                      {/*
+                        GRADE DE DUAS COLUNAS, e não `flex-wrap`.
+
+                        Com flex, cada botão fica do tamanho da própria palavra:
+                        "Mover" curto, "Segunda" comprido, e as bordas de baixo
+                        nunca se alinham — vira escada. Na grade a largura é da
+                        COLUNA, então os quatro ficam idênticos e o ícone de
+                        cada um cai sempre na mesma distância da borda.
+
+                        `justify-start` com o ícone antes do texto mantém os
+                        quatro ícones numa coluna só; centralizar o conteúdo
+                        deixaria cada ícone num lugar diferente, que é
+                        exatamente a bagunça que a grade veio resolver.
+
+                        Apagar fica fora do bloco, na largura toda: é o único
+                        que não tem volta, e misturá-lo aos outros três
+                        convidaria ao toque errado numa tela de dedo.
+                      */}
+                      <div className="mt-3 grid grid-cols-2 gap-1.5">
                         <button
                           onClick={() => abrirAcao('avancar', cartao, coluna.etapa.id)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-marca px-2 py-1 text-xs font-medium text-contraste hover:bg-marca-escura"
+                          className="inline-flex items-center justify-start gap-1.5 rounded-lg bg-marca px-2.5 py-1.5 text-xs font-medium text-contraste hover:bg-marca-escura"
                         >
-                          <ArrowRight size={13} /> Mover
+                          <ArrowRight size={13} className="shrink-0" /> Mover
                         </button>
                         <button
                           onClick={() => abrirAcao('perda', cartao, coluna.etapa.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-borda px-2 py-1 text-xs text-tinta hover:bg-superficie-2"
+                          className="inline-flex items-center justify-start gap-1.5 rounded-lg border border-borda px-2.5 py-1.5 text-xs text-tinta hover:bg-superficie-2"
                         >
-                          <AlertTriangle size={13} /> Perda
+                          <AlertTriangle size={13} className="shrink-0" /> Perda
                         </button>
                         <button
                           onClick={() => abrirAcao('segunda', cartao, coluna.etapa.id)}
                           title="Peça com defeito pequeno que ainda vende — não é perda"
-                          className="inline-flex items-center gap-1 rounded-lg border border-borda px-2 py-1 text-xs text-tinta hover:bg-superficie-2"
+                          className="inline-flex items-center justify-start gap-1.5 rounded-lg border border-borda px-2.5 py-1.5 text-xs text-tinta hover:bg-superficie-2"
                         >
-                          <BadgeMinus size={13} /> Segunda
+                          <BadgeMinus size={13} className="shrink-0" /> Segunda
                         </button>
                         <button
                           onClick={() => abrirAcao('dividir', cartao, coluna.etapa.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-borda px-2 py-1 text-xs text-tinta hover:bg-superficie-2"
+                          className="inline-flex items-center justify-start gap-1.5 rounded-lg border border-borda px-2.5 py-1.5 text-xs text-tinta hover:bg-superficie-2"
                         >
-                          <Scissors size={13} /> Dividir
+                          <Scissors size={13} className="shrink-0" /> Dividir
                         </button>
                         <button
                           onClick={() => setParaApagar(cartao.id)}
                           title="Lote aberto por engano — apaga de vez, e nada dele vira perda"
                           aria-label={`Apagar lote ${cartao.codigo}`}
-                          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-borda px-2 py-1 text-xs text-tinta-fraca hover:border-perigo/40 hover:bg-perigo/5 hover:text-perigo"
+                          className="col-span-2 inline-flex items-center justify-start gap-1.5 rounded-lg border border-borda px-2.5 py-1.5 text-xs text-tinta-fraca hover:border-perigo/40 hover:bg-perigo/5 hover:text-perigo"
                         >
-                          <Trash2 size={13} /> Apagar
+                          <Trash2 size={13} className="shrink-0" /> Apagar
                         </button>
                       </div>
                     </article>
@@ -739,6 +779,39 @@ export function Producao() {
               </Campo>
             )}
 
+            {/*
+              O MOTIVO VEM ANTES DO TEXTO, e é lista fixa.
+              Antes porque classificar primeiro muda o que se escreve depois: o
+              texto deixa de repetir "trincou" e vira o detalhe do caso ("saiu da
+              estufa da parede da janela"). E é lista porque texto livre não soma
+              — a perda já entrava na conta do quanto produzir e no custo da
+              peça, só que sem dizer por quê.
+              O modal de segunda qualidade NÃO tem este campo: segunda não é
+              perda, é estoque que vende com desconto.
+            */}
+            {acao.tipo === 'perda' && (
+              <Campo
+                rotulo="Motivo da perda"
+                dica={
+                  ajudaDoMotivo(form.motivoTipo) ??
+                  'Escolher da lista é o que permite somar depois: "38% das perdas do Bule são trinca na secagem".'
+                }
+              >
+                <Select
+                  required
+                  value={form.motivoTipo}
+                  onChange={(e) => setForm({ ...form, motivoTipo: e.target.value })}
+                >
+                  <option value="">— escolha o motivo —</option>
+                  {MOTIVOS_PERDA.map((m) => (
+                    <option key={m.valor} value={m.valor}>
+                      {m.rotulo}
+                    </option>
+                  ))}
+                </Select>
+              </Campo>
+            )}
+
             <Campo
               rotulo={
                 acao.tipo === 'perda'
@@ -749,7 +822,7 @@ export function Producao() {
               }
               dica={
                 acao.tipo === 'perda'
-                  ? 'Esse texto vira o histórico da perda — vale ser específico.'
+                  ? 'O motivo acima agrupa; este texto é o que explica o caso para quem abrir o lote daqui a três meses.'
                   : acao.tipo === 'segunda'
                     ? 'Segunda qualidade continua sendo estoque: vende com desconto e NÃO entra na taxa de perda.'
                     : undefined

@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { GripVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
+import { useOrdenarArrastando } from '../lib/useOrdenarArrastando'
 import { normalizarBusca } from '../lib/format'
 import { avisar } from './Toaster'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -27,6 +28,21 @@ type Props<T extends Registro> = {
   /** carrega listas auxiliares antes de abrir o formulário (ex.: responsáveis) */
   aoCarregarAuxiliares?: () => Promise<void>
   textoVazio?: string
+  /**
+   * Liga a reordenação por arrasto e diz qual campo guarda a posição
+   * (`ordem`, `ordemPadrao`).
+   *
+   * É opcional porque a maioria das telas deste componente não tem ordem
+   * nenhuma: Esmaltes, Responsáveis e Matérias-primas são listadas por nome, e
+   * arrastar linha ali prometeria uma ordem que o servidor não guarda. Sem a
+   * prop, nada muda — nem o punho, nem a coluna, nem o gesto.
+   */
+  campoOrdem?: string
+}
+
+/** Distingue "o servidor recusou" de "não deu para falar com o servidor". */
+function temResposta(erro: unknown): boolean {
+  return typeof erro === 'object' && erro !== null && 'response' in erro && Boolean((erro as { response?: unknown }).response)
 }
 
 export function CrudSimples<T extends Registro>({
@@ -38,6 +54,7 @@ export function CrudSimples<T extends Registro>({
   colunas,
   aoCarregarAuxiliares,
   textoVazio,
+  campoOrdem,
 }: Props<T>) {
   const [itens, setItens] = useState<T[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -79,6 +96,70 @@ export function CrudSimples<T extends Registro>({
     if (!alvo) return itens
     return itens.filter((i) => normalizarBusca(String(i.nome ?? '')).includes(alvo))
   }, [itens, busca])
+
+  const corpoTabela = useRef<HTMLTableSectionElement>(null)
+
+  /*
+   * Com a busca filtrando, a lista da tela não é a lista inteira: soltar uma
+   * linha "em terceiro" mandaria para o servidor uma ordem entre três de onze,
+   * e as outras oito iriam parar em algum lugar que ninguém escolheu. Enquanto
+   * há busca o arrasto fica desligado, e a linha de ajuda diz o motivo.
+   */
+  const podeArrastar = Boolean(campoOrdem) && !busca
+
+  /**
+   * Grava a ordem nova sem esperar o servidor.
+   *
+   * A lista já está na posição certa quando o dedo levanta — esperar a resposta
+   * faria a linha voltar ao lugar antigo e pular para o novo, que num app de
+   * ateliê com 4G lê como bug. Se o servidor recusar, a ordem anterior volta
+   * inteira, o aviso aparece e a lista é recarregada: recusa quase sempre
+   * significa que a lista mudou por baixo, e insistir na versão local seria
+   * mostrar uma tela que não existe mais.
+   */
+  const salvarOrdem = useCallback(
+    async (idsNaNovaOrdem: string[]) => {
+      if (!campoOrdem) return
+      const anteriores = itens
+      const porId = new Map(itens.map((i) => [i.id, i]))
+      const citados = idsNaNovaOrdem.flatMap((id) => {
+        const item = porId.get(id)
+        return item ? [item] : []
+      })
+      const vistos = new Set(citados.map((i) => i.id))
+      /*
+       * Quem não veio na lista arrastada vai para o fim — a MESMA regra do
+       * backend (lib/ordenacao.ts). Divergir aqui faria a tela mostrar, por um
+       * instante, uma ordem que o servidor nunca gravaria.
+       */
+      const novos = [...citados, ...itens.filter((i) => !vistos.has(i.id))].map(
+        (item, indice) => ({ ...item, [campoOrdem]: indice + 1 }) as T,
+      )
+      setItens(novos)
+      try {
+        await api.put(`/${caminho}/ordem`, { ids: idsNaNovaOrdem })
+      } catch (erro) {
+        setItens(anteriores)
+        avisar.erro(mensagemDoErro(erro, 'Não deu para salvar a nova ordem.'))
+        /*
+         * Recarregar só quando o servidor RESPONDEU recusando (a lista mudou
+         * por baixo de quem arrastou, e a tela está velha). Sem sinal não há o
+         * que recarregar: a tentativa falharia de novo e empilharia um segundo
+         * aviso vermelho por cima do primeiro, para o mesmo gesto.
+         */
+        if (temResposta(erro)) void recarregar(true)
+      }
+    },
+    [caminho, campoOrdem, itens, recarregar],
+  )
+
+  const { pegar, punho, idArrastando, indiceAlvo } = useOrdenarArrastando({
+    ids: filtrados.map((i) => i.id),
+    aoSoltar: salvarOrdem,
+    rotuloDe: (id) => itens.find((i) => i.id === id)?.nome ?? 'linha',
+    area: corpoTabela,
+    habilitado: podeArrastar,
+  })
 
   const abrirNovo = () => {
     setEditando(null)
@@ -156,49 +237,99 @@ export function CrudSimples<T extends Registro>({
           acao={!busca ? <Botao onClick={abrirNovo}>Cadastrar o primeiro</Botao> : undefined}
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-borda bg-superficie">
-          <table className="w-full text-sm">
-            <thead className="bg-superficie-2 text-left text-xs uppercase tracking-wide text-tinta-fraca">
-              <tr>
-                {colunas.map((c) => (
-                  <th key={c.rotulo} className={`px-4 py-3 font-medium ${c.className ?? ''}`}>
-                    {c.rotulo}
-                  </th>
-                ))}
-                <th className="px-4 py-3 text-right font-medium">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtrados.map((item) => (
-                <tr key={item.id} className="border-t border-borda">
+        <>
+          {campoOrdem && (
+            <p className="mb-2 flex items-center gap-1.5 text-xs text-tinta-fraca">
+              <GripVertical size={13} className="shrink-0" />
+              {busca
+                ? 'Limpe a busca para poder reordenar — filtrada, a lista não mostra todas as posições.'
+                : 'Segure a linha e arraste para mudar a ordem. Pelo teclado: o punho e as setas ↑ ↓.'}
+            </p>
+          )}
+          <div className="overflow-x-auto rounded-xl border border-borda bg-superficie">
+            <table className="w-full text-sm">
+              <thead className="bg-superficie-2 text-left text-xs uppercase tracking-wide text-tinta-fraca">
+                <tr>
+                  {campoOrdem && (
+                    <th className="w-10 px-2 py-3 font-medium">
+                      <span className="sr-only">Reordenar</span>
+                    </th>
+                  )}
                   {colunas.map((c) => (
-                    <td key={c.rotulo} className={`px-4 py-3 align-middle ${c.className ?? ''}`}>
-                      {c.render(item)}
-                    </td>
+                    <th key={c.rotulo} className={`px-4 py-3 font-medium ${c.className ?? ''}`}>
+                      {c.rotulo}
+                    </th>
                   ))}
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1">
-                      <button
-                        onClick={() => abrirEdicao(item)}
-                        aria-label={`Editar ${item.nome}`}
-                        className="rounded-lg p-2 text-tinta-fraca hover:bg-superficie-2 hover:text-tinta"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => setParaExcluir(item)}
-                        aria-label={`Excluir ${item.nome}`}
-                        className="rounded-lg p-2 text-tinta-fraca hover:bg-superficie-2 hover:text-perigo"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
+                  <th className="px-4 py-3 text-right font-medium">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody ref={corpoTabela}>
+                {filtrados.map((item, indice) => (
+                  <tr
+                    key={item.id}
+                    {...(campoOrdem ? pegar(item.id) : {})}
+                    className={[
+                      /*
+                       * A linha-guia é a própria borda da linha, trocada de 1px
+                       * cinza para 2px da marca. Inserir uma linha de verdade
+                       * empurraria as outras para baixo no meio do arrasto —
+                       * e é justamente o retângulo delas que está sendo medido.
+                       */
+                      /*
+                       * Cor POR LADO (border-t-marca, não border-marca). Ao
+                       * soltar depois da última linha as duas regras caem na
+                       * mesma linha, e `border-marca` pinta os quatro lados:
+                       * aparecia risco marrom em cima E embaixo, como se
+                       * houvesse dois destinos possíveis.
+                       */
+                      indiceAlvo === indice ? 'border-t-2 border-t-marca' : 'border-t border-t-borda',
+                      indiceAlvo === filtrados.length && indice === filtrados.length - 1
+                        ? 'border-b-2 border-b-marca'
+                        : '',
+                      idArrastando === item.id ? 'bg-marca/10' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  >
+                    {campoOrdem && (
+                      <td className="w-10 px-2 py-3 align-middle">
+                        <button
+                          {...punho(item.id)}
+                          className="cursor-grab rounded-lg p-2 text-tinta-fraca hover:bg-superficie-2 hover:text-tinta active:cursor-grabbing disabled:cursor-default disabled:opacity-40"
+                        >
+                          <GripVertical size={16} />
+                        </button>
+                      </td>
+                    )}
+                    {colunas.map((c) => (
+                      <td key={c.rotulo} className={`px-4 py-3 align-middle ${c.className ?? ''}`}>
+                        {c.render(item)}
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex gap-1">
+                        <button
+                          onClick={() => abrirEdicao(item)}
+                          aria-label={`Editar ${item.nome}`}
+                          className="rounded-lg p-2 text-tinta-fraca hover:bg-superficie-2 hover:text-tinta"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => setParaExcluir(item)}
+                          aria-label={`Excluir ${item.nome}`}
+                          className="rounded-lg p-2 text-tinta-fraca hover:bg-superficie-2 hover:text-perigo"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <Modal

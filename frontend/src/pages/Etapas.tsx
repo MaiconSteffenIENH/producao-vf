@@ -35,6 +35,8 @@ export function Etapas() {
       descricao="As paradas do caminho até a peça pronta. Cada peça monta o roteiro dela com estas etapas."
       caminho="etapas"
       aoCarregarAuxiliares={carregarResponsaveis}
+      // a ordem se resolve arrastando a linha; o campo do modal virou exceção
+      campoOrdem="ordemPadrao"
       valoresIniciais={{
         nome: '',
         tipo: 'producao',
@@ -52,7 +54,12 @@ export function Etapas() {
           tipo: 'select',
           opcoes: Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => ({ valor, rotulo })),
         },
-        { nome: 'ordemPadrao', rotulo: 'Ordem sugerida', tipo: 'numero', dica: 'Só ordena a lista; o roteiro de cada peça manda.' },
+        {
+          nome: 'ordemPadrao',
+          rotulo: 'Ordem sugerida',
+          tipo: 'numero',
+          dica: 'Só ordena a lista; o roteiro de cada peça manda. O caminho normal é arrastar a linha.',
+        },
         {
           nome: 'responsavelPadraoId',
           rotulo: 'Responsável padrão',

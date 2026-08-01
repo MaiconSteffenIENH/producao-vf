@@ -10,6 +10,15 @@ import {
   saldoTotalDoLote as saldoTotalPuro,
   type MovimentoBruto,
 } from '../lib/saldos'
+import {
+  MOTIVO_NAO_INFORMADO,
+  MOTIVO_QUALQUER,
+  ehFiltroDeMotivo,
+  ehMotivoDePerda,
+  mensagemDeMotivoInvalido,
+  resumoDeMotivos,
+  type MovimentoDePerda,
+} from '../lib/motivos-perda'
 
 /*
  * O saldo de um lote em cada etapa é DERIVADO dos movimentos, nunca guardado
@@ -71,6 +80,32 @@ async function roteiroDaPeca(pecaId: string) {
 
 // ─────────────────────────── Consultas ───────────────────────────
 
+type MovimentoDePerdaDoLote = MovimentoDePerda & { loteId: string }
+
+/*
+ * O FILTRO DE PERDA DO HISTÓRICO.
+ *
+ * São duas perguntas com a mesma cara, e o histórico não respondia nenhuma:
+ * "quais lotes perderam peça" e "quais lotes trincaram na secagem". A segunda é
+ * o pedido; a primeira é o caminho até ela — sem um jeito de ver só o que teve
+ * perda, achar o lote problemático era rolar a lista inteira lote a lote.
+ *
+ * `some` e não contagem: um único movimento de perda daquele motivo já torna o
+ * lote interessante. E o valor desconhecido é recusado em vez de ignorado —
+ * filtro que devolve o ateliê inteiro parece filtro que não achou nada, e a
+ * pessoa conclui que o problema não existe.
+ */
+function condicaoDePerda(motivoPerda: string | undefined): Record<string, unknown> {
+  if (!motivoPerda) return {}
+  // recusa antes de traduzir: valor inventado vira erro em pt-BR, não filtro vazio
+  if (!ehFiltroDeMotivo(motivoPerda)) throw invalido(mensagemDeMotivoInvalido(motivoPerda))
+  if (motivoPerda === MOTIVO_QUALQUER) return { movimentos: { some: { tipo: 'perda' } } }
+  if (motivoPerda === MOTIVO_NAO_INFORMADO) {
+    return { movimentos: { some: { tipo: 'perda', motivoTipo: null } } }
+  }
+  return { movimentos: { some: { tipo: 'perda', motivoTipo: motivoPerda } } }
+}
+
 export async function listarLotes(filtros: {
   pecaId?: string
   corId?: string
@@ -78,12 +113,21 @@ export async function listarLotes(filtros: {
   responsavelId?: string
   situacao?: string
   mes?: string
+  /** um motivo da lista, `nao_informado`, ou `qualquer` para "só o que perdeu" */
+  motivoPerda?: string
 }) {
   const [ano, mes] = (filtros.mes ?? '').split('-').map(Number)
   const periodo =
     ano && mes
       ? { gte: new Date(Date.UTC(ano, mes - 1, 1)), lt: new Date(Date.UTC(ano, mes, 1)) }
       : undefined
+
+  const condicoesDeMovimento: Record<string, unknown>[] = []
+  if (filtros.responsavelId) {
+    condicoesDeMovimento.push({ movimentos: { some: { responsavelId: filtros.responsavelId } } })
+  }
+  const porMotivo = condicaoDePerda(filtros.motivoPerda)
+  if (Object.keys(porMotivo).length > 0) condicoesDeMovimento.push(porMotivo)
 
   const lotes = await prisma.lote.findMany({
     where: {
@@ -93,15 +137,39 @@ export async function listarLotes(filtros: {
       ...(filtros.situacao === 'andamento' ? { concluidoEm: null, canceladoEm: null } : {}),
       ...(filtros.situacao === 'concluido' ? { concluidoEm: { not: null } } : {}),
       ...(filtros.situacao === 'cancelado' ? { canceladoEm: { not: null } } : {}),
-      ...(filtros.responsavelId ? { movimentos: { some: { responsavelId: filtros.responsavelId } } } : {}),
+      /*
+       * Os dois filtros abaixo falam da MESMA relação (`movimentos`), e num
+       * objeto literal a última chave apaga a primeira em silêncio: filtrar
+       * por responsável E por motivo de perda devolvia todo lote com aquele
+       * motivo, inclusive os que a pessoa nunca encostou. `AND` mantém os dois
+       * como condições independentes, cada uma com o seu próprio `some`.
+       */
+      ...(condicoesDeMovimento.length > 0 ? { AND: condicoesDeMovimento } : {}),
     },
     orderBy: { criadoEm: 'desc' },
     include: incluirLote,
   })
 
-  const saldos = await saldosPorLote(lotes.map((l: { id: string }) => l.id))
+  const ids = lotes.map((l: { id: string }) => l.id)
+  const saldos = await saldosPorLote(ids)
   const etapas = await prisma.etapa.findMany()
   const nomeEtapa = new Map<string, string>(etapas.map((e: { id: string; nome: string }) => [e.id, e.nome]))
+
+  /*
+   * As perdas vêm numa consulta só, para o ateliê inteiro. Filtrar por motivo
+   * sem mostrar o motivo na linha seria meio recurso — mas buscar as perdas
+   * lote a lote transformaria a tela mais cheia do sistema num N+1.
+   */
+  const perdas: MovimentoDePerdaDoLote[] = await prisma.movimentoLote.findMany({
+    where: { loteId: { in: ids }, tipo: 'perda' },
+    select: { loteId: true, quantidade: true, motivoTipo: true },
+  })
+  const perdasPorLote = new Map<string, MovimentoDePerda[]>()
+  for (const p of perdas) {
+    const doLote = perdasPorLote.get(p.loteId)
+    if (doLote) doLote.push(p)
+    else perdasPorLote.set(p.loteId, [p])
+  }
 
   const comSaldo = lotes.map((lote: { id: string }) => {
     const mapa = saldos.get(lote.id) ?? new Map<string, number>()
@@ -110,10 +178,16 @@ export async function listarLotes(filtros: {
       etapa: nomeEtapa.get(etapaId) ?? '?',
       quantidade,
     }))
+    const perda = resumoDeMotivos(perdasPorLote.get(lote.id) ?? [])
     return {
       ...lote,
       saldoTotal: distribuicao.reduce((s, d) => s + d.quantidade, 0),
       distribuicao,
+      perdaTotal: perda.total,
+      // o campeão vem mastigado porque é o que a linha da tabela mostra sem
+      // abrir o lote — e ele ignora o "não informado", que não responde nada
+      perdaPrincipal: perda.principal,
+      perdaPorMotivo: perda.ranking,
     }
   })
 
@@ -149,6 +223,21 @@ export async function obterLote(id: string) {
   })
   const mapa = (await saldosPorLote([id])).get(id) ?? new Map<string, number>()
 
+  /*
+   * O ranking sai daqui e não da tela: é a mesma conta que a listagem já faz, e
+   * duas contas de porcentagem discordam no primeiro arredondamento — aí a
+   * mesma perda vira 38% numa tela e 37,5% na outra, e o número perde a
+   * autoridade que era o motivo de existir.
+   */
+  const perda = resumoDeMotivos(
+    lote.movimentos
+      .filter((m: { tipo: string }) => m.tipo === 'perda')
+      .map((m: { quantidade: number; motivoTipo: string | null }) => ({
+        quantidade: m.quantidade,
+        motivoTipo: m.motivoTipo,
+      })),
+  )
+
   return {
     ...lote,
     roteiro,
@@ -158,9 +247,8 @@ export async function obterLote(id: string) {
       quantidade: mapa.get(r.etapaId) ?? 0,
     })),
     saldoTotal: [...mapa.values()].reduce((s, q) => s + q, 0),
-    perdaTotal: lote.movimentos
-      .filter((m: { tipo: string }) => m.tipo === 'perda')
-      .reduce((s: number, m: { quantidade: number }) => s + m.quantidade, 0),
+    perdaTotal: perda.total,
+    perdaPorMotivo: perda.ranking,
   }
 }
 
@@ -426,18 +514,42 @@ export async function avancarLote(
   return resultado
 }
 
+/*
+ * MOTIVO TIPADO: obrigatório na tela, opcional aqui — e isso não é incoerência.
+ *
+ * A fila offline guarda o corpo da requisição no celular e reenvia dias depois.
+ * Uma perda registrada no ateliê sem sinal ANTES desta lista existir sobe sem o
+ * campo, e recusá-la apagaria o registro de peça que quebrou de verdade —
+ * exatamente o que a fila existe para impedir. Perda sem diagnóstico ainda é
+ * uma perda; perda que sumiu é um erro de saldo.
+ *
+ * O que não passa nunca é valor INVENTADO. Motivo fora da lista entraria no
+ * ranking como um balde só dele, e a soma que justifica a lista fixa se
+ * desfaria em silêncio.
+ */
+function motivoTipadoDaPerda(valor: string | null | undefined): string | null {
+  const limpo = (valor ?? '').trim()
+  if (!limpo) return null
+  if (!ehMotivoDePerda(limpo)) throw invalido(mensagemDeMotivoInvalido(limpo))
+  return limpo
+}
+
 export async function registrarPerda(
   dados: {
     loteId: string
     etapaId: string
     quantidade: number
     motivo: string
+    /** um dos valores de lib/motivos-perda.ts */
+    motivoTipo?: string | null
     chaveIdempotencia?: string | null
   },
   sessao: Sessao,
 ) {
   const repetido = await movimentoJaGravado(dados.chaveIdempotencia)
   if (repetido) return repetido
+
+  const motivoTipo = motivoTipadoDaPerda(dados.motivoTipo)
 
   const lote = await prisma.lote.findUnique({ where: { id: dados.loteId } })
   if (!lote) throw naoEncontrado('Lote')
@@ -456,6 +568,7 @@ export async function registrarPerda(
       tipo: 'perda',
       corId: lote.corId,
       motivo: dados.motivo,
+      motivoTipo,
       usuarioId: sessao.id,
       usuarioNome: sessao.nome,
       chaveIdempotencia: dados.chaveIdempotencia ?? null,

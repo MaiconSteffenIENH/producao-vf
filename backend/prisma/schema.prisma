@@ -382,6 +382,17 @@ model MovimentoLote {
   corId          String?  @map("cor_id") @db.Uuid
   responsavelId  String?  @map("responsavel_id") @db.Uuid
   motivo         String?
+  /// MOTIVO TIPADO DA PERDA — o que faz a perda somar e filtrar.
+  ///
+  /// `motivo` continua sendo o relato escrito, e é ele que faz o histórico
+  /// valer meses depois. Mas texto livre não agrupa: dava para saber QUANTO se
+  /// perde, nunca POR QUÊ — e a perda medida já alimenta em silêncio o quanto
+  /// produzir e o custo real por peça. Valores válidos em lib/motivos-perda.ts.
+  ///
+  /// Opcional porque nulo é caso legítimo, não falta de dado: toda perda
+  /// gravada antes desta coluna existir fica nula para sempre e aparece como
+  /// "não informado". Preencher isso por trás seria inventar diagnóstico.
+  motivoTipo     String?  @map("motivo_tipo")
   usuarioId      String?  @map("usuario_id") @db.Uuid
   usuarioNome    String   @map("usuario_nome")
   /*
@@ -405,6 +416,10 @@ model MovimentoLote {
   @@index([loteId])
   @@index([criadoEm])
   @@index([responsavelId, criadoEm])
+  // o histórico filtra por "perda com este motivo" varrendo o livro-razão
+  // inteiro; sem este índice a consulta cresce junto com todo movimento que o
+  // ateliê registrar, e não só com as perdas
+  @@index([tipo, motivoTipo])
   @@map("movimentos_lote")
 }
 

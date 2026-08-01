@@ -3,9 +3,18 @@ import { Trash2 } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { dataBr } from '../lib/format'
+import {
+  MOTIVOS_PERDA,
+  MOTIVO_NAO_INFORMADO,
+  MOTIVO_QUALQUER,
+  rotuloDoMotivo,
+} from '../lib/motivos-perda'
 import { avisar } from '../components/Toaster'
 import { Botao, CabecalhoPagina, Carregando, ChipCor, Etiqueta, Input, Modal, Select, Vazio } from '../components/ui'
 import { ConfirmarExclusaoLote } from '../components/ConfirmarExclusaoLote'
+
+/** Uma fatia do ranking de perdas: a conta vem pronta do backend, de propósito. */
+type LinhaDeMotivo = { valor: string; rotulo: string; quantidade: number; percentual: number }
 
 type Lote = {
   id: string
@@ -21,13 +30,24 @@ type Lote = {
   cor: { id: string; nome: string; hex: string; malhado: boolean; amostraUrl: string | null } | null
   loteOrigem: { id: string; codigo: string } | null
   distribuicao: { etapaId: string; etapa: string; quantidade: number }[]
+  perdaTotal: number
+  perdaPorMotivo: LinhaDeMotivo[]
 }
+
+/*
+ * O ranking inteiro vem pronto do backend nos DOIS endpoints — a tela nunca
+ * soma nada. A listagem recebe, além dele, o motivo campeão já escolhido: é o
+ * único que cabe na linha da tabela sem abrir o lote.
+ */
+type LoteDaLista = Lote & { perdaPrincipal: LinhaDeMotivo | null }
 
 type Movimento = {
   id: string
   tipo: string
   quantidade: number
   motivo: string | null
+  /** nulo em toda perda anterior à lista de motivos — vira "Não informado" */
+  motivoTipo: string | null
   usuarioNome: string
   criadoEm: string
   etapaOrigem: { nome: string } | null
@@ -36,7 +56,7 @@ type Movimento = {
   responsavel: { nome: string; cor: string } | null
 }
 
-type Detalhe = Lote & { movimentos: Movimento[]; perdaTotal: number; roteiro: { etapa: { nome: string } }[] }
+type Detalhe = Lote & { movimentos: Movimento[]; roteiro: { etapa: { nome: string } }[] }
 
 const ROTULO_TIPO: Record<string, string> = {
   inicio: 'abertura',
@@ -56,13 +76,27 @@ const COR_TIPO: Record<string, string> = {
   divisao_entrada: '#918787',
 }
 
+/**
+ * Cinza do "não informado". Ele conta no total de peças perdidas, mas não é
+ * diagnóstico — pintá-lo de vermelho junto com os motivos de verdade daria a
+ * ele um peso de resposta que ele não tem.
+ */
+const COR_SEM_MOTIVO = '#918787'
+
 export function Historico() {
-  const [lotes, setLotes] = useState<Lote[]>([])
+  const [lotes, setLotes] = useState<LoteDaLista[]>([])
   const [pecas, setPecas] = useState<{ id: string; nome: string }[]>([])
   const [cores, setCores] = useState<{ id: string; nome: string }[]>([])
   const [etapas, setEtapas] = useState<{ id: string; nome: string }[]>([])
   const [carregando, setCarregando] = useState(true)
-  const [filtros, setFiltros] = useState({ pecaId: '', corId: '', etapaId: '', situacao: '', mes: '' })
+  const [filtros, setFiltros] = useState({
+    pecaId: '',
+    corId: '',
+    etapaId: '',
+    situacao: '',
+    mes: '',
+    motivoPerda: '',
+  })
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null)
   const [paraCancelar, setParaCancelar] = useState<Lote | null>(null)
   const [paraApagar, setParaApagar] = useState<string | null>(null)
@@ -175,6 +209,31 @@ export function Historico() {
                 <option value="cancelado">Cancelados</option>
               </Select>
             </div>
+            {/*
+              PERDA COMO FILTRO, não só como número.
+              A primeira opção da lista é "só o que teve perda": achar o lote
+              problemático era rolar a tabela inteira, porque perda não aparecia
+              em lugar nenhum da listagem. As de baixo respondem a pergunta que
+              não dava para fazer — não quanto se perdeu, mas por quê.
+            */}
+            <div className="w-full sm:w-44">
+              <Select
+                value={filtros.motivoPerda}
+                onChange={(e) => setFiltros({ ...filtros, motivoPerda: e.target.value })}
+                aria-label="Perdas"
+              >
+                <option value="">Com ou sem perda</option>
+                <option value={MOTIVO_QUALQUER}>Só o que teve perda</option>
+                <optgroup label="Perdeu por">
+                  {MOTIVOS_PERDA.map((m) => (
+                    <option key={m.valor} value={m.valor}>
+                      {m.rotulo}
+                    </option>
+                  ))}
+                  <option value={MOTIVO_NAO_INFORMADO}>{rotuloDoMotivo(MOTIVO_NAO_INFORMADO)}</option>
+                </optgroup>
+              </Select>
+            </div>
             <div className="w-full sm:w-36">
               <Input
                 type="month"
@@ -200,6 +259,7 @@ export function Historico() {
                 <th className="px-4 py-3 font-medium">Peça</th>
                 <th className="px-4 py-3 font-medium">Esmalte</th>
                 <th className="px-4 py-3 font-medium">Onde está</th>
+                <th className="px-4 py-3 font-medium">Perdas</th>
                 <th className="hidden px-4 py-3 font-medium md:table-cell">Início</th>
                 <th className="px-4 py-3 font-medium">Situação</th>
               </tr>
@@ -207,6 +267,13 @@ export function Historico() {
             <tbody>
               {lotes.map((l) => {
                 const s = situacaoDe(l)
+                /*
+                 * O campeão diagnosticado ganha do "não informado" mesmo quando
+                 * é menor: num lote com uma perda velha sem motivo e cinco
+                 * trincas, a linha tem de dizer "trincou" — dizer "não
+                 * informado" seria esconder o que o lote justamente já contou.
+                 */
+                const motivoTopo = l.perdaPrincipal ?? l.perdaPorMotivo[0] ?? null
                 return (
                   <tr
                     key={l.id}
@@ -231,6 +298,29 @@ export function Historico() {
                       {l.distribuicao.length === 0
                         ? '—'
                         : l.distribuicao.map((d) => `${d.quantidade} em ${d.etapa}`).join(' · ')}
+                    </td>
+                    <td className="px-4 py-3">
+                      {l.perdaTotal === 0 ? (
+                        <span className="text-tinta-fraca">—</span>
+                      ) : (
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <strong className="text-perigo">{l.perdaTotal}</strong>
+                          {motivoTopo && (
+                            <Etiqueta
+                              cor={
+                                motivoTopo.valor === MOTIVO_NAO_INFORMADO ? COR_SEM_MOTIVO : COR_TIPO.perda
+                              }
+                            >
+                              {motivoTopo.rotulo}
+                            </Etiqueta>
+                          )}
+                          {l.perdaPorMotivo.length > 1 && (
+                            <span className="text-xs text-tinta-fraca">
+                              +{l.perdaPorMotivo.length - 1}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td className="hidden px-4 py-3 text-tinta-fraca md:table-cell">{dataBr(l.iniciadoEm)}</td>
                     <td className="px-4 py-3">
@@ -288,6 +378,44 @@ export function Historico() {
               </div>
             </div>
 
+            {/*
+              POR QUE ESTE LOTE PERDEU.
+              O resumo em cima já dizia quantas peças sumiram; o que faltava era
+              o diagnóstico, que é o que muda alguma coisa na produção. As barras
+              existem porque a comparação entre motivos é o dado — "trincou" e
+              "empenou" com 12 e 3 é uma conversa, com 8 e 7 é outra.
+            */}
+            {detalhe.perdaTotal > 0 && (
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-tinta">Perdas por motivo</h3>
+                <ul className="flex flex-col gap-2">
+                  {detalhe.perdaPorMotivo.map((m) => (
+                    <li key={m.valor}>
+                      <span className="flex items-baseline justify-between gap-3 text-sm">
+                        <span className="min-w-0 truncate text-tinta">{m.rotulo}</span>
+                        <span className="shrink-0 text-tinta-fraca">
+                          {m.quantidade} · {m.percentual.toLocaleString('pt-BR')}%
+                        </span>
+                      </span>
+                      <span
+                        aria-hidden
+                        className="mt-1 block h-1.5 overflow-hidden rounded-full bg-superficie-2"
+                      >
+                        <span
+                          className="block h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${m.percentual}%`,
+                            backgroundColor:
+                              m.valor === MOTIVO_NAO_INFORMADO ? COR_SEM_MOTIVO : COR_TIPO.perda,
+                          }}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div>
               <h3 className="mb-2 text-sm font-semibold text-tinta">Movimentos ({detalhe.movimentos.length})</h3>
               <ul className="flex flex-col gap-1.5">
@@ -295,6 +423,14 @@ export function Historico() {
                   <li key={m.id} className="rounded-lg border border-borda px-3 py-2 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
                       <Etiqueta cor={COR_TIPO[m.tipo] ?? '#918787'}>{ROTULO_TIPO[m.tipo] ?? m.tipo}</Etiqueta>
+                      {/* o motivo tipado fica colado no "perda" porque os dois
+                          são a mesma informação: o quê e por quê. O texto livre
+                          continua embaixo, com o detalhe do caso. */}
+                      {m.tipo === 'perda' && (
+                        <Etiqueta cor={m.motivoTipo ? COR_TIPO.perda : COR_SEM_MOTIVO}>
+                          {rotuloDoMotivo(m.motivoTipo)}
+                        </Etiqueta>
+                      )}
                       <strong className="text-tinta">{m.quantidade}</strong>
                       <span className="text-tinta-fraca">
                         {m.etapaOrigem?.nome ?? 'entrada'} → {m.etapaDestino?.nome ?? 'saída'}
