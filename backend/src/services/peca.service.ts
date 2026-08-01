@@ -122,7 +122,15 @@ export async function atualizarPeca(id: string, dados: DadosPeca) {
         tempoMedioDias: dados.tempoMedioDias,
         qtdMinimaDesejada: dados.qtdMinimaDesejada,
         qtdMinimaBiscoito: dados.qtdMinimaBiscoito,
-        precoBase: dados.precoBase ?? null,
+        /*
+         * NÃO É `?? null`. O cadastro de peça deixou de ter campo de preço, e
+         * com ele fora do corpo `dados.precoBase` chega `undefined`. Com o
+         * `?? null`, toda edição de peça — trocar o nome, mexer no roteiro —
+         * APAGARIA o preço definido na tela de Preços, em silêncio. `undefined`
+         * faz o Prisma não tocar na coluna, que é o comportamento certo para
+         * um campo que esta tela não edita mais.
+         */
+        precoBase: dados.precoBase,
         observacao: dados.observacao || null,
         ativo: dados.ativo,
         roteiro: { create: roteiro },

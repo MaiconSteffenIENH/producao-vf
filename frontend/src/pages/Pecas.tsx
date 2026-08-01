@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
-import { brl } from '../lib/format'
 import { avisar } from '../components/Toaster'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import {
@@ -34,6 +33,7 @@ type Peca = {
   tempoMedioDias: number
   qtdMinimaDesejada: number
   qtdMinimaBiscoito: number
+  /** continua vindo da API e sendo editado na tela de Preços; o cadastro não mexe */
   precoBase: string | null
   observacao: string | null
   ativo: boolean
@@ -50,7 +50,6 @@ const FORM_VAZIO = {
   tempoMedioDias: 30,
   qtdMinimaDesejada: 0,
   qtdMinimaBiscoito: 0,
-  precoBase: null as number | null,
   observacao: '',
   ativo: true,
 }
@@ -130,7 +129,6 @@ export function Pecas() {
       tempoMedioDias: peca.tempoMedioDias,
       qtdMinimaDesejada: peca.qtdMinimaDesejada,
       qtdMinimaBiscoito: peca.qtdMinimaBiscoito,
-      precoBase: peca.precoBase === null ? null : Number(peca.precoBase),
       observacao: peca.observacao ?? '',
       ativo: peca.ativo,
     })
@@ -151,7 +149,6 @@ export function Pecas() {
     try {
       const corpo = {
         ...form,
-        precoBase: form.precoBase,
         roteiro: roteiro.filter((r) => r.etapaId),
         cores: coresSelecionadas.map((corId) => ({ corId, qtdMinimaDesejada: 0 })),
       }
@@ -264,7 +261,6 @@ export function Pecas() {
                 <span>
                   Mínimo biscoito: <strong>{peca.qtdMinimaBiscoito}</strong>
                 </span>
-                <span className="text-tinta-fraca">{brl(peca.precoBase)}</span>
               </div>
 
               <div className="mt-3">
@@ -400,15 +396,18 @@ export function Pecas() {
                 onChange={(e) => setForm({ ...form, qtdMinimaBiscoito: Number(e.target.value) })}
               />
             </Campo>
-            <Campo rotulo="Preço base (R$)" dica="Referência do site. O preço por canal sai na tela de Preços.">
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={form.precoBase ?? ''}
-                onChange={(e) => setForm({ ...form, precoBase: e.target.value === '' ? null : Number(e.target.value) })}
-              />
-            </Campo>
+            {/*
+              O CADASTRO DE PEÇA NÃO PEDE MAIS DINHEIRO.
+              Quem cadastra peça é a Gabi, e ela cadastra o que o ateliê PRODUZ:
+              nome, roteiro, esmaltes possíveis e mínimos. Preço é outra
+              conversa, com outro dono e outra periodicidade — e um campo de R$
+              no meio do cadastro fazia parecer obrigatório definir preço para
+              conseguir abrir um lote, o que nunca foi verdade.
+              A coluna continua no banco, e a tela de Preços continua sendo o
+              lugar de mexer nela. Se o ateliê não precisa de preço agora, o
+              caminho é desligar o módulo em Ajustes — reversível, ao contrário
+              de apagar.
+            */}
             <label className="flex items-end gap-2 pb-2 text-sm text-tinta">
               <input
                 type="checkbox"
