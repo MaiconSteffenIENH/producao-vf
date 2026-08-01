@@ -45,6 +45,28 @@ model Papel {
   @@map("papeis")
 }
 
+/// MÓDULO DESLIGADO — uma linha por módulo, e não um JSON com a lista.
+///
+/// A leitura é "está desligado só se existe uma linha dizendo que está". É essa
+/// forma, e não o conteúdo, que resolve o pedido "sempre que adicionarmos":
+/// módulo novo nasce sem linha nenhuma e, por isso, nasce LIGADO — ninguém
+/// precisa lembrar de acrescentá-lo em lugar algum no dia do deploy.
+///
+/// Um campo JSON com `{ desligados: [...] }` faria o contrário: a lista gravada
+/// ontem não conhece o módulo de amanhã, e a cada release alguém teria de
+/// migrar o JSON para o módulo novo aparecer. Fora que duas telas salvando o
+/// mesmo JSON sobrescrevem uma à outra; aqui cada módulo é uma linha própria.
+///
+/// Desligar NÃO apaga dado e NÃO desliga cálculo: só some do menu e barra a
+/// rota. Religar devolve tudo como estava, que é o combinado com o ateliê.
+model ModuloAtivo {
+  /// a mesma chave de src/lib/modulos.ts — é o que amarra a linha ao registro
+  chave String  @id
+  ativo Boolean @default(true)
+
+  @@map("modulos_ativos")
+}
+
 model LogAtividade {
   id          String   @id @default(uuid()) @db.Uuid
   usuarioId   String?  @map("usuario_id") @db.Uuid

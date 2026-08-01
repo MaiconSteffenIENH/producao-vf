@@ -74,3 +74,33 @@ describe('pluralNome', () => {
     expect(pluralNome(50, 'Xícara Andorinha')).not.toContain('Andorinhas')
   })
 })
+
+/*
+ * Palavra que JÁ tem acento no radical não é oxítona, e por isso o plural não
+ * ganha acento novo. A versão anterior devolvia "vendávéis" e "fácis" — foi o
+ * revisor da tela de peças prontas que pegou, num rótulo que a Gabi ia ler
+ * todo dia.
+ */
+describe('-l depois de vogal, com acento no radical', () => {
+  it('vendável vira vendáveis, não vendávéis', () => {
+    expect(formaPlural(2, 'vendável')).toBe('vendáveis')
+  })
+
+  it('possível vira possíveis', () => {
+    expect(formaPlural(2, 'possível')).toBe('possíveis')
+  })
+
+  it('fácil vira fáceis, não fácis', () => {
+    expect(formaPlural(2, 'fácil')).toBe('fáceis')
+  })
+
+  it('mas oxítona continua ganhando acento', () => {
+    expect(formaPlural(2, 'papel')).toBe('papéis')
+    expect(formaPlural(2, 'anzol')).toBe('anzóis')
+    expect(formaPlural(2, 'funil')).toBe('funis')
+  })
+
+  it('e Bowl continua sendo Bowls', () => {
+    expect(formaPlural(2, 'Bowl')).toBe('Bowls')
+  })
+})

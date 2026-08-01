@@ -24,56 +24,67 @@ import {
   Camera,
   ClipboardCheck,
   TrendingUp,
+  Layers,
+  PackageCheck,
 } from 'lucide-react'
-import { useAuth } from '../store/auth'
+import { useAuth, useModulosLiberados } from '../store/auth'
+import { MODULOS, type GrupoDeModulo } from '../lib/modulos'
 import { EVENTO_ATUALIZAR } from '../lib/useAutoRefresh'
 import { TECLA_ATALHO } from '../lib/plataforma'
 import { Tecla } from './ui'
 import { AvisoFila } from './AvisoFila'
 
-type ItemMenu = { para: string; rotulo: string; icone: typeof Package; somenteAdmin?: boolean }
-type GrupoMenu = { titulo: string; itens: ItemMenu[] }
+/*
+ * O MENU É DESENHADO A PARTIR DO QUE O SERVIDOR LIBEROU.
+ *
+ * Antes havia aqui uma lista escrita à mão, com os itens e um `somenteAdmin`
+ * conferido no navegador. Duas listas para a mesma coisa envelhecem em ritmos
+ * diferentes: o dia em que um módulo entrasse no registro e ninguém lembrasse
+ * desta cópia, o recurso existiria sem caminho até ele. E permissão decidida no
+ * navegador é sugestão — quem manda é o /me, que já responde as chaves que
+ * ESTA pessoa enxerga.
+ *
+ * O que continua morando aqui é só a aparência: o ícone de cada módulo e o
+ * nome de cada grupo. Isso é desenho, não regra, e não faz sentido trafegar
+ * pela rede a cada login.
+ */
+const ICONES: Record<string, typeof Package> = {
+  inicio: LayoutDashboard,
+  planejamento: ClipboardList,
+  producao: Boxes,
+  'meu-dia': CalendarCheck,
+  forno: Flame,
+  encomendas: ClipboardCheck,
+  fotos: Camera,
+  historico: History,
+  pecas: Package,
+  'estoque-biscoito': Layers,
+  'estoque-prontas': PackageCheck,
+  vendas: TrendingUp,
+  precos: Tags,
+  canais: Store,
+  esmaltes: Palette,
+  categorias: Shapes,
+  responsaveis: Users,
+  etapas: Wrench,
+  'materias-primas': Package,
+  usuarios: Users,
+  ajustes: Settings,
+}
 
-const GRUPOS: GrupoMenu[] = [
-  {
-    titulo: 'Produção',
-    itens: [
-      { para: '/', rotulo: 'Início', icone: LayoutDashboard },
-      { para: '/planejamento', rotulo: 'Planejamento', icone: ClipboardList },
-      { para: '/producao', rotulo: 'Quadro de produção', icone: Boxes },
-      { para: '/meu-dia', rotulo: 'Tarefas do dia', icone: CalendarCheck },
-      { para: '/forno', rotulo: 'Forno', icone: Flame },
-      { para: '/encomendas', rotulo: 'Encomendas', icone: ClipboardCheck },
-      { para: '/fotos', rotulo: 'Fotos', icone: Camera },
-      { para: '/historico', rotulo: 'Histórico', icone: History },
-      { para: '/pecas', rotulo: 'Peças', icone: Package },
-    ],
-  },
-  {
-    titulo: 'Preços',
-    itens: [
-      { para: '/vendas', rotulo: 'Vendas e cobertura', icone: TrendingUp },
-      { para: '/precos', rotulo: 'Preços por canal', icone: Tags },
-      { para: '/canais', rotulo: 'Canais de venda', icone: Store },
-    ],
-  },
-  {
-    titulo: 'Cadastros',
-    itens: [
-      { para: '/esmaltes', rotulo: 'Esmaltes', icone: Palette },
-      { para: '/categorias', rotulo: 'Categorias', icone: Shapes },
-      { para: '/responsaveis', rotulo: 'Responsáveis', icone: Users },
-      { para: '/etapas', rotulo: 'Etapas', icone: Wrench },
-      { para: '/materias-primas', rotulo: 'Matérias-primas', icone: Package },
-    ],
-  },
-  {
-    titulo: 'Sistema',
-    itens: [
-      { para: '/usuarios', rotulo: 'Usuários', icone: Users, somenteAdmin: true },
-      { para: '/ajustes', rotulo: 'Ajustes', icone: Settings },
-    ],
-  },
+/**
+ * A ordem dos grupos na lateral, e o título de cada um.
+ *
+ * Exportado porque a tela de Ajustes agrupa os módulos do mesmo jeito — e a
+ * configuração precisa parecer com o menu que ela configura. Duas listas de
+ * títulos acabariam divergindo, e o dono ficaria procurando em "Cadastros" o
+ * que a lateral chama de outra coisa.
+ */
+export const GRUPOS: readonly { chave: GrupoDeModulo; titulo: string }[] = [
+  { chave: 'producao', titulo: 'Produção' },
+  { chave: 'precos', titulo: 'Preços' },
+  { chave: 'cadastros', titulo: 'Cadastros' },
+  { chave: 'sistema', titulo: 'Sistema' },
 ]
 
 const CHAVE_TEMA = 'vf.tema'
@@ -130,7 +141,7 @@ function Marca({ compacto = false }: { compacto?: boolean }) {
 }
 
 function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
-  const admin = useAuth((e) => e.perfil?.admin ?? false)
+  const liberados = useModulosLiberados()
   const [abertos, setAbertos] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem('vf.menu') ?? '{}')
@@ -146,10 +157,14 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
       return novo
     })
 
+  const visiveis = MODULOS.filter((m) => !liberados || liberados.includes(m.chave))
+
   return (
     <nav className="flex flex-col gap-0.5 px-3 pb-6">
       {GRUPOS.map((grupo) => {
-        const itens = grupo.itens.filter((i) => !i.somenteAdmin || admin)
+        // grupo que ficou sem nenhum item some com título e tudo: cabeçalho
+        // sozinho parece lista que não carregou
+        const itens = visiveis.filter((m) => m.grupo === grupo.chave)
         if (itens.length === 0) return null
         const aberto = abertos[grupo.titulo] !== false
         return (
@@ -162,39 +177,44 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
               <ChevronDown size={14} className={`transition ${aberto ? '' : '-rotate-90'}`} />
             </button>
             {aberto &&
-              itens.map((item) => (
-                <NavLink
-                  key={item.para}
-                  to={item.para}
-                  end={item.para === '/'}
-                  onClick={aoNavegar}
-                  className={({ isActive }) =>
-                    `group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all duration-200 ${
-                      // sólido, não transparência: areia sobre areia dava
-                      // 3,09:1. Assim passa em 4,54:1 e ainda devolve à lateral
-                      // um bloco da cor da marca, que era o que o fundo areia
-                      // fazia antes — só que num pedaço só, onde tem função.
-                      isActive
-                        ? 'bg-marca font-medium text-contraste shadow-baixa'
-                        : 'text-tinta-fraca hover:bg-tinta/6 hover:text-tinta'
-                    }`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      {/* marcador que sangra para fora do bloco: dá o mesmo
-                          "você está aqui" das abas de um caderno */}
-                      <span
-                        className={`absolute -left-2 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-marca transition-all duration-200 ${
-                          isActive ? 'opacity-100' : 'opacity-0'
-                        }`}
-                      />
-                      <item.icone size={17} className="shrink-0" />
-                      {item.rotulo}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+              itens.map((item) => {
+                // módulo sem ícone escolhido cai no genérico em vez de sumir do
+                // menu: item invisível é o defeito que ninguém consegue relatar
+                const Icone = ICONES[item.chave] ?? Package
+                return (
+                  <NavLink
+                    key={item.chave}
+                    to={item.rota}
+                    end={item.rota === '/'}
+                    onClick={aoNavegar}
+                    className={({ isActive }) =>
+                      `group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all duration-200 ${
+                        // sólido, não transparência: areia sobre areia dava
+                        // 3,09:1. Assim passa em 4,54:1 e ainda devolve à lateral
+                        // um bloco da cor da marca, que era o que o fundo areia
+                        // fazia antes — só que num pedaço só, onde tem função.
+                        isActive
+                          ? 'bg-marca font-medium text-contraste shadow-baixa'
+                          : 'text-tinta-fraca hover:bg-tinta/6 hover:text-tinta'
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        {/* marcador que sangra para fora do bloco: dá o mesmo
+                            "você está aqui" das abas de um caderno */}
+                        <span
+                          className={`absolute -left-2 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-marca transition-all duration-200 ${
+                            isActive ? 'opacity-100' : 'opacity-0'
+                          }`}
+                        />
+                        <Icone size={17} className="shrink-0" />
+                        {item.rotulo}
+                      </>
+                    )}
+                  </NavLink>
+                )
+              })}
           </div>
         )
       })}

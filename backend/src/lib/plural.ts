@@ -39,9 +39,20 @@ export function formaPlural(n: number, singular: string, pluralForma?: string): 
    * Bowl é o nome de metade do catálogo da Vera; não dava para deixar passar.
    */
   if (baixo.endsWith('l') && VOGAIS.includes(penultima)) {
-    if (final === 'el') return `${singular.slice(0, -2)}éis`
-    if (final === 'ol') return `${singular.slice(0, -2)}óis`
-    if (final === 'il') return `${singular.slice(0, -2)}is`
+    /*
+     * O acento novo só entra em palavra OXÍTONA: papel→papéis, anzol→anzóis,
+     * funil→funis. Quando a palavra JÁ tem acento antes (vendável, fácil,
+     * possível), a sílaba forte é outra e o plural não ganha acento nenhum —
+     * é vendáveis e fáceis, não "vendávéis" e "fácis".
+     *
+     * O sinal de que a palavra não é oxítona é ela já trazer vogal acentuada
+     * no radical. Não é regra de gramática completa, é o que separa os dois
+     * casos que aparecem aqui: nome de peça e adjetivo de tela.
+     */
+    const jaTemAcento = /[áéíóúâêôãõà]/.test(baixo.slice(0, -2))
+    if (final === 'el') return `${singular.slice(0, -2)}${jaTemAcento ? 'eis' : 'éis'}`
+    if (final === 'ol') return `${singular.slice(0, -2)}${jaTemAcento ? 'ois' : 'óis'}`
+    if (final === 'il') return `${singular.slice(0, -2)}${jaTemAcento ? 'eis' : 'is'}`
     return `${singular.slice(0, -1)}is` // -al, -ul
   }
   return `${singular}s`

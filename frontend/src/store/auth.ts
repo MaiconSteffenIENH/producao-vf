@@ -9,6 +9,12 @@ export type Perfil = {
   admin: boolean
   precisaTrocarSenha: boolean
   responsavel?: { id: string; nome: string } | null
+  /**
+   * As chaves de módulo que o SERVIDOR liberou para esta pessoa. Opcional
+   * porque a resposta pode vir de uma API mais antiga que o app — ver
+   * `useModulosLiberados`.
+   */
+  modulos?: string[]
 }
 
 type Estado = {
@@ -45,3 +51,22 @@ export const useAuth = create<Estado>((set) => ({
     }
   },
 }))
+
+/**
+ * Os módulos que esta pessoa enxerga, do jeito que o servidor mandou.
+ *
+ * `null` quer dizer "o servidor não disse" — API mais antiga que o app, ou o
+ * intervalo entre publicar um e outro. Nesse caso tudo aparece, que é como o
+ * sistema funcionava antes deste recurso existir: sumir com o menu inteiro por
+ * causa de um campo que faltou trocaria um incômodo por um apagão. Lista de
+ * verdade nunca chega vazia, porque os módulos essenciais sobrevivem a
+ * qualquer configuração — por isso vazio é lido como ausência, não como
+ * "não vê nada".
+ *
+ * Devolve a lista do próprio estado, sem copiar: selector do zustand que cria
+ * objeto novo a cada leitura renderiza em laço.
+ */
+export function useModulosLiberados(): readonly string[] | null {
+  const chaves = useAuth((e) => e.perfil?.modulos)
+  return chaves && chaves.length > 0 ? chaves : null
+}

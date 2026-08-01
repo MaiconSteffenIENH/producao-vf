@@ -1,10 +1,12 @@
 import { Router, type Request, type Response, type NextFunction } from 'express'
 import { autenticar, somenteAdmin } from '../middlewares/autenticar'
 import { auditar } from '../middlewares/auditoria'
+import { exigirModulo } from '../middlewares/modulos'
 import * as auth from '../services/auth.service'
 import * as cadastro from '../services/cadastro.service'
 import * as pecas from '../services/peca.service'
 import * as usuarios from '../services/usuario.service'
+import * as modulos from '../services/modulo.service'
 import * as dashboard from '../services/dashboard.service'
 import * as lotes from '../services/lote.service'
 import * as planejamento from '../services/planejamento.service'
@@ -14,6 +16,7 @@ import * as queimas from '../services/queima.service'
 import * as vendas from '../services/venda.service'
 import * as encomendas from '../services/encomenda.service'
 import * as fotos from '../services/foto.service'
+import * as estoque from '../services/estoque.service'
 import {
   categoriaSchema,
   corSchema,
@@ -63,7 +66,13 @@ rotas.post(
 
 // ─────────────────────────── Autenticado ───────────────────────────
 
-rotas.use(autenticar, auditar)
+/*
+ * O guarda dos módulos entra DEPOIS de `autenticar`, porque precisa do
+ * req.sessao, e depois de `auditar`, para a tentativa barrada também ficar
+ * registrada. /health e /auth/login continuam livres por estarem registrados
+ * ACIMA desta linha — o guarda nunca chega perto deles.
+ */
+rotas.use(autenticar, auditar, exigirModulo)
 
 rotas.get(
   '/me',
@@ -387,6 +396,10 @@ rotas.post(
   rota(async (req, res) => void res.json(await fotos.avancarFoto(req.params.id))),
 )
 
+// ── Estoque: o pulmão de biscoito e o que já está pronto ─
+rotas.get('/estoque/biscoito', rota(async (_req, res) => void res.json(await estoque.estoqueDeBiscoito())))
+rotas.get('/estoque/prontas', rota(async (_req, res) => void res.json(await estoque.estoqueDeProntas())))
+
 // ── Tarefas diárias ─────────────────────────────────────
 rotas.get('/agenda', rota(async (_req, res) => void res.json(await agenda.agendaDoDia())))
 rotas.get(
@@ -467,4 +480,23 @@ rotas.delete(
     await usuarios.excluirUsuario(req.params.id, req.sessao!.id)
     res.json({ ok: true })
   }),
+)
+
+// ── Módulos: o que o ateliê usa (só admin) ──────────────
+rotas.get('/modulos', somenteAdmin, rota(async (_req, res) => void res.json(await modulos.listarModulos())))
+rotas.put(
+  '/modulos/:chave',
+  somenteAdmin,
+  rota(async (req, res) => void res.json(await modulos.definirAtivo(req.params.chave, req.body))),
+)
+
+/*
+ * O corpo vai cru para o service: `{ modulos: [...] }` restringe e
+ * `{ modulos: null }` devolve o papel a ver tudo. A diferença entre lista
+ * VAZIA e ausência de lista é regra do ateliê, não formato de requisição.
+ */
+rotas.put(
+  '/papeis/:id/modulos',
+  somenteAdmin,
+  rota(async (req, res) => void res.json(await usuarios.definirModulosDoPapel(req.params.id, req.body))),
 )
