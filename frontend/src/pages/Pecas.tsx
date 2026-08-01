@@ -433,7 +433,11 @@ export function Pecas() {
             <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-tinta">Roteiro de produção</h3>
-                <p className="text-xs text-tinta-fraca">A ordem aqui é a ordem real no ateliê.</p>
+                <p className="text-xs text-tinta-fraca">
+                  A ordem aqui é a ordem real no ateliê. Os <strong>dias</strong> de cada etapa são o que
+                  o sistema usa para prever quando o lote fica pronto, avisar quando o prazo de uma
+                  encomenda não fecha e calcular quanto tempo leva para repor uma peça.
+                </p>
               </div>
               <Botao type="button" variante="secundario" onClick={adicionarEtapa}>
                 <Plus size={14} /> Adicionar etapa
@@ -442,6 +446,25 @@ export function Pecas() {
 
             {roteiro.length === 0 && (
               <p className="py-2 text-sm text-tinta-fraca">Nenhuma etapa ainda. Sem roteiro a peça não vira lote.</p>
+            )}
+
+            {/*
+              CABEÇALHO DE COLUNA. O campo de dias era um número solto sem
+              rótulo nenhum, e o Maicon perguntou o que ele significava — o que
+              é resposta suficiente sobre a tela. Ele não é decorativo: alimenta
+              a previsão do planejamento, o aviso de prazo apertado da encomenda
+              e o "repor leva N semanas" da cobertura de venda.
+              Some no celular, onde a linha já empilha e o rótulo do campo
+              apareceria fora de lugar.
+            */}
+            {roteiro.length > 0 && (
+              <div className="mb-1 hidden items-center gap-2 px-2 text-[11px] font-medium uppercase tracking-wider text-tinta-fraca sm:flex">
+                <span className="w-6 shrink-0" />
+                <span className="min-w-0 flex-1">Etapa</span>
+                <span className="min-w-0 flex-1">Quem faz</span>
+                <span className="w-24 shrink-0">Dias</span>
+                <span className="w-[6.5rem] shrink-0" />
+              </div>
             )}
 
             <div className="flex flex-col gap-2">
@@ -478,7 +501,9 @@ export function Pecas() {
                       max={365}
                       value={linha.diasEstimados}
                       onChange={(e) => alterarEtapa(i, 'diasEstimados', Number(e.target.value))}
-                      aria-label="Dias estimados"
+                      aria-label={`Dias estimados da etapa ${i + 1}`}
+                      title="Quantos dias esta etapa costuma levar"
+                      placeholder="dias"
                     />
                   </div>
                   <div className="flex shrink-0 justify-end gap-1">
