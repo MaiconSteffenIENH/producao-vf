@@ -593,7 +593,13 @@ export function Producao() {
       )}
 
       {/* ── novo lote ─────────────────────────────── */}
-      <Modal aberto={novoAberto} aoFechar={() => setNovoAberto(false)} titulo="Novo lote" largura="max-w-lg">
+      <Modal
+        aberto={novoAberto}
+        aoFechar={() => setNovoAberto(false)}
+        titulo="Novo lote"
+        largura="max-w-lg"
+        fecharClicandoFora={false}
+      >
         <form onSubmit={criarLote} className="flex flex-col gap-4">
           <Campo rotulo="Peça" dica="O lote entra na primeira etapa do roteiro dela.">
             <Select required value={novo.pecaId} onChange={(e) => setNovo({ ...novo, pecaId: e.target.value })}>
@@ -640,6 +646,7 @@ export function Producao() {
       <Modal
         aberto={Boolean(acao)}
         aoFechar={() => setAcao(null)}
+        fecharClicandoFora={false}
         titulo={
           acao?.tipo === 'avancar'
             ? `Mover ${acao?.cartao.codigo}`

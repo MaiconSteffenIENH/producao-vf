@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 /*
@@ -153,6 +154,7 @@ export function Modal({
   titulo,
   descricao,
   largura = 'max-w-2xl',
+  fecharClicandoFora = true,
   children,
 }: {
   aberto: boolean
@@ -160,6 +162,16 @@ export function Modal({
   titulo: string
   descricao?: string
   largura?: string
+  /**
+   * Clicar no escuro em volta fecha? Em janela com formulário preenchido, NÃO.
+   *
+   * No ateliê o quadro fica aberto em tela de toque o dia inteiro, e o dedo
+   * encosta fora da janela sem querer o tempo todo — a confirmação sumia com
+   * a quantidade e o esmalte já escolhidos, e a pessoa refazia tudo. Sair
+   * continua a um toque de distância: o botão Cancelar, o X ou Esc. O que
+   * deixa de existir é o jeito ACIDENTAL de sair.
+   */
+  fecharClicandoFora?: boolean
   children: ReactNode
 }) {
   const caixa = useRef<HTMLDivElement>(null)
@@ -180,10 +192,25 @@ export function Modal({
 
   if (!aberto) return null
 
-  return (
+  /*
+   * PORTAL PARA O <body>, e não uma div aqui dentro.
+   *
+   * O modal nascia dentro do <main>, que é `relative z-10` — e isso não é um
+   * z-index qualquer: `position` + `z-index` abre um CONTEXTO DE EMPILHAMENTO.
+   * Dentro dele, o z-50 do modal só disputa com os irmãos do próprio main; o
+   * cabeçalho, que é `sticky z-30` mas mora FORA do main, ganhava sempre.
+   * Resultado: toda janela abria com uma tarja acesa por cima, cobrindo o
+   * título — não era só nos Canais de venda, era em todas.
+   *
+   * Aumentar o z-index do modal não resolveria nada: número maior dentro de um
+   * contexto menor continua embaixo. O que resolve é sair do contexto, e é
+   * exatamente para isso que o portal existe.
+   */
+  return createPortal(
     <div
       className="anima-aparecer fixed inset-0 z-50 flex items-end justify-center bg-[#2b2725]/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
       onPointerDown={(e) => {
+        if (!fecharClicandoFora) return
         if (!caixa.current?.contains(e.target as Node)) aoFechar()
       }}
     >
@@ -206,7 +233,8 @@ export function Modal({
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
