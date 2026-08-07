@@ -78,6 +78,9 @@ const ROTULO_TIPO: Record<string, string> = {
   retorno: 'retorno',
   perda: 'perda',
   divisao_saida: 'saiu por divisão',
+  // a peça saiu da prateleira: venda, feira, brinde ou uso do ateliê
+  saida: 'saída do estoque',
+  devolucao: 'voltou ao estoque',
   divisao_entrada: 'entrou por divisão',
 }
 
@@ -88,6 +91,10 @@ const COR_TIPO: Record<string, string> = {
   perda: '#A4402F',
   divisao_saida: '#918787',
   divisao_entrada: '#918787',
+  // saída é o fim feliz do caminho, e não uma perda: cor de conclusão, não de
+  // alarme — pintar venda de vermelho faria o histórico parecer um desastre
+  saida: '#3E5C4B',
+  devolucao: '#8E7150',
 }
 
 /**

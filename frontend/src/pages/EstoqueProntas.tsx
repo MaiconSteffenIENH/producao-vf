@@ -1,11 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Camera, PackageCheck } from 'lucide-react'
+import { ArrowRight, Camera, MinusCircle, PackageCheck } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { formaPlural, plural } from '../lib/format'
-import { CabecalhoPagina, Card, Carregando, ChipCor, Etiqueta, Vazio } from '../components/ui'
+import {
+  Botao,
+  CabecalhoPagina,
+  Campo,
+  Card,
+  Carregando,
+  ChipCor,
+  Etiqueta,
+  Input,
+  Modal,
+  Select,
+  Textarea,
+  Vazio,
+} from '../components/ui'
+import { MOTIVOS_DE_SAIDA, ajudaDaSaida } from '../lib/saida-estoque'
+import { enviarComFila } from '../lib/filaOffline'
 
 /*
  * O FIM DA LINHA — e a distinção que esta tela existe para não deixar sumir.
@@ -97,7 +112,147 @@ function LinkDeAcao({ para, children }: { para: string; children: React.ReactNod
   )
 }
 
+/*
+ * A BAIXA, ONDE A PEÇA DE FATO SAI.
+ *
+ * A pessoa diz quantas e por quê. Não diz de qual lote: quem embala o pedido
+ * sabe que saiu um BOWL PISTACHE, não que ele veio do L-0031 — as peças estão
+ * todas na mesma prateleira. O servidor reparte pelos lotes mais antigos.
+ */
+function ModalBaixa({
+  linha,
+  peca,
+  aoFechar,
+  aoConcluir,
+}: {
+  linha: LinhaPronta
+  peca: string
+  aoFechar: () => void
+  aoConcluir: () => void
+}) {
+  const [quantidade, setQuantidade] = useState('1')
+  const [motivoTipo, setMotivoTipo] = useState('venda')
+  const [observacao, setObservacao] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  const motivo = MOTIVOS_DE_SAIDA.find((m) => m.valor === motivoTipo)
+  const eDevolucao = motivo?.sentido === 'entrada'
+  const n = Number(quantidade)
+  const invalida = !Number.isInteger(n) || n < 1
+  // devolução não é limitada pelo saldo: ela devolve o que SAIU
+  const passaDoEstoque = !eDevolucao && n > linha.prontas
+
+  const confirmar = async () => {
+    setSalvando(true)
+    try {
+      /*
+       * PELA FILA, como toda escrita de produção.
+       *
+       * O ateliê tem sinal ruim e a baixa é dada com a peça na mão, embalando.
+       * `api.post` cru perderia o registro quando a resposta não voltasse — e a
+       * chave gerada a cada tentativa não protegeria nada, porque cada reenvio
+       * traria uma chave nova. A fila guarda a chave junto com o pedido.
+       */
+      const enviado = await enviarComFila(
+        'post',
+        '/estoque/prontas/baixa',
+        { pecaId: linha.pecaId, corId: linha.corId, quantidade: n, motivoTipo, observacao },
+        `Baixa de ${n} ${peca}${linha.cor ? ` ${linha.cor}` : ''}`,
+      )
+      if (enviado.enfileirado) {
+        avisar.info('Sem sinal agora — a baixa está guardada e sobe sozinha quando a conexão voltar.')
+        aoConcluir()
+        return
+      }
+      const data = enviado.dados as {
+        baixado: number
+        aviso: string | null
+        fatias?: { codigo: string; quantidade: number }[]
+      }
+      const onde = data.fatias?.length
+        ? ` (${data.fatias.map((f: { codigo: string; quantidade: number }) => `${f.codigo}: ${f.quantidade}`).join(', ')})`
+        : ''
+      if (data.baixado > 0) {
+        avisar.ok(`${eDevolucao ? 'Devolvidas' : 'Baixadas'} ${data.baixado} de ${peca}${onde}.`)
+      }
+      if (data.aviso) avisar.info(data.aviso)
+      aoConcluir()
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para dar baixa.'))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <Modal
+      aberto
+      aoFechar={aoFechar}
+      titulo={`Baixa de ${peca}`}
+      descricao={linha.cor ? `Esmalte ${linha.cor} · ${linha.prontas} prontas` : `Sem esmalte · ${linha.prontas} prontas`}
+      largura="max-w-lg"
+      fecharClicandoFora={false}
+    >
+      <div className="flex flex-col gap-4">
+        <Campo rotulo="Motivo" dica={ajudaDaSaida(motivoTipo)}>
+          <Select value={motivoTipo} onChange={(e) => setMotivoTipo(e.target.value)}>
+            {MOTIVOS_DE_SAIDA.map((m) => (
+              <option key={m.valor} value={m.valor}>
+                {m.rotulo}
+              </option>
+            ))}
+          </Select>
+        </Campo>
+
+        <Campo
+          rotulo="Quantas"
+          erro={
+            passaDoEstoque
+              ? `Só há ${linha.prontas} desta combinação no estoque de prontas.`
+              : undefined
+          }
+        >
+          <Input
+            type="number"
+            min={1}
+            max={eDevolucao ? undefined : linha.prontas}
+            value={quantidade}
+            onChange={(e) => setQuantidade(e.target.value)}
+            onFocus={(e) => e.target.select()}
+          />
+        </Campo>
+
+        <Campo rotulo="Observação" dica="Opcional. Vai para o histórico do lote.">
+          <Textarea
+            rows={2}
+            maxLength={300}
+            value={observacao}
+            onChange={(e) => setObservacao(e.target.value)}
+          />
+        </Campo>
+
+        {motivoTipo === 'venda' && (
+          <p className="rounded-lg bg-superficie-2 p-3 text-xs leading-relaxed text-tinta-fraca">
+            Se esta venda também for lançada em Vendas, o registro de lá já dá a baixa sozinho — não
+            precisa fazer as duas coisas.
+          </p>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <Botao variante="secundario" onClick={aoFechar} disabled={salvando}>
+            Cancelar
+          </Botao>
+          <Botao onClick={confirmar} disabled={salvando || invalida || passaDoEstoque}>
+            {salvando ? 'Registrando…' : eDevolucao ? 'Devolver ao estoque' : 'Dar baixa'}
+          </Botao>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 export function EstoqueProntas() {
+  const [baixa, setBaixa] = useState<{ linha: LinhaPronta; peca: string } | null>(null)
   const [grupos, setGrupos] = useState<GrupoPronta[]>([])
   const [resumo, setResumo] = useState<ResumoProntas>(VAZIO)
   const [carregando, setCarregando] = useState(true)
@@ -270,6 +425,15 @@ export function EstoqueProntas() {
                       </LinkDeAcao>
                     )}
                     {l.situacao === 'sem_esmalte' && <LinkDeAcao para="/historico">Ver os lotes</LinkDeAcao>}
+                    {l.prontas > 0 && (
+                      <Botao
+                        variante="secundario"
+                        className="shrink-0"
+                        onClick={() => setBaixa({ linha: l, peca: g.peca })}
+                      >
+                        <MinusCircle size={15} /> Dar baixa
+                      </Botao>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -278,16 +442,25 @@ export function EstoqueProntas() {
         </div>
       )}
 
+      {baixa && (
+        <ModalBaixa
+          linha={baixa.linha}
+          peca={baixa.peca}
+          aoFechar={() => setBaixa(null)}
+          aoConcluir={() => {
+            setBaixa(null)
+            void recarregar(true)
+          }}
+        />
+      )}
+
       <p className="mt-6 text-xs leading-relaxed text-tinta-fraca">
         Vendável é a peça cuja combinação de peça e esmalte tem foto publicada — o ciclo mora em peça+cor,
         não no lote, porque um Bowl Pistache fotografado uma vez serve toda fornada futura.{' '}
-        <strong className="text-tinta">
-          Este número é o que o ateliê FINALIZOU, e ainda não desconta venda.
-        </strong>{' '}
-        Nada no sistema dá baixa quando uma peça sai pela loja: os movimentos de lote registram produção,
-        não saída. Enquanto essa baixa não existir, trate isto como &ldquo;quanto já foi feito&rdquo; e não
-        como &ldquo;quanto ainda tem na prateleira&rdquo; — a diferença cresce todo mês. Para o ritmo de
-        venda de cada peça, o número certo está em Vendas e cobertura.
+        <strong className="text-tinta">Este número já desconta o que saiu.</strong> A baixa sai do lote
+        mais antigo primeiro, e registrar uma venda em Vendas já dá baixa sozinha — fazer as duas coisas
+        tiraria a peça em dobro. Peça que saiu por venda, feira, brinde ou uso do ateliê NÃO entra na taxa
+        de perda; só a que quebrou depois de pronta entra, porque essa quebrou mesmo.
       </p>
     </>
   )

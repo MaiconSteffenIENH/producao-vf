@@ -1,4 +1,6 @@
 import { prisma } from '../lib/prisma'
+import type { Sessao } from '../lib/token'
+import { darBaixaDeProntas } from './estoque.service'
 import { normalizarBusca } from '../lib/busca'
 import { agruparVendas, lerCsvDeVendas, type LinhaVenda } from '../lib/csv-vendas'
 import { calcularCobertura, competenciaDe, minimoSugerido, type VendaMensal } from '../lib/cobertura'
@@ -29,14 +31,38 @@ export async function listarVendas(filtros: { competencia?: string; pecaId?: str
   })
 }
 
-export async function salvarVenda(dados: {
-  pecaId: string
-  corId?: string | null
-  canalId?: string | null
-  competencia: string
-  quantidade: number
-  valorTotal?: number | null
-}) {
+/*
+ * REGISTRAR A VENDA DÁ BAIXA NO ESTOQUE DE PRONTAS.
+ *
+ * São o mesmo fato: as 12 peças que entraram no faturamento saíram da
+ * prateleira. Pedir dois lançamentos garantiria que um dos dois ficasse para
+ * trás — e o que ficasse para trás seria a baixa, porque ela não vira dinheiro.
+ *
+ * ── O DELTA, E NÃO A QUANTIDADE ──
+ *
+ * A venda é um upsert por competência: corrigir o mês é reenviar. Se a baixa
+ * usasse a quantidade cheia, corrigir "12" para "15" tiraria 15 do estoque em
+ * cima dos 12 já tirados. O que se aplica é a DIFERENÇA — e diferença negativa
+ * devolve, porque corrigir 12 para 8 quer dizer que 4 peças nunca saíram.
+ *
+ * ── ESTOQUE INSUFICIENTE NÃO RECUSA A VENDA ──
+ *
+ * Vender peça feita antes de o sistema existir é normal. Travar o livro de
+ * faturamento por falta de saldo trocaria um número impreciso por um número que
+ * não existe. Baixa-se o que dá, e a tela conta exatamente o que houve.
+ */
+export async function salvarVenda(
+  dados: {
+    pecaId: string
+    corId?: string | null
+    canalId?: string | null
+    competencia: string
+    quantidade: number
+    valorTotal?: number | null
+    darBaixa?: boolean
+  },
+  sessao?: Sessao,
+) {
   const chave = {
     pecaId: dados.pecaId,
     corId: dados.corId ?? null,
@@ -44,16 +70,45 @@ export async function salvarVenda(dados: {
     competencia: dados.competencia,
   }
   // upsert pela competência: corrigir o mês é reenviar, não duplicar
-  const existente = await prisma.venda.findFirst({ where: chave })
-  if (existente) {
-    return prisma.venda.update({
-      where: { id: existente.id },
-      data: { quantidade: dados.quantidade, valorTotal: dados.valorTotal ?? null },
-    })
-  }
-  return prisma.venda.create({
-    data: { ...chave, quantidade: dados.quantidade, valorTotal: dados.valorTotal ?? null },
-  })
+  const existente = (await prisma.venda.findFirst({ where: chave })) as { id: string; quantidade: number } | null
+  const antes = existente?.quantidade ?? 0
+
+  const venda = existente
+    ? await prisma.venda.update({
+        where: { id: existente.id },
+        data: { quantidade: dados.quantidade, valorTotal: dados.valorTotal ?? null },
+      })
+    : await prisma.venda.create({
+        data: { ...chave, quantidade: dados.quantidade, valorTotal: dados.valorTotal ?? null },
+      })
+
+  const delta = dados.quantidade - antes
+  if (dados.darBaixa === false || delta === 0 || !sessao) return { venda, baixa: null }
+
+  const id = (venda as { id: string }).id
+  const baixa = await darBaixaDeProntas(
+    {
+      pecaId: dados.pecaId,
+      corId: dados.corId ?? null,
+      quantidade: Math.abs(delta),
+      motivoTipo: delta > 0 ? 'venda' : 'estorno_venda',
+      observacao: `Venda de ${dados.competencia}.`,
+      /*
+       * A chave carrega a TRANSIÇÃO INTEIRA, e não só o alvo.
+       *
+       * Com só o alvo, corrigir 12 → 15 → 12 gerava no último passo a mesma
+       * chave do primeiro: a conferência achava o movimento antigo, dava a
+       * operação por feita e o estorno nunca acontecia. O estoque ficava −15
+       * para uma venda de 12, em silêncio.
+       *
+       * Com o par (de, para), repetir a MESMA correção é inócuo — que é o que a
+       * idempotência precisa garantir — e uma correção diferente sempre passa.
+       */
+      chaveIdempotencia: `venda:${id}:de:${antes}:para:${dados.quantidade}`,
+    },
+    sessao,
+  )
+  return { venda, baixa }
 }
 
 export async function apagarVenda(id: string) {
@@ -66,6 +121,15 @@ export type ResultadoImportacao = {
   naoReconhecidas: { peca: string; cor: string | null; quantidade: number; competencia: string }[]
   erros: { linha: number; motivo: string; conteudo: string }[]
   colunas: string[]
+  /** o que a importação tirou do estoque de peças prontas */
+  baixa: {
+    baixado: number
+    /** o que voltou ao estoque porque a planilha corrigiu uma venda para menos */
+    devolvido: number
+    faltou: number
+    /** as combinações em que o estoque não cobriu a venda */
+    semEstoque: { peca: string; cor: string | null; pedido: number; baixado: number }[]
+  }
 }
 
 /**
@@ -78,6 +142,7 @@ export type ResultadoImportacao = {
 export async function importarVendas(
   conteudo: string,
   canalId: string | null,
+  sessao?: Sessao,
   agora = new Date(),
 ): Promise<ResultadoImportacao> {
   const lido = lerCsvDeVendas(conteudo, agora.getUTCFullYear())
@@ -115,6 +180,21 @@ export async function importarVendas(
   let atualizadas = 0
   const naoReconhecidas: ResultadoImportacao['naoReconhecidas'] = []
 
+  /*
+   * A IMPORTAÇÃO TAMBÉM DÁ BAIXA.
+   *
+   * A planilha do marketplace é o caminho por onde as vendas de verdade entram
+   * — não existe formulário manual nesta tela. Se só o lançamento manual
+   * descontasse estoque, a baixa automática não existiria na prática.
+   *
+   * É o DELTA, como no lançamento manual: reimportar a mesma planilha atualiza
+   * as linhas para a mesma quantidade, delta zero, e não tira nada de novo.
+   */
+  let baixado = 0
+  let devolvido = 0
+  let faltou = 0
+  const semEstoque: ResultadoImportacao['baixa']['semEstoque'] = []
+
   for (const linha of linhas as LinhaVenda[]) {
     const peca = acharPeca(linha.peca)
     if (!peca) {
@@ -133,27 +213,78 @@ export async function importarVendas(
       canalId,
       competencia: linha.competencia,
     }
-    const existente = await prisma.venda.findFirst({ where: chave })
+    const existente = (await prisma.venda.findFirst({ where: chave })) as
+      | { id: string; quantidade: number }
+      | null
+    const antes = existente?.quantidade ?? 0
+
+    let vendaId: string
     if (existente) {
       await prisma.venda.update({
         where: { id: existente.id },
         data: { quantidade: linha.quantidade, valorTotal: linha.valorTotal, origem: 'importacao' },
       })
+      vendaId = existente.id
       atualizadas++
     } else {
-      await prisma.venda.create({
+      const criada = (await prisma.venda.create({
         data: {
           ...chave,
           quantidade: linha.quantidade,
           valorTotal: linha.valorTotal,
           origem: 'importacao',
         },
-      })
+      })) as { id: string }
+      vendaId = criada.id
       importadas++
+    }
+
+    /*
+     * DELTA NEGATIVO TAMBÉM VALE.
+     *
+     * A primeira versão só descontava quando a planilha subia a quantidade.
+     * Planilha corrigida para menos deixava o estoque baixado a mais, sem
+     * devolver e sem avisar — e a diferença entre a tela e a prateleira, que
+     * esta baixa veio fechar, voltava a crescer em silêncio.
+     */
+    const delta = linha.quantidade - antes
+    if (sessao && delta !== 0) {
+      const r = await darBaixaDeProntas(
+        {
+          pecaId: peca.id,
+          corId: cor?.id ?? null,
+          quantidade: Math.abs(delta),
+          motivoTipo: delta > 0 ? 'venda' : 'estorno_venda',
+          observacao: `Venda importada, ${linha.competencia}.`,
+          chaveIdempotencia: `venda:${vendaId}:de:${antes}:para:${linha.quantidade}`,
+        },
+        sessao,
+      )
+      if (delta > 0) {
+        baixado += r.baixado
+        faltou += r.faltou
+        if (r.faltou > 0) {
+          semEstoque.push({
+            peca: peca.nome,
+            cor: cor?.nome ?? null,
+            pedido: delta,
+            baixado: r.baixado,
+          })
+        }
+      } else {
+        devolvido += r.baixado
+      }
     }
   }
 
-  return { importadas, atualizadas, naoReconhecidas, erros: lido.erros, colunas: lido.colunas }
+  return {
+    importadas,
+    atualizadas,
+    naoReconhecidas,
+    erros: lido.erros,
+    colunas: lido.colunas,
+    baixa: { baixado, devolvido, faltou, semEstoque },
+  }
 }
 
 /**

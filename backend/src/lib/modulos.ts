@@ -113,7 +113,14 @@ export const MODULOS_POR_ROTA: Readonly<Record<string, readonly string[]>> = {
   // fotos, o histórico. Mapear 1-para-1 barraria a tela ESSENCIAL de quem
   // apenas desligou um cadastro que nem sabia que era usado por ela.
   lotes: ['producao', 'historico', 'estoque-biscoito', 'estoque-prontas'],
-  estoque: ['estoque-biscoito', 'estoque-prontas'],
+  /*
+   * `estoque-prontas` vem PRIMEIRO porque o dono manda na escrita.
+   *
+   * A única escrita sob /estoque é a baixa do estoque de prontas. Com
+   * `estoque-biscoito` na frente, quem tivesse só o módulo de prontas — que é
+   * exatamente quem dá baixa — levaria 403 na própria tela.
+   */
+  estoque: ['estoque-prontas', 'estoque-biscoito'],
   pecas: ['pecas', 'planejamento', 'producao', 'historico', 'precos', 'vendas', 'encomendas', 'fotos', 'estoque-biscoito', 'estoque-prontas'],
   cores: ['esmaltes', 'pecas', 'producao', 'historico', 'fotos', 'encomendas', 'estoque-prontas'],
   etapas: ['etapas', 'pecas', 'producao', 'historico', 'forno'],

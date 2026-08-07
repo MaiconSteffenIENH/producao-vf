@@ -41,6 +41,7 @@ import {
   queimaSchema,
   statusQueimaSchema,
   concluirQueimaSchema,
+  baixaDeProntasSchema,
   vendaSchema,
   importarVendasSchema,
   encomendaSchema,
@@ -348,6 +349,19 @@ rotas.post(
   }),
 )
 
+/*
+ * Baixa do estoque de peças prontas.
+ *
+ * Fica sob /estoque porque é a tela de onde ela é dada, e porque o módulo que
+ * a libera é o mesmo do estoque de prontas.
+ */
+rotas.post(
+  '/estoque/prontas/baixa',
+  rota(async (req, res) => {
+    res.json(await estoque.darBaixaDeProntas(baixaDeProntasSchema.parse(req.body), req.sessao!))
+  }),
+)
+
 // ── Vendas: o lado que faltava do briefing ──────────────
 rotas.get(
   '/vendas',
@@ -362,13 +376,16 @@ rotas.get(
 )
 rotas.post(
   '/vendas',
-  rota(async (req, res) => void res.status(201).json(await vendas.salvarVenda(vendaSchema.parse(req.body)))),
+  rota(
+    async (req, res) =>
+      void res.status(201).json(await vendas.salvarVenda(vendaSchema.parse(req.body), req.sessao!)),
+  ),
 )
 rotas.post(
   '/vendas/importar',
   rota(async (req, res) => {
     const { conteudo, canalId } = importarVendasSchema.parse(req.body)
-    res.json(await vendas.importarVendas(conteudo, canalId ?? null))
+    res.json(await vendas.importarVendas(conteudo, canalId ?? null, req.sessao!))
   }),
 )
 rotas.delete(

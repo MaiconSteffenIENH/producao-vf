@@ -83,6 +83,11 @@ export function Vendas() {
     atualizadas: number
     naoReconhecidas: { peca: string; quantidade: number; competencia: string }[]
     erros: { linha: number; motivo: string }[]
+    baixa: {
+      baixado: number
+      faltou: number
+      semEstoque: { peca: string; cor: string | null; pedido: number; baixado: number }[]
+    }
   } | null>(null)
 
   const recarregar = useCallback(async () => {
@@ -115,7 +120,23 @@ export function Vendas() {
     try {
       const { data } = await api.post('/vendas/importar', { conteudo, canalId: canalId || null })
       setResultado(data)
-      avisar.ok(`${data.importadas} novas e ${data.atualizadas} atualizadas.`)
+      avisar.ok(
+        `${data.importadas} novas e ${data.atualizadas} atualizadas` +
+          (data.baixa?.baixado ? ` · ${data.baixa.baixado} baixadas do estoque de prontas` : '') +
+          '.',
+      )
+      /*
+       * A venda importada dá baixa no estoque de prontas. Quando o estoque não
+       * cobre, isso NÃO é erro — é peça feita antes de o sistema existir. Mas
+       * precisa ser dito, senão a diferença entre o que a tela mostra e o que
+       * está na prateleira volta a crescer em silêncio.
+       */
+      if (data.baixa?.faltou > 0) {
+        avisar.info(
+          `${data.baixa.faltou} peça(s) vendidas não tinham saldo no estoque de prontas — ` +
+            'provavelmente feitas antes de o sistema existir. Confira a lista abaixo.',
+        )
+      }
       await recarregar()
     } catch (erro) {
       avisar.erro(mensagemDoErro(erro, 'Não deu para importar a planilha.'))
@@ -254,7 +275,37 @@ export function Vendas() {
             <div className="rounded-xl border border-borda bg-superficie-2 p-3.5 text-sm">
               <p className="text-tinta">
                 {resultado.importadas} novas, {resultado.atualizadas} atualizadas.
+                {resultado.baixa && resultado.baixa.baixado > 0 && (
+                  <> {resultado.baixa.baixado} peça(s) baixadas do estoque de prontas.</>
+                )}
               </p>
+
+              {/*
+                ESTOQUE QUE NÃO COBRIU A VENDA.
+                Não é erro: é peça feita antes de o sistema existir, e por isso a
+                importação não foi recusada. Mas tem de ser dito — em silêncio, a
+                diferença entre a tela e a prateleira volta a crescer.
+              */}
+              {resultado.baixa?.semEstoque?.length > 0 && (
+                <div className="mt-2">
+                  <p className="font-medium text-tinta">
+                    {resultado.baixa.faltou} peça(s) vendidas sem saldo no estoque de prontas:
+                  </p>
+                  <ul className="mt-1 flex flex-col gap-0.5 text-xs text-tinta-fraca">
+                    {resultado.baixa.semEstoque.slice(0, 8).map((n, i) => (
+                      <li key={i}>
+                        {n.peca}
+                        {n.cor ? ` · ${n.cor}` : ''} — vendidas {n.pedido}, baixadas {n.baixado}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-xs text-tinta-fraca">
+                    A venda foi registrada assim mesmo: recusá-la trocaria um número impreciso por um
+                    número que não existe. Isso é esperado para peça finalizada antes de o sistema
+                    existir, e some sozinho conforme o estoque passa a ser todo dele.
+                  </p>
+                </div>
+              )}
               {resultado.naoReconhecidas.length > 0 && (
                 <div className="mt-2">
                   <p className="font-medium text-alerta">

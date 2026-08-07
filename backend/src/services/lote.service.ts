@@ -918,6 +918,10 @@ export async function cancelarLote(id: string, motivo: string, sessao: Sessao) {
  * Conclusão é DERIVADA: o lote está pronto quando não sobrou nada em etapa
  * que não seja final. Ninguém marca caixinha — checkbox manual apodrece.
  */
+export async function atualizarConclusaoDoLote(loteId: string) {
+  return atualizarConclusao(loteId)
+}
+
 async function atualizarConclusao(loteId: string) {
   const [saldos, etapas, lote] = await Promise.all([
     saldosPorLote([loteId]),
@@ -937,10 +941,25 @@ async function atualizarConclusao(loteId: string) {
     else emAberto += qtd
   }
 
-  const concluido = emAberto === 0 && prontos > 0
+  /*
+   * VENDER TUDO NÃO REABRE O LOTE.
+   *
+   * `concluido = emAberto === 0 && prontos > 0` era suficiente enquanto peça
+   * pronta ficava parada para sempre. Com a baixa do estoque, o lote que vende
+   * a última peça fica com prontos = 0 — `calcularSaldos` apaga a entrada
+   * zerada — e a regra o devolvia para "em andamento": ele voltava a contar em
+   * "Lotes abertos" no painel, reaparecia no filtro "em andamento" do histórico
+   * e fazia o planejamento dizer "Lote aberto, ainda sem nada coberto" sobre
+   * uma peça que vendeu tudo e não tem nada em produção.
+   *
+   * O que reabre um lote é peça VOLTAR para o meio do caminho — `emAberto > 0`.
+   * Sem nada em aberto e sem nada pronto, o lote acabou: ou vendeu, ou perdeu.
+   */
+  const temAberto = emAberto > 0
+  const concluido = !temAberto && (prontos > 0 || Boolean(lote.concluidoEm))
   if (concluido && !lote.concluidoEm) {
     await prisma.lote.update({ where: { id: loteId }, data: { concluidoEm: new Date() } })
-  } else if (!concluido && lote.concluidoEm) {
+  } else if (temAberto && lote.concluidoEm) {
     // um retorno de etapa reabre o lote
     await prisma.lote.update({ where: { id: loteId }, data: { concluidoEm: null } })
   }

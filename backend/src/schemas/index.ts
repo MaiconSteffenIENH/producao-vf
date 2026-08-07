@@ -320,6 +320,22 @@ export const concluirQueimaSchema = z.object({
   ),
 })
 
+/*
+ * A baixa do estoque de prontas.
+ *
+ * `motivoTipo` é conferido de novo no service, contra a lista de
+ * lib/saida-estoque.ts. Aqui é só string: repetir a lista no zod faria a mesma
+ * regra viver em dois lugares, e um deles envelheceria.
+ */
+export const baixaDeProntasSchema = z.object({
+  pecaId: z.string().uuid('escolha a peça'),
+  corId: z.string().uuid().or(z.literal('')).optional().nullable(),
+  quantidade: z.coerce.number().int().min(1, 'quantidade mínima 1').max(99999),
+  motivoTipo: z.string().trim().min(1, 'diga o motivo'),
+  observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+  chaveIdempotencia: z.string().trim().min(8).max(80).optional().nullable(),
+})
+
 export const vendaSchema = z.object({
   pecaId: z.string().uuid(),
   corId: z.string().uuid().optional().nullable(),
@@ -327,6 +343,12 @@ export const vendaSchema = z.object({
   competencia,
   quantidade: z.coerce.number().int().min(0),
   valorTotal: z.coerce.number().min(0).max(99_999_999).optional().nullable(),
+  /*
+   * Registrar a venda dá baixa no estoque de prontas — é o mesmo fato contado
+   * uma vez só. Vem ligado por padrão; desligar serve para o caso legítimo de
+   * lançar venda de peça feita antes de o sistema existir.
+   */
+  darBaixa: z.boolean().default(true),
 })
 
 export const importarVendasSchema = z.object({

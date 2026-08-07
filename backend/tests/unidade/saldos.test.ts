@@ -94,3 +94,43 @@ describe('saldo derivado do livro-razão', () => {
     expect(saldoTotalDoLote(vazio, 'qualquer')).toBe(0)
   })
 })
+
+/*
+ * A BAIXA DO ESTOQUE DE PRONTAS, vista pelo livro-razão.
+ *
+ * `calcularSaldos` ignora `tipo` de propósito: o que move o saldo é ter origem
+ * ou destino. É isso que faz a venda aparecer no estoque sem nenhuma mudança
+ * aqui — e é o que precisa continuar valendo.
+ */
+describe('saída e devolução do estoque de prontas', () => {
+  const abertura = { loteId: 'L1', etapaOrigemId: null, etapaDestinoId: 'torno', quantidade: 30 }
+  const ateOFim = { loteId: 'L1', etapaOrigemId: 'torno', etapaDestinoId: 'pronto', quantidade: 30 }
+
+  it('a saída tira da etapa final', () => {
+    const s = calcularSaldos([
+      abertura,
+      ateOFim,
+      { loteId: 'L1', etapaOrigemId: 'pronto', etapaDestinoId: null, quantidade: 12 },
+    ])
+    expect(s.get('L1')?.get('pronto')).toBe(18)
+  })
+
+  it('a devolução repõe', () => {
+    const s = calcularSaldos([
+      abertura,
+      ateOFim,
+      { loteId: 'L1', etapaOrigemId: 'pronto', etapaDestinoId: null, quantidade: 12 },
+      { loteId: 'L1', etapaOrigemId: null, etapaDestinoId: 'pronto', quantidade: 5 },
+    ])
+    expect(s.get('L1')?.get('pronto')).toBe(23)
+  })
+
+  it('vender tudo apaga o lote do mapa — e é por isso que a conclusão não pode olhar só "prontos"', () => {
+    const s = calcularSaldos([
+      abertura,
+      ateOFim,
+      { loteId: 'L1', etapaOrigemId: 'pronto', etapaDestinoId: null, quantidade: 30 },
+    ])
+    expect(s.get('L1')).toBeUndefined()
+  })
+})

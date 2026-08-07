@@ -1,11 +1,23 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
-import { saldosPorLote } from './lote.service'
+import { conflito, invalido, regraDeNegocio } from '../lib/erros'
+import type { Sessao } from '../lib/token'
+import { atualizarConclusaoDoLote, saldosPorLote } from './lote.service'
 import {
   visaoDasProntas,
   visaoDoBiscoito,
   type EntradaDeBiscoito,
   type EntradaDeProntas,
 } from '../lib/estoque'
+import {
+  distribuirBaixa,
+  distribuirDevolucao,
+  frasePaciente,
+  mensagemDeMotivoDeSaidaInvalido,
+  motivoDeSaida,
+  rotuloDaSaida,
+  type LoteComSaldo,
+} from '../lib/saida-estoque'
 
 /**
  * Fotografia do que existe hoje, montada a partir dos saldos dos lotes.
@@ -82,7 +94,13 @@ export async function calcularEstoque(): Promise<Estoque> {
 export async function taxasDePerda(minimoAmostra = 30): Promise<Map<string, { taxa: number; amostra: number }>> {
   const [movimentos, etapasFinais] = await Promise.all([
     prisma.movimentoLote.findMany({
-      select: { tipo: true, quantidade: true, etapaDestinoId: true, lote: { select: { pecaId: true } } },
+      select: {
+      tipo: true,
+      quantidade: true,
+      motivoTipo: true,
+      etapaDestinoId: true,
+      lote: { select: { pecaId: true } },
+    },
     }),
     prisma.etapa.findMany({ where: { tipo: 'final' }, select: { id: true } }),
   ])
@@ -94,12 +112,34 @@ export async function taxasDePerda(minimoAmostra = 30): Promise<Map<string, { ta
   for (const m of movimentos as {
     tipo: string
     quantidade: number
+    motivoTipo: string | null
     etapaDestinoId: string | null
     lote: { pecaId: string }
   }[]) {
     const peca = m.lote.pecaId
-    if (m.tipo === 'perda') perdas.set(peca, (perdas.get(peca) ?? 0) + m.quantidade)
-    else if (m.etapaDestinoId && finais.has(m.etapaDestinoId)) {
+    if (m.tipo === 'perda') {
+      perdas.set(peca, (perdas.get(peca) ?? 0) + m.quantidade)
+      /*
+       * A PEÇA QUE QUEBROU DEPOIS DE PRONTA JÁ FOI CONTADA UMA VEZ.
+       *
+       * Ela entrou em `concluidas` quando chegou na etapa final. Sem tirá-la de
+       * lá, a mesma peça apareceria nos dois lados da fração e a amostra viria
+       * inflada — encarecendo `custoUnitarioReal` para todo mundo por causa de
+       * uma peça só.
+       */
+      if (m.motivoTipo === 'quebra_pronta') {
+        concluidas.set(peca, (concluidas.get(peca) ?? 0) - m.quantidade)
+      }
+    }
+    /*
+     * DEVOLUÇÃO NÃO É PEÇA NOVA.
+     *
+     * A caixa que voltou da feira entra na etapa final de novo, e sem esta
+     * exceção ela contaria como uma segunda conclusão da mesma peça: a amostra
+     * inflaria, a taxa de perda cairia sozinha e o custo por peça viria baixo —
+     * bastando levar as mesmas peças para a feira algumas vezes.
+     */
+    else if (m.tipo !== 'devolucao' && m.etapaDestinoId && finais.has(m.etapaDestinoId)) {
       concluidas.set(peca, (concluidas.get(peca) ?? 0) + m.quantidade)
     }
   }
@@ -304,4 +344,278 @@ export async function estoqueDeProntas() {
   }
 
   return visaoDasProntas(entradas)
+}
+
+// ═══════════════════ Baixa do estoque de peças prontas ═══════════════════
+
+/*
+ * O QUE FALTAVA PARA O NÚMERO DA TELA SER ESTOQUE DE VERDADE.
+ *
+ * Os movimentos de lote só sabiam somar: peça que chegava em PRONTO ficava lá
+ * para sempre, e a tela avisava no rodapé que aquilo era "quanto o ateliê
+ * finalizou". Aqui entra a saída.
+ *
+ * A pessoa diz PEÇA, ESMALTE e QUANTIDADE. Quem embala o pedido não sabe de
+ * qual lote veio a peça — elas estão todas na mesma prateleira — e exigir isso
+ * seria garantir que a baixa nunca fosse feita. A repartição entre os lotes é
+ * conta de máquina, do mais antigo para o mais novo.
+ */
+
+export type PedidoDeBaixa = {
+  pecaId: string
+  /** nulo = peça pronta que nunca teve esmalte definido */
+  corId?: string | null
+  quantidade: number
+  /** um dos valores de lib/saida-estoque.ts */
+  motivoTipo: string
+  observacao?: string | null
+  /** para o reenvio da fila offline não gravar duas vezes */
+  chaveIdempotencia?: string | null
+}
+
+export type ResultadoDaBaixa = {
+  pedido: number
+  baixado: number
+  faltou: number
+  /** de quais lotes saiu — a tela mostra para a pessoa reconhecer o que mexeu */
+  fatias: { codigo: string; quantidade: number }[]
+  aviso: string | null
+}
+
+/** As etapas terminais: é nelas que a peça pronta fica parada. */
+async function etapasFinais(): Promise<string[]> {
+  const etapas = (await prisma.etapa.findMany({
+    where: { tipo: 'final' },
+    // ordem fixa: `finais[0]` decide para onde a devolução volta, e sem
+    // `orderBy` ele muda de uma consulta para outra
+    orderBy: [{ ordemPadrao: 'asc' }, { id: 'asc' }],
+    select: { id: true },
+  })) as { id: string }[]
+  return etapas.map((e) => e.id)
+}
+
+/**
+ * As pilhas daquela peça+esmalte paradas no fim da linha.
+ *
+ * Uma entrada por LOTE e por ETAPA final. Nada impede o ateliê de cadastrar
+ * duas etapas do tipo `final`, e a primeira versão disto pegava só a primeira
+ * com saldo e parava — a tela somava as duas e o servidor via uma.
+ *
+ * `corId: null` quer dizer "prontas sem esmalte definido", que é caso real: o
+ * roteiro pode não ter etapa de cor. Não é o mesmo que "qualquer cor" — juntar
+ * os dois faria a baixa de um esmalte comer o estoque de outro.
+ */
+async function prontasPorLote(pecaId: string, corId: string | null, finais: string[]) {
+  const lotes = (await prisma.lote.findMany({
+    where: { pecaId, corId, canceladoEm: null },
+    select: { id: true, codigo: true, iniciadoEm: true },
+  })) as { id: string; codigo: string; iniciadoEm: Date }[]
+  if (lotes.length === 0) return [] as LoteComSaldo[]
+
+  const saldos = await saldosPorLote(lotes.map((l) => l.id))
+  const pilhas: LoteComSaldo[] = []
+
+  for (const lote of lotes) {
+    const mapa = saldos.get(lote.id)
+    if (!mapa) continue
+    for (const etapaId of finais) {
+      const saldo = mapa.get(etapaId) ?? 0
+      if (saldo <= 0) continue
+      pilhas.push({
+        loteId: lote.id,
+        codigo: lote.codigo,
+        etapaId,
+        saldo,
+        abertoEm: lote.iniciadoEm,
+      })
+    }
+  }
+  return pilhas
+}
+
+/**
+ * Quanto ainda está fora por um motivo de saída, lote a lote.
+ *
+ * A conta é saída MENOS devolução. A primeira versão procurava um sufixo
+ * `_devolvido` que nada gravava, então o abatimento era ramo morto: dava para
+ * apertar "Voltou da feira" indefinidamente e criar peça do nada, justamente o
+ * que o teto existe para impedir.
+ */
+async function aindaForaPorLote(
+  pecaId: string,
+  corId: string | null,
+  motivoDaSaida: string,
+  motivoDaVolta: string,
+) {
+  const movimentos = (await prisma.movimentoLote.findMany({
+    where: {
+      lote: { pecaId, corId, canceladoEm: null },
+      motivoTipo: { in: [motivoDaSaida, motivoDaVolta] },
+    },
+    orderBy: { criadoEm: 'asc' },
+    select: {
+      loteId: true,
+      quantidade: true,
+      criadoEm: true,
+      motivoTipo: true,
+      etapaOrigemId: true,
+      etapaDestinoId: true,
+      lote: { select: { codigo: true } },
+    },
+  })) as {
+    loteId: string
+    quantidade: number
+    criadoEm: Date
+    motivoTipo: string | null
+    etapaOrigemId: string | null
+    etapaDestinoId: string | null
+    lote: { codigo: string }
+  }[]
+
+  type Fora = { loteId: string; codigo: string; etapaId: string; saiu: number; saidaEm: Date }
+  const porChave = new Map<string, Fora>()
+
+  for (const m of movimentos) {
+    // saída tem origem; devolução tem destino. A etapa é a mesma nos dois.
+    const etapaId = m.etapaOrigemId ?? m.etapaDestinoId
+    if (!etapaId) continue
+    const chave = `${m.loteId}:${etapaId}`
+    const atual = porChave.get(chave) ?? {
+      loteId: m.loteId,
+      codigo: m.lote.codigo,
+      etapaId,
+      saiu: 0,
+      saidaEm: m.criadoEm,
+    }
+    if (m.motivoTipo === motivoDaVolta) atual.saiu -= m.quantidade
+    else {
+      atual.saiu += m.quantidade
+      atual.saidaEm = m.criadoEm
+    }
+    porChave.set(chave, atual)
+  }
+  return [...porChave.values()].filter((f) => f.saiu > 0)
+}
+
+/*
+ * A CHAVE DE IDEMPOTÊNCIA, e por que ela virou `#1`, `#2`.
+ *
+ * A primeira versão procurava por prefixo (`startsWith`). O índice único da
+ * coluna é `text_ops`, então `LIKE 'x%'` não o usa: era uma varredura no
+ * livro-razão inteiro — a tabela que mais cresce — uma vez por linha da
+ * planilha importada. Agora a primeira fatia leva a chave EXATA, que é o que a
+ * conferência procura com `findUnique`.
+ */
+const chaveDaFatia = (base: string, indice: number) => (indice === 0 ? base : `${base}#${indice + 1}`)
+
+export async function darBaixaDeProntas(
+  pedido: PedidoDeBaixa,
+  sessao: Sessao,
+  agora = new Date(),
+): Promise<ResultadoDaBaixa> {
+  const motivo = motivoDeSaida(pedido.motivoTipo)
+  if (!motivo) throw invalido(mensagemDeMotivoDeSaidaInvalido(String(pedido.motivoTipo)))
+  if (!Number.isInteger(pedido.quantidade) || pedido.quantidade < 1) {
+    throw invalido('A quantidade precisa ser um número inteiro, de 1 para cima.')
+  }
+
+  /*
+   * REENVIO: responde com o que FOI gravado, e não com o que foi pedido.
+   *
+   * A primeira versão devolvia `baixado: quantidade, faltou: 0` sem olhar nada.
+   * Se a primeira tentativa tinha baixado 3 de 12, o reenvio dizia 12 — e a
+   * importação somava esse número no total que a tela mostra. Era um número
+   * fabricado.
+   */
+  if (pedido.chaveIdempotencia) {
+    const jaFeito = await prisma.movimentoLote.findUnique({
+      where: { chaveIdempotencia: pedido.chaveIdempotencia },
+    })
+    if (jaFeito) {
+      const todas = (await prisma.movimentoLote.findMany({
+        where: { chaveIdempotencia: { startsWith: pedido.chaveIdempotencia } },
+        select: { quantidade: true, lote: { select: { codigo: true } } },
+      })) as { quantidade: number; lote: { codigo: string } }[]
+      const baixado = todas.reduce((n, m) => n + m.quantidade, 0)
+      return {
+        pedido: pedido.quantidade,
+        baixado,
+        faltou: Math.max(0, pedido.quantidade - baixado),
+        fatias: todas.map((m) => ({ codigo: m.lote.codigo, quantidade: m.quantidade })),
+        aviso: null,
+      }
+    }
+  }
+
+  // `|| null` e não `?? null`: o <Select> vazio manda '', e string vazia numa
+  // coluna uuid derruba a consulta com erro de sintaxe do Postgres
+  const corId = pedido.corId || null
+  const finais = await etapasFinais()
+  if (finais.length === 0) {
+    throw regraDeNegocio(
+      'Nenhuma etapa está marcada como final, então o sistema não sabe onde a peça pronta fica parada. ' +
+        'Ajuste em Etapas.',
+    )
+  }
+
+  const eDevolucao = motivo.sentido === 'entrada'
+  const distribuicao = eDevolucao
+    ? distribuirDevolucao(
+        await aindaForaPorLote(pedido.pecaId, corId, motivo.reverteDe ?? 'venda', motivo.valor),
+        pedido.quantidade,
+      )
+    : distribuirBaixa(await prontasPorLote(pedido.pecaId, corId, finais), pedido.quantidade)
+
+  if (distribuicao.fatias.length > 0) {
+    try {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        for (const [i, fatia] of distribuicao.fatias.entries()) {
+          await tx.movimentoLote.create({
+            data: {
+              loteId: fatia.loteId,
+              etapaOrigemId: eDevolucao ? null : fatia.etapaId,
+              etapaDestinoId: eDevolucao ? fatia.etapaId : null,
+              quantidade: fatia.quantidade,
+              /*
+               * SAÍDA NÃO É PERDA. `perdaDaPeca` e `custoUnitarioReal` só olham
+               * `tipo: 'perda'` — se a venda entrasse ali, o planejamento
+               * mandaria produzir a mais e o custo cobraria de todo mundo a
+               * "quebra" de quem comprou.
+               */
+              tipo: motivo.ehPerda ? 'perda' : eDevolucao ? 'devolucao' : 'saida',
+              motivoTipo: motivo.valor,
+              corId,
+              motivo: pedido.observacao?.trim() || motivo.rotulo,
+              usuarioId: sessao.id,
+              usuarioNome: sessao.nome,
+              criadoEm: agora,
+              chaveIdempotencia: pedido.chaveIdempotencia
+                ? chaveDaFatia(pedido.chaveIdempotencia, i)
+                : null,
+            },
+          })
+        }
+      })
+    } catch (erro) {
+      // duas pessoas dando a mesma baixa ao mesmo tempo: o índice único derruba
+      // a segunda, e o banco garantiu que ela não gravou nada
+      if ((erro as { code?: string }).code === 'P2002') {
+        throw conflito('Esta baixa já foi registrada. Recarregue a tela para ver como ficou.')
+      }
+      throw erro
+    }
+    for (const fatia of distribuicao.fatias) await atualizarConclusaoDoLote(fatia.loteId)
+  }
+
+  return {
+    pedido: pedido.quantidade,
+    baixado: distribuicao.baixado,
+    faltou: distribuicao.faltou,
+    fatias: distribuicao.fatias.map((f) => ({ codigo: f.codigo, quantidade: f.quantidade })),
+    aviso: eDevolucao
+      ? distribuicao.faltou > 0
+        ? `Só ${distribuicao.baixado} peça(s) desta combinação estavam fora por "${rotuloDaSaida(motivo.reverteDe)}", então foi só isso que voltou.`
+        : null
+      : frasePaciente(pedido.quantidade, distribuicao.baixado, distribuicao.faltou),
+  }
 }

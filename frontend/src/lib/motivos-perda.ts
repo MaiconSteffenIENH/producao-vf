@@ -50,6 +50,11 @@ export const MOTIVOS_PERDA: MotivoDePerda[] = [
     ajuda: 'Caiu ou bateu fora do forno: bancada, prateleira, embalagem, transporte.',
   },
   {
+    valor: 'quebra_pronta',
+    rotulo: 'Quebrou depois de pronta',
+    ajuda: 'Estourou na prateleira, na embalagem ou no transporte — depois de a peça já estar terminada.',
+  },
+  {
     valor: 'outro',
     rotulo: 'Outro',
     ajuda: 'Nada acima serve. O texto abaixo é o que vai explicar isso depois.',
