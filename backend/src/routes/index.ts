@@ -42,6 +42,7 @@ import {
   statusQueimaSchema,
   concluirQueimaSchema,
   baixaDeProntasSchema,
+  devolucaoDeVendaSchema,
   vendaSchema,
   importarVendasSchema,
   encomendaSchema,
@@ -388,11 +389,23 @@ rotas.post(
     res.json(await vendas.importarVendas(conteudo, canalId ?? null, req.sessao!))
   }),
 )
+/*
+ * Devolução do cliente: a peça volta para a prateleira e a venda passa a valer
+ * o líquido. A venda em si não é apagada — quem quiser apagar usa o DELETE, que
+ * devolve o que ainda estava fora.
+ */
+rotas.post(
+  '/vendas/:id/devolucao',
+  rota(async (req, res) => {
+    const { quantidade } = devolucaoDeVendaSchema.parse(req.body)
+    res.json(await vendas.devolverVenda(req.params.id, quantidade, req.sessao!))
+  }),
+)
 rotas.delete(
   '/vendas/:id',
   rota(async (req, res) => {
-    await vendas.apagarVenda(req.params.id)
-    res.status(204).end()
+    // devolve ao estoque o que ainda estava fora antes de sumir com a linha
+    res.json(await vendas.apagarVenda(req.params.id, req.sessao!))
   }),
 )
 

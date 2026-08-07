@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Upload, TrendingDown } from 'lucide-react'
+import { AlertTriangle, RotateCcw, Trash2, Upload, TrendingDown } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { avisar } from '../components/Toaster'
 import {
@@ -9,6 +9,8 @@ import {
   Card,
   Carregando,
   Etiqueta,
+  ChipCor,
+  Input,
   Modal,
   Select,
   Textarea,
@@ -70,6 +72,84 @@ function MiniGrafico({ meses }: { meses: Linha['meses'] }) {
   )
 }
 
+type VendaLancada = {
+  id: string
+  competencia: string
+  quantidade: number
+  devolvidas: number
+  peca: { id: string; nome: string }
+  cor: { id: string; nome: string; hex: string } | null
+  canal: { id: string; nome: string } | null
+}
+
+/*
+ * AS VENDAS LANÇADAS, uma a uma.
+ *
+ * Esta lista não existia: a tela só mostrava o comparativo e a importação, e
+ * não havia como olhar — muito menos corrigir — uma venda específica. Faltando
+ * ela, "o cliente devolveu" não tinha onde ser registrado, e apagar uma venda
+ * lançada errado só era possível pela API.
+ */
+function ListaDeVendas({
+  vendas,
+  aoDevolver,
+  aoApagar,
+}: {
+  vendas: VendaLancada[]
+  aoDevolver: (v: VendaLancada) => void
+  aoApagar: (v: VendaLancada) => void
+}) {
+  if (vendas.length === 0) {
+    return (
+      <p className="rounded-xl border border-borda bg-superficie px-4 py-6 text-center text-sm text-tinta-fraca">
+        Nenhuma venda lançada ainda. Importe a planilha do marketplace para começar.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {vendas.map((v) => {
+        const liquido = Math.max(0, v.quantidade - v.devolvidas)
+        return (
+          <Card key={v.id} className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-medium text-tinta">{v.peca.nome}</h3>
+                {v.cor && <ChipCor nome={v.cor.nome} hex={v.cor.hex} tamanho={14} />}
+                <Etiqueta cor="#8a807c">{v.competencia}</Etiqueta>
+                {v.canal && <span className="text-xs text-tinta-fraca">{v.canal.nome}</span>}
+              </div>
+              <p className="mt-0.5 text-sm text-tinta-fraca">
+                {v.devolvidas > 0 ? (
+                  <>
+                    <strong className="text-tinta">{liquido}</strong> líquidas · {v.quantidade}{' '}
+                    vendidas, {v.devolvidas} devolvidas
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-tinta">{v.quantidade}</strong> vendidas
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-1.5">
+              {liquido > 0 && (
+                <Botao variante="secundario" onClick={() => aoDevolver(v)}>
+                  <RotateCcw size={15} /> Devolvida
+                </Botao>
+              )}
+              <Botao variante="secundario" onClick={() => aoApagar(v)}>
+                <Trash2 size={15} /> Apagar
+              </Botao>
+            </div>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
 export function Vendas() {
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -78,6 +158,11 @@ export function Vendas() {
   const [canalId, setCanalId] = useState('')
   const [canais, setCanais] = useState<{ id: string; nome: string }[]>([])
   const [enviando, setEnviando] = useState(false)
+  const [vendas, setVendas] = useState<VendaLancada[]>([])
+  const [devolvendo, setDevolvendo] = useState<VendaLancada | null>(null)
+  const [quantosVoltam, setQuantosVoltam] = useState('1')
+  const [apagando, setApagando] = useState<VendaLancada | null>(null)
+  const [salvando, setSalvando] = useState(false)
   const [resultado, setResultado] = useState<{
     importadas: number
     atualizadas: number
@@ -92,9 +177,14 @@ export function Vendas() {
 
   const recarregar = useCallback(async () => {
     try {
-      const [c, ca] = await Promise.all([api.get('/vendas/comparativo'), api.get('/canais')])
+      const [c, ca, v] = await Promise.all([
+        api.get('/vendas/comparativo'),
+        api.get('/canais'),
+        api.get('/vendas'),
+      ])
       setLinhas(c.data.linhas)
       setCanais(ca.data)
+      setVendas(v.data)
     } catch (erro) {
       avisar.erro(mensagemDoErro(erro, 'Não deu para carregar o comparativo.'))
     } finally {
@@ -145,9 +235,54 @@ export function Vendas() {
     }
   }
 
+  const confirmarDevolucao = async () => {
+    if (!devolvendo) return
+    setSalvando(true)
+    try {
+      const { data } = await api.post(`/vendas/${devolvendo.id}/devolucao`, {
+        quantidade: Number(quantosVoltam),
+      })
+      avisar.ok(
+        `${data.baixa.baixado} peça(s) de volta ao estoque. A venda passa a valer ` +
+          `${data.venda.quantidade - data.venda.devolvidas}.`,
+      )
+      if (data.baixa.aviso) avisar.info(data.baixa.aviso)
+      setDevolvendo(null)
+      await recarregar()
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para registrar a devolução.'))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const confirmarApagar = async () => {
+    if (!apagando) return
+    setSalvando(true)
+    try {
+      const { data } = await api.delete(`/vendas/${apagando.id}`)
+      avisar.ok(
+        data.devolvidas > 0
+          ? `Venda apagada e ${data.devolvidas} peça(s) devolvidas ao estoque.`
+          : 'Venda apagada.',
+      )
+      if (data.aviso) avisar.info(data.aviso)
+      setApagando(null)
+      await recarregar()
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para apagar a venda.'))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
   if (carregando) return <Carregando texto="Cruzando venda com produção…" />
 
   const emRisco = linhas.filter((l) => l.cobertura.vaiFaltar)
+  const restaDevolver = devolvendo ? devolvendo.quantidade - devolvendo.devolvidas : 0
+  const quantosNum = Number(quantosVoltam)
+  const devolucaoInvalida =
+    !Number.isInteger(quantosNum) || quantosNum < 1 || quantosNum > restaDevolver
 
   return (
     <>
@@ -223,6 +358,22 @@ export function Vendas() {
           ))}
         </div>
       )}
+
+      <div className="mt-8">
+        <h2 className="mb-1 font-titulo text-xl text-tinta">Vendas lançadas</h2>
+        <p className="mb-3 text-sm text-tinta-fraca">
+          Uma linha por peça, esmalte, canal e mês. Cada venda aqui já deu baixa no estoque de peças
+          prontas — se o cliente devolveu, é por aqui que a peça volta para a prateleira.
+        </p>
+        <ListaDeVendas
+          vendas={vendas}
+          aoDevolver={(v) => {
+            setQuantosVoltam(String(Math.max(1, v.quantidade - v.devolvidas)))
+            setDevolvendo(v)
+          }}
+          aoApagar={setApagando}
+        />
+      </div>
 
       <p className="mt-6 text-xs leading-relaxed text-tinta-fraca">
         A média ignora o mês corrente de propósito: no dia 3 ele tem 3 dias de venda e 27 de nada, e
@@ -342,6 +493,85 @@ export function Vendas() {
             </Botao>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        aberto={Boolean(devolvendo)}
+        aoFechar={() => setDevolvendo(null)}
+        titulo={devolvendo ? `Devolução de ${devolvendo.peca.nome}` : ''}
+        descricao={
+          devolvendo
+            ? `Venda de ${devolvendo.competencia}${devolvendo.canal ? ` · ${devolvendo.canal.nome}` : ''} — ${restaDevolver} ainda com o cliente.`
+            : undefined
+        }
+        largura="max-w-md"
+        fecharClicandoFora={false}
+      >
+        <div className="flex flex-col gap-4">
+          <Campo
+            rotulo="Quantas voltaram"
+            erro={devolucaoInvalida ? `Escreva um número inteiro de 1 a ${restaDevolver}.` : undefined}
+            dica="As peças voltam ao estoque de prontas e a venda passa a valer o líquido."
+          >
+            <Input
+              type="number"
+              min={1}
+              max={restaDevolver}
+              value={quantosVoltam}
+              onChange={(e) => setQuantosVoltam(e.target.value)}
+              onFocus={(e) => e.target.select()}
+            />
+          </Campo>
+          <p className="rounded-lg bg-superficie-2 p-3 text-xs leading-relaxed text-tinta-fraca">
+            A venda NÃO some: ela continua registrando que a peça saiu, que é de onde vem a taxa de
+            devolução do canal. O que muda é o número que alimenta o planejamento — peça devolvida
+            não é demanda, e contá-la faria o ateliê produzir para um pedido que voltou.
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Botao variante="secundario" onClick={() => setDevolvendo(null)} disabled={salvando}>
+              Cancelar
+            </Botao>
+            <Botao onClick={confirmarDevolucao} disabled={salvando || devolucaoInvalida}>
+              {salvando ? 'Registrando…' : 'Voltou ao estoque'}
+            </Botao>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        aberto={Boolean(apagando)}
+        aoFechar={() => setApagando(null)}
+        titulo={apagando ? `Apagar a venda de ${apagando.peca.nome}` : ''}
+        largura="max-w-md"
+      >
+        {apagando && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm leading-relaxed text-tinta">
+              {apagando.quantidade} vendidas em {apagando.competencia}
+              {apagando.devolvidas > 0 && `, ${apagando.devolvidas} já devolvidas`}.{' '}
+              {apagando.quantidade - apagando.devolvidas > 0 ? (
+                <>
+                  As <strong>{apagando.quantidade - apagando.devolvidas}</strong> que ainda estavam
+                  fora voltam para o estoque de prontas.
+                </>
+              ) : (
+                'Nada volta ao estoque — tudo já tinha sido devolvido.'
+              )}
+            </p>
+            <p className="text-xs leading-relaxed text-tinta-fraca">
+              Apagar é para venda lançada por engano. Se o cliente devolveu, use “Devolvida”: a venda
+              some daqui, e com ela o registro de que a peça chegou a sair.
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Botao variante="secundario" onClick={() => setApagando(null)} disabled={salvando}>
+                Cancelar
+              </Botao>
+              <Botao variante="perigo" onClick={confirmarApagar} disabled={salvando}>
+                {salvando ? 'Apagando…' : 'Apagar venda'}
+              </Botao>
+            </div>
+          </div>
+        )}
       </Modal>
     </>
   )

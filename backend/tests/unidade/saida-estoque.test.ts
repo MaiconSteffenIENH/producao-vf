@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  aDevolverAoApagar,
+  avaliarDevolucaoDeVenda,
   distribuirBaixa,
   distribuirDevolucao,
   frasePaciente,
@@ -237,5 +239,51 @@ describe('a cópia do frontend não pode divergir', () => {
 
     expect(doBack.length).toBe(MOTIVOS_DE_SAIDA.length)
     expect(doFront).toEqual(doBack)
+  })
+})
+
+describe('avaliarDevolucaoDeVenda', () => {
+  it('devolução parcial soma ao que já tinha voltado', () => {
+    expect(avaliarDevolucaoDeVenda(2, 12, 0)).toEqual({ ok: true, devolver: 2, novoTotalDevolvido: 2 })
+    expect(avaliarDevolucaoDeVenda(3, 12, 2)).toEqual({ ok: true, devolver: 3, novoTotalDevolvido: 5 })
+  })
+
+  it('devolução da venda inteira fecha exatamente', () => {
+    expect(avaliarDevolucaoDeVenda(12, 12, 0)).toMatchObject({ novoTotalDevolvido: 12 })
+  })
+
+  it('não deixa devolver mais do que foi vendido', () => {
+    const r = avaliarDevolucaoDeVenda(4, 12, 10)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.erro).toContain('2') // o que resta
+      expect(r.erro).toContain('12')
+    }
+  })
+
+  it('venda já toda devolvida recusa de vez', () => {
+    const r = avaliarDevolucaoDeVenda(1, 12, 12)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.erro).toMatch(/já foi devolvida/i)
+  })
+
+  it('zero, negativo e quebrado são recusados', () => {
+    for (const q of [0, -2, 1.5]) expect(avaliarDevolucaoDeVenda(q, 12, 0).ok).toBe(false)
+  })
+})
+
+describe('aDevolverAoApagar', () => {
+  /*
+   * Apagar a linha sem devolver deixaria o estoque baixado para sempre por uma
+   * venda que o sistema já não sabe que existiu.
+   */
+  it('devolve o que ainda estava fora', () => {
+    expect(aDevolverAoApagar(12, 0)).toBe(12)
+    expect(aDevolverAoApagar(12, 5)).toBe(7)
+  })
+
+  it('venda já toda devolvida não devolve de novo', () => {
+    expect(aDevolverAoApagar(12, 12)).toBe(0)
+    expect(aDevolverAoApagar(12, 15)).toBe(0)
   })
 })

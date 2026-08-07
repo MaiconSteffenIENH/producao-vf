@@ -639,6 +639,18 @@ model Venda {
   /// AAAA-MM — o mês de competência
   competencia String
   quantidade  Int
+  /// Quantas destas o cliente devolveu (Mercado Livre, Shopee, troca).
+  ///
+  /// Coluna própria, e não desconto direto em `quantidade`, porque as duas
+  /// perguntas são diferentes: "quanto saiu" responde pelo giro do anúncio,
+  /// "quanto ficou" responde pela demanda real. Baixar `quantidade` apagaria a
+  /// primeira, e com ela a única forma de medir taxa de devolução por canal —
+  /// que num marketplace é o número que decide se o anúncio vale a pena.
+  ///
+  /// O LÍQUIDO (`quantidade - devolvidas`) é o que alimenta o comparativo e a
+  /// cobertura: contar a peça devolvida como vendida faria o planejamento
+  /// produzir para uma demanda que não existe.
+  devolvidas  Int      @default(0)
   valorTotal  Decimal? @map("valor_total") @db.Decimal(12, 2)
   /// manual | importacao
   origem      String   @default("manual")

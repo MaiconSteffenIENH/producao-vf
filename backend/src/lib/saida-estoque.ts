@@ -261,3 +261,61 @@ export function frasePaciente(pedido: number, baixado: number, faltou: number): 
     'provavelmente foram feitas antes de o sistema existir.'
   )
 }
+
+/*
+ * ─────────────────────── DEVOLUÇÃO DE VENDA ───────────────────────
+ *
+ * O cliente do Mercado Livre devolve. A peça volta para a prateleira e a venda
+ * deixa de ser venda — mas o registro de que ela SAIU continua valendo, porque
+ * é dele que sai a taxa de devolução do canal.
+ *
+ * Por isso a devolução é uma coluna à parte, e não um desconto na quantidade:
+ * `quantidade` responde "quanto saiu" e `quantidade - devolvidas` responde
+ * "quanto ficou". Só o segundo alimenta o planejamento — contar peça devolvida
+ * como vendida faria o ateliê produzir para uma demanda que não existe.
+ */
+
+export type AvaliacaoDeDevolucao =
+  | { ok: true; devolver: number; novoTotalDevolvido: number }
+  | { ok: false; erro: string }
+
+/**
+ * @param pedido      quantas o cliente devolveu agora
+ * @param quantidade  o total da venda
+ * @param jaDevolvidas o que já tinha voltado antes
+ */
+export function avaliarDevolucaoDeVenda(
+  pedido: number,
+  quantidade: number,
+  jaDevolvidas: number,
+): AvaliacaoDeDevolucao {
+  if (!Number.isInteger(pedido) || pedido < 1) {
+    return { ok: false, erro: 'A quantidade devolvida precisa ser um número inteiro, de 1 para cima.' }
+  }
+
+  const restante = quantidade - jaDevolvidas
+  if (restante <= 0) {
+    return { ok: false, erro: 'Esta venda já foi devolvida por inteiro.' }
+  }
+  if (pedido > restante) {
+    return {
+      ok: false,
+      erro:
+        `Esta venda foi de ${quantidade} e ${jaDevolvidas} já tinham voltado, então só restam ` +
+        `${restante} para devolver. Se o cliente devolveu mais do que comprou, o erro está na venda.`,
+    }
+  }
+
+  return { ok: true, devolver: pedido, novoTotalDevolvido: jaDevolvidas + pedido }
+}
+
+/**
+ * Quanto uma venda ainda tem de peça fora, para o caso de ela ser APAGADA.
+ *
+ * Apagar a linha sem devolver deixaria o estoque baixado para sempre por uma
+ * venda que o sistema já não sabe que existiu — o tipo de buraco que só aparece
+ * na contagem física, meses depois, sem nada que aponte para a causa.
+ */
+export function aDevolverAoApagar(quantidade: number, jaDevolvidas: number): number {
+  return Math.max(0, quantidade - jaDevolvidas)
+}

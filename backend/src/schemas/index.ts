@@ -336,6 +336,10 @@ export const baixaDeProntasSchema = z.object({
   chaveIdempotencia: z.string().trim().min(8).max(80).optional().nullable(),
 })
 
+export const devolucaoDeVendaSchema = z.object({
+  quantidade: z.coerce.number().int().min(1, 'quantidade mínima 1').max(99999),
+})
+
 export const vendaSchema = z.object({
   pecaId: z.string().uuid(),
   corId: z.string().uuid().optional().nullable(),

@@ -1,5 +1,7 @@
 import { prisma } from '../lib/prisma'
+import { invalido, naoEncontrado } from '../lib/erros'
 import type { Sessao } from '../lib/token'
+import { aDevolverAoApagar, avaliarDevolucaoDeVenda } from '../lib/saida-estoque'
 import { darBaixaDeProntas } from './estoque.service'
 import { normalizarBusca } from '../lib/busca'
 import { agruparVendas, lerCsvDeVendas, type LinhaVenda } from '../lib/csv-vendas'
@@ -70,13 +72,21 @@ export async function salvarVenda(
     competencia: dados.competencia,
   }
   // upsert pela competência: corrigir o mês é reenviar, não duplicar
-  const existente = (await prisma.venda.findFirst({ where: chave })) as { id: string; quantidade: number } | null
+  const existente = (await prisma.venda.findFirst({ where: chave })) as
+    | { id: string; quantidade: number; devolvidas: number }
+    | null
   const antes = existente?.quantidade ?? 0
 
   const venda = existente
     ? await prisma.venda.update({
         where: { id: existente.id },
-        data: { quantidade: dados.quantidade, valorTotal: dados.valorTotal ?? null },
+        data: {
+          quantidade: dados.quantidade,
+          // corrigir a venda para menos do que já voltou deixaria líquido
+          // negativo, e o comparativo passaria a subtrair demanda
+          devolvidas: Math.min(existente.devolvidas, dados.quantidade),
+          valorTotal: dados.valorTotal ?? null,
+        },
       })
     : await prisma.venda.create({
         data: { ...chave, quantidade: dados.quantidade, valorTotal: dados.valorTotal ?? null },
@@ -111,8 +121,83 @@ export async function salvarVenda(
   return { venda, baixa }
 }
 
-export async function apagarVenda(id: string) {
+/*
+ * DEVOLUÇÃO DE VENDA — o cliente mandou de volta.
+ *
+ * A peça volta para a prateleira e a venda deixa de contar como demanda, mas o
+ * registro de que ela SAIU continua: é dele que sai a taxa de devolução do
+ * canal, que num marketplace é o número que decide se o anúncio vale a pena.
+ */
+export async function devolverVenda(id: string, quantidade: number, sessao: Sessao) {
+  const venda = (await prisma.venda.findUnique({ where: { id } })) as
+    | { id: string; pecaId: string; corId: string | null; quantidade: number; devolvidas: number; competencia: string }
+    | null
+  if (!venda) throw naoEncontrado('Venda')
+
+  const avaliada = avaliarDevolucaoDeVenda(quantidade, venda.quantidade, venda.devolvidas)
+  if (!avaliada.ok) throw invalido(avaliada.erro)
+
+  const baixa = await darBaixaDeProntas(
+    {
+      pecaId: venda.pecaId,
+      corId: venda.corId,
+      quantidade: avaliada.devolver,
+      motivoTipo: 'estorno_venda',
+      observacao: `Devolvida pelo cliente — venda de ${venda.competencia}.`,
+      /*
+       * A chave carrega o TOTAL devolvido depois desta operação. Repetir a
+       * mesma devolução é inócuo; uma segunda devolução do mesmo pedido gera
+       * outra chave e passa.
+       */
+      chaveIdempotencia: `venda:${id}:devolvidas:${avaliada.novoTotalDevolvido}`,
+    },
+    sessao,
+  )
+
+  /*
+   * A COLUNA SÓ SOBE DEPOIS QUE O ESTOQUE VOLTOU.
+   *
+   * Na ordem inversa, uma falha no meio deixaria a venda dizendo "2 devolvidas"
+   * com as 2 peças em lugar nenhum — e nada apontaria para aqui.
+   */
+  const atualizada = await prisma.venda.update({
+    where: { id },
+    data: { devolvidas: avaliada.novoTotalDevolvido },
+  })
+  return { venda: atualizada, baixa }
+}
+
+/*
+ * APAGAR A VENDA DEVOLVE O QUE AINDA ESTAVA FORA.
+ *
+ * Sem isto, apagar a linha deixaria o estoque baixado para sempre por uma venda
+ * que o sistema já não sabe que existiu — buraco que só aparece na contagem
+ * física, meses depois, sem nada que aponte para a causa.
+ */
+export async function apagarVenda(id: string, sessao?: Sessao) {
+  const venda = (await prisma.venda.findUnique({ where: { id } })) as
+    | { id: string; pecaId: string; corId: string | null; quantidade: number; devolvidas: number; competencia: string }
+    | null
+  if (!venda) throw naoEncontrado('Venda')
+
+  const aVoltar = aDevolverAoApagar(venda.quantidade, venda.devolvidas)
+  let baixa = null
+  if (sessao && aVoltar > 0) {
+    baixa = await darBaixaDeProntas(
+      {
+        pecaId: venda.pecaId,
+        corId: venda.corId,
+        quantidade: aVoltar,
+        motivoTipo: 'estorno_venda',
+        observacao: `Venda de ${venda.competencia} apagada.`,
+        chaveIdempotencia: `venda:${id}:apagada`,
+      },
+      sessao,
+    )
+  }
+
   await prisma.venda.delete({ where: { id } })
+  return { ok: true, devolvidas: baixa?.baixado ?? 0, aviso: baixa?.aviso ?? null }
 }
 
 export type ResultadoImportacao = {
@@ -214,7 +299,7 @@ export async function importarVendas(
       competencia: linha.competencia,
     }
     const existente = (await prisma.venda.findFirst({ where: chave })) as
-      | { id: string; quantidade: number }
+      | { id: string; quantidade: number; devolvidas: number }
       | null
     const antes = existente?.quantidade ?? 0
 
@@ -222,7 +307,12 @@ export async function importarVendas(
     if (existente) {
       await prisma.venda.update({
         where: { id: existente.id },
-        data: { quantidade: linha.quantidade, valorTotal: linha.valorTotal, origem: 'importacao' },
+        data: {
+          quantidade: linha.quantidade,
+          devolvidas: Math.min(existente.devolvidas, linha.quantidade),
+          valorTotal: linha.valorTotal,
+          origem: 'importacao',
+        },
       })
       vendaId = existente.id
       atualizadas++
@@ -307,7 +397,16 @@ export async function compararProducaoComVendas(agora = new Date()) {
         },
       },
     }),
-    prisma.venda.findMany({ select: { pecaId: true, competencia: true, quantidade: true } }),
+    /*
+     * O LÍQUIDO, e não o bruto.
+     *
+     * Peça devolvida pelo cliente não é demanda. Contá-la aqui faria o
+     * planejamento produzir para um pedido que voltou — e o mínimo sugerido,
+     * que sai desta conta, subiria sozinho a cada devolução.
+     */
+    prisma.venda.findMany({
+      select: { pecaId: true, competencia: true, quantidade: true, devolvidas: true },
+    }),
     calcularEstoque(),
     // produzido = o que ENTROU em etapa final, por mês
     prisma.$queryRaw<{ peca_id: string; competencia: string; total: bigint }[]>`
@@ -325,7 +424,7 @@ export async function compararProducaoComVendas(agora = new Date()) {
   const vendasDaPeca = new Map<string, VendaMensal[]>()
   for (const v of vendas) {
     const lista = vendasDaPeca.get(v.pecaId) ?? []
-    lista.push({ competencia: v.competencia, quantidade: v.quantidade })
+    lista.push({ competencia: v.competencia, quantidade: Math.max(0, v.quantidade - v.devolvidas) })
     vendasDaPeca.set(v.pecaId, lista)
   }
   const produzidoDaPeca = new Map<string, Map<string, number>>()
