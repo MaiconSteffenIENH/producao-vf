@@ -265,6 +265,24 @@ export const statusQueimaSchema = z.object({
   status: z.enum(['planejada', 'carregando', 'queimando', 'concluida', 'cancelada']),
 })
 
+/*
+ * A conclusão da fornada.
+ *
+ * `quebras` chega SEMPRE, mesmo vazio. Campo ausente e lista vazia querem dizer
+ * coisas diferentes aqui — "não quebrou nada" é uma informação que o João deu,
+ * e um corpo sem o campo é tela velha em cache do PWA. Aceitar os dois como
+ * "nada quebrou" faria uma versão antiga do app concluir fornadas em silêncio.
+ */
+export const concluirQueimaSchema = z.object({
+  quebras: z.array(
+    z.object({
+      loteId: z.string().uuid(),
+      quantidade: z.coerce.number().int().min(0).max(100_000),
+      motivo: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+    }),
+  ),
+})
+
 export const vendaSchema = z.object({
   pecaId: z.string().uuid(),
   corId: z.string().uuid().optional().nullable(),

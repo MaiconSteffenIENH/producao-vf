@@ -3,7 +3,7 @@ import { Flame, Plus, ThermometerSun } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
-import { Botao, CabecalhoPagina, Card, Carregando, Etiqueta, Vazio } from '../components/ui'
+import { Botao, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Input, Modal, Textarea, Vazio } from '../components/ui'
 
 /*
  * O FORNO.
@@ -128,11 +128,254 @@ function CartaoFila({ fila, aoAbrir, abrindo }: { fila: Fila; aoAbrir: () => voi
   )
 }
 
+type ItemPrevia = {
+  loteId: string
+  codigo: string
+  pecaNome: string
+  /** quanto entrou no forno */
+  quantidade: number
+  /** quanto ainda está parado na etapa de queima */
+  naEtapa: number
+  /** o que ainda falta mover deste lote */
+  aoConcluir: number
+  /** quanto já foi baixado como quebra desta fornada, numa tentativa anterior */
+  jaPerdido: number
+  /** quantas de fato mudam de etapa */
+  vaiAvancar: number
+  /** a etapa seguinte escolhe o esmalte e este lote ainda está neutro */
+  esperandoEsmalte: boolean
+  proximaEtapa: string | null
+}
+
+type Previa = { codigo: string; status: string; itens: ItemPrevia[] }
+
+/*
+ * A JANELA DE CONCLUSÃO DA FORNADA.
+ *
+ * Ela existe por um motivo só: no ateliê quebra peça em toda fornada. Se
+ * concluir simplesmente empurrasse tudo para a frente, a peça estourada
+ * continuaria contando como estoque, a taxa de perda ficaria mentirosa e o
+ * custo por peça — que usa a perda medida — viria baixo demais.
+ *
+ * O caminho normal é UM CLIQUE: cada lote já vem com quebra zero. Só quem
+ * quebrou é digitado. O relato de cada quebra também já vem escrito ("Quebrou
+ * na fornada Q-0007") porque ninguém digita justificativa em pé, com barro na
+ * mão — mas continua editável para quem quiser contar o que houve.
+ */
+function ModalConclusao({
+  queimaId,
+  aoFechar,
+  aoConcluir,
+}: {
+  queimaId: string
+  aoFechar: () => void
+  aoConcluir: () => void
+}) {
+  const [previa, setPrevia] = useState<Previa | null>(null)
+  const [quebras, setQuebras] = useState<Record<string, string>>({})
+  const [relatos, setRelatos] = useState<Record<string, string>>({})
+  const [carregando, setCarregando] = useState(true)
+  const [salvando, setSalvando] = useState(false)
+
+  useEffect(() => {
+    let vivo = true
+    void (async () => {
+      try {
+        const { data } = await api.get(`/queimas/${queimaId}/previa-conclusao`)
+        if (vivo) setPrevia(data)
+      } catch (erro) {
+        avisar.erro(mensagemDoErro(erro, 'Não deu para ver o que está na fornada.'))
+        if (vivo) aoFechar()
+      } finally {
+        if (vivo) setCarregando(false)
+      }
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [queimaId, aoFechar])
+
+  const itens = previa?.itens ?? []
+
+  /*
+   * O CAMPO DE QUEBRA ACEITA QUALQUER COISA, e a conta não pode fingir que não.
+   *
+   * `Number('-5')` é -5 e `-5 > aoConcluir` é falso: o botão continuava
+   * habilitado e o resumo mostrava MAIS peças seguindo do que existem. O
+   * servidor recusava, mas com mensagem crua do validador, em inglês. Aqui a
+   * entrada é classificada antes de virar conta.
+   */
+  const quebrou = (loteId: string) => {
+    const bruto = (quebras[loteId] ?? '').trim()
+    if (bruto === '') return 0
+    const n = Number(bruto)
+    return Number.isFinite(n) ? n : NaN
+  }
+  const invalida = (i: ItemPrevia) => {
+    const n = quebrou(i.loteId)
+    return !Number.isInteger(n) || n < 0 || n > i.aoConcluir
+  }
+
+  const numero = (i: ItemPrevia) => (invalida(i) ? 0 : quebrou(i.loteId))
+  const totalQuebrado = itens.reduce((s, i) => s + numero(i), 0)
+  // só conta o que de fato muda de etapa: na última parada do roteiro, nada
+  // avança, e somar essas peças aqui faria a tela prometer o que não acontece
+  const totalAvancado = itens.reduce(
+    (s, i) => s + (i.vaiAvancar > 0 ? Math.max(0, i.aoConcluir - numero(i)) : 0),
+    0,
+  )
+  const excedeu = itens.some(invalida)
+  const travado = itens.some((i) => i.esperandoEsmalte && i.aoConcluir > 0)
+
+  const confirmar = async () => {
+    setSalvando(true)
+    try {
+      const { data } = await api.post(`/queimas/${queimaId}/concluir`, {
+        quebras: itens.map((i) => ({
+          loteId: i.loteId,
+          quantidade: quebrou(i.loteId),
+          motivo: relatos[i.loteId] ?? '',
+        })),
+      })
+      avisar.ok(
+        `${previa?.codigo ?? 'Fornada'} concluída: ${data.avancadas} seguiram` +
+          (data.perdidas > 0 ? `, ${data.perdidas} quebraram` : '') +
+          '.',
+      )
+      // aviso não é falha: "usei o que está lá" em vermelho parece erro
+      for (const aviso of (data.avisos ?? []) as string[]) avisar.info(aviso)
+      aoConcluir()
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para concluir a fornada.'))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <Modal
+      aberto
+      aoFechar={aoFechar}
+      titulo={`Concluir ${previa?.codigo ?? 'a fornada'}`}
+      descricao="Confira o que saiu do forno. Se não quebrou nada, é só confirmar."
+      fecharClicandoFora={false}
+    >
+      {carregando ? (
+        <Carregando texto="Vendo o que está na fornada…" />
+      ) : itens.length === 0 ? (
+        <p className="text-sm text-tinta-fraca">Esta fornada está vazia — não há o que mover.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {itens.map((i) => {
+            const q = numero(i)
+            const sobrou = Math.max(0, i.aoConcluir - q)
+            return (
+              <div key={i.loteId} className="rounded-xl border border-borda bg-superficie-2 p-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-medium text-tinta">
+                    {i.pecaNome} <span className="text-tinta-fraca">· {i.codigo}</span>
+                  </p>
+                  <p className="text-sm text-tinta-fraca">
+                    {i.aoConcluir} no forno
+                    {i.proximaEtapa ? ` → ${i.proximaEtapa}` : ' · última etapa do roteiro'}
+                  </p>
+                </div>
+
+                {i.jaPerdido > 0 && (
+                  <p className="mt-2 rounded-lg bg-superficie px-2.5 py-1.5 text-xs text-tinta">
+                    Uma tentativa anterior já registrou {i.jaPerdido} quebrada(s) deste lote. Esse número
+                    não muda por aqui — se estiver errado, ajuste pelo quadro.
+                  </p>
+                )}
+
+                {i.esperandoEsmalte && (
+                  <p className="mt-2 rounded-lg border border-perigo/30 bg-superficie px-2.5 py-1.5 text-xs text-tinta">
+                    A etapa seguinte é a que escolhe o esmalte, e este lote ainda está neutro. Avance
+                    este lote pelo quadro escolhendo a cor, e volte para concluir a fornada.
+                  </p>
+                )}
+
+                {i.naEtapa < i.quantidade - i.jaPerdido && (
+                  <p className="mt-2 rounded-lg bg-superficie px-2.5 py-1.5 text-xs text-tinta">
+                    Entraram {i.quantidade} nesta fornada, mas só {i.naEtapa} ainda estão na etapa — alguém
+                    já mexeu neste lote pelo quadro. Vou usar {i.aoConcluir}.
+                  </p>
+                )}
+
+                <div className="mt-2.5 grid gap-2 sm:grid-cols-[8rem_1fr]">
+                  <Campo rotulo="Quebrou">
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={i.aoConcluir}
+                      disabled={i.jaPerdido > 0 || i.aoConcluir === 0}
+                      value={i.jaPerdido > 0 ? String(i.jaPerdido) : (quebras[i.loteId] ?? '0')}
+                      onChange={(e) => setQuebras((a) => ({ ...a, [i.loteId]: e.target.value }))}
+                      onFocus={(e) => e.target.select()}
+                    />
+                  </Campo>
+                  {q > 0 && (
+                    <Campo rotulo="O que houve" dica="Vai gravado como “Quebrou no forno”.">
+                      <Textarea
+                        rows={2}
+                        placeholder={`Quebrou na fornada ${previa?.codigo ?? ''}.`}
+                        value={relatos[i.loteId] ?? ''}
+                        onChange={(e) => setRelatos((a) => ({ ...a, [i.loteId]: e.target.value }))}
+                      />
+                    </Campo>
+                  )}
+                </div>
+
+                {invalida(i) ? (
+                  <p className="mt-2 text-xs text-perigo">
+                    Escreva um número inteiro de 0 a {i.aoConcluir} — é quanto deste lote está no forno.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-tinta-fraca">
+                    {sobrou} {sobrou === 1 ? 'segue' : 'seguem'}
+                    {i.vaiAvancar > 0 && i.proximaEtapa ? ` para ${i.proximaEtapa}` : ' onde está'}
+                    {q > 0 ? ` · ${q} vira perda` : ''}
+                  </p>
+                )}
+              </div>
+            )
+          })}
+
+          <p className="text-sm text-tinta">
+            No total: <strong>{totalAvancado}</strong> seguem
+            {totalQuebrado > 0 ? (
+              <>
+                {' '}
+                e <strong>{totalQuebrado}</strong> viram perda de forno
+              </>
+            ) : null}
+            .
+          </p>
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <Botao variante="secundario" onClick={aoFechar} disabled={salvando}>
+          Cancelar
+        </Botao>
+        <Botao
+          onClick={confirmar}
+          disabled={salvando || carregando || excedeu || travado || itens.length === 0}
+        >
+          {salvando ? 'Concluindo…' : 'Concluir fornada'}
+        </Botao>
+      </div>
+    </Modal>
+  )
+}
+
 export function Queimas() {
   const [filas, setFilas] = useState<Fila[]>([])
   const [queimas, setQueimas] = useState<Queima[]>([])
   const [carregando, setCarregando] = useState(true)
   const [abrindo, setAbrindo] = useState<string | null>(null)
+  const [concluindo, setConcluindo] = useState<string | null>(null)
 
   const recarregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true)
@@ -187,7 +430,7 @@ export function Queimas() {
         <Vazio
           icone={<ThermometerSun size={22} />}
           titulo="O forno ainda não está configurado"
-          descricao="Cadastre um responsável do tipo forno com a capacidade por carga, e marque as etapas de queima com 'aguarda carga'. Sem isso o sistema não tem como falar de fornada."
+          descricao="Em Etapas, marque a etapa de queima com “aguarda carga” e preencha a capacidade por carga. O forno não é uma pessoa: a capacidade e as horas ficam na própria etapa."
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -223,7 +466,7 @@ export function Queimas() {
                       </Botao>
                     )}
                     {q.status === 'queimando' && (
-                      <Botao variante="secundario" onClick={() => mudarStatus(q.id, 'concluida')}>
+                      <Botao variante="secundario" onClick={() => setConcluindo(q.id)}>
                         Concluir
                       </Botao>
                     )}
@@ -235,7 +478,23 @@ export function Queimas() {
         </div>
       )}
 
+      {concluindo && (
+        <ModalConclusao
+          queimaId={concluindo}
+          aoFechar={() => setConcluindo(null)}
+          aoConcluir={() => {
+            setConcluindo(null)
+            void recarregar(true)
+          }}
+        />
+      )}
+
       <p className="mt-6 text-xs leading-relaxed text-tinta-fraca">
+        Concluir a fornada é o que MOVE as peças: o que quebrou vira perda de forno e o resto avança
+        sozinho para a próxima etapa do roteiro de cada lote. Não precisa repetir nada no quadro.
+      </p>
+
+      <p className="mt-2 text-xs leading-relaxed text-tinta-fraca">
         A fila sai do livro-razão: são os saldos parados nas etapas marcadas como &ldquo;aguarda carga&rdquo;.
         Ninguém digita quantas peças estão esperando. Montar a fornada respeita a ordem de espera — quem
         está parado há mais tempo entra primeiro, senão o lote pequeno nunca entraria.

@@ -23,6 +23,16 @@ export type LoteEsperando = {
   quantidade: number
   /** há quantos dias este lote está parado esperando a carga fechar */
   diasParado: number
+  /**
+   * De QUAL etapa de queima estas peças saíram.
+   *
+   * Um roteiro pode ter mais de uma parada de forno do mesmo lado da etapa que
+   * define a cor — "1ª Queima" e uma requeima de biscoito, por exemplo. Sem
+   * guardar de onde a carga saiu, a conclusão da fornada teria de adivinhar
+   * depois, e adivinhar errado grava no livro-razão um movimento que não
+   * aconteceu.
+   */
+  etapaId: string
 }
 
 export type SituacaoDaCarga = {
@@ -129,18 +139,30 @@ export function recomendarQueima(situacao: SituacaoDaCarga): RecomendacaoDeQueim
 export function montarCarga(
   lotes: LoteEsperando[],
   capacidade: number,
-): { loteId: string; quantidade: number }[] {
+): { loteId: string; quantidade: number; etapaId: string }[] {
   const ordenados = [...lotes].sort((a, b) => {
     if (b.diasParado !== a.diasParado) return b.diasParado - a.diasParado
     return a.codigo.localeCompare(b.codigo, 'pt-BR')
   })
   let vagas = Math.max(0, capacidade)
-  const carga: { loteId: string; quantidade: number }[] = []
+  const carga: { loteId: string; quantidade: number; etapaId: string }[] = []
+  /*
+   * O MESMO LOTE SÓ ENTRA UMA VEZ.
+   *
+   * Quando o roteiro tem duas paradas de forno do mesmo tipo, o mesmo lote pode
+   * aparecer duas vezes na fila — uma por pilha. A fornada guarda um item por
+   * lote (índice único em queima_itens), então a segunda entrada não fazia a
+   * carga ficar maior: fazia `abrirQueima` estourar com erro de banco, e a
+   * fornada não era aberta. Entra a pilha que está esperando há mais tempo.
+   */
+  const jaNaCarga = new Set<string>()
   for (const lote of ordenados) {
     if (vagas <= 0) break
+    if (jaNaCarga.has(lote.loteId)) continue
     const quantidade = Math.min(lote.quantidade, vagas)
     if (quantidade > 0) {
-      carga.push({ loteId: lote.loteId, quantidade })
+      carga.push({ loteId: lote.loteId, quantidade, etapaId: lote.etapaId })
+      jaNaCarga.add(lote.loteId)
       vagas -= quantidade
     }
   }

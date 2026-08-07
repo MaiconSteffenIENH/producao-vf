@@ -39,6 +39,7 @@ import {
   folgaSchema,
   queimaSchema,
   statusQueimaSchema,
+  concluirQueimaSchema,
   vendaSchema,
   importarVendasSchema,
   encomendaSchema,
@@ -319,6 +320,17 @@ rotas.patch(
   rota(async (req, res) => {
     const { status } = statusQueimaSchema.parse(req.body)
     res.json(await queimas.atualizarStatusQueima(req.params.id, status))
+  }),
+)
+rotas.get(
+  '/queimas/:id/previa-conclusao',
+  rota(async (req, res) => void res.json(await queimas.previaDaConclusao(req.params.id))),
+)
+rotas.post(
+  '/queimas/:id/concluir',
+  rota(async (req, res) => {
+    const { quebras } = concluirQueimaSchema.parse(req.body)
+    res.json(await queimas.concluirQueima(req.params.id, quebras, req.sessao!))
   }),
 )
 

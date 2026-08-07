@@ -7,12 +7,13 @@ import {
   type LoteEsperando,
 } from '../../src/lib/queima'
 
-const lote = (codigo: string, quantidade: number, diasParado = 0): LoteEsperando => ({
+const lote = (codigo: string, quantidade: number, diasParado = 0, etapaId = 'queima-1'): LoteEsperando => ({
   loteId: codigo,
   codigo,
-  pecaNome: 'Bowl',
+  pecaNome: 'BOWL',
   quantidade,
   diasParado,
+  etapaId,
 })
 
 describe('situacaoDaCarga', () => {
@@ -97,7 +98,7 @@ describe('montarCarga', () => {
 
   it('lote entra parcialmente quando não cabe inteiro', () => {
     const carga = montarCarga([lote('L-1', 40, 3)], 25)
-    expect(carga).toEqual([{ loteId: 'L-1', quantidade: 25 }])
+    expect(carga).toEqual([{ loteId: 'L-1', quantidade: 25, etapaId: 'queima-1' }])
   })
 
   it('nunca passa da capacidade', () => {
@@ -114,5 +115,27 @@ describe('montarCarga', () => {
 
   it('capacidade zero não carrega nada', () => {
     expect(montarCarga([lote('L-1', 40, 3)], 0)).toEqual([])
+  })
+
+  it('guarda de qual etapa de queima a carga saiu', () => {
+    const carga = montarCarga([lote('L-1', 10, 3, 'requeima')], 80)
+    expect(carga[0].etapaId).toBe('requeima')
+  })
+
+  /*
+   * Roteiro com duas paradas de forno do mesmo tipo: o lote aparece duas vezes
+   * na fila, uma por pilha. A fornada guarda um item por lote, então a segunda
+   * entrada fazia `abrirQueima` estourar no índice único — a fornada nem era
+   * aberta.
+   */
+  it('o mesmo lote não entra duas vezes, mesmo com saldo em duas etapas de queima', () => {
+    const carga = montarCarga(
+      [lote('L-1', 10, 2, 'queima-a'), lote('L-1', 15, 9, 'queima-b'), lote('L-2', 5, 1)],
+      80,
+    )
+    expect(carga.filter((c) => c.loteId === 'L-1')).toHaveLength(1)
+    // entra a pilha que espera há mais tempo
+    expect(carga.find((c) => c.loteId === 'L-1')).toMatchObject({ etapaId: 'queima-b', quantidade: 15 })
+    expect(carga.map((c) => c.loteId)).toEqual(['L-1', 'L-2'])
   })
 })

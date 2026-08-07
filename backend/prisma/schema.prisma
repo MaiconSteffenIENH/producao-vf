@@ -215,6 +215,7 @@ model Etapa {
   roteiros            RoteiroEtapa[]
   movimentosOrigem    MovimentoLote[] @relation("movOrigem")
   movimentosDestino   MovimentoLote[] @relation("movDestino")
+  itensDeQueima       QueimaItem[]
   insumos             PecaInsumo[]
 
   @@map("etapas")
@@ -602,12 +603,21 @@ model QueimaItem {
   queimaId   String @map("queima_id") @db.Uuid
   loteId     String @map("lote_id") @db.Uuid
   quantidade Int
+  /// De qual etapa de queima estas peças saíram.
+  ///
+  /// Opcional porque nulo é caso legítimo, não falta de dado: toda fornada
+  /// aberta antes desta coluna existir não tem como saber, e a conclusão cai
+  /// no caminho antigo — procurar a etapa de queima do roteiro. Preencher por
+  /// trás seria chutar de qual pilha a carga saiu.
+  etapaId    String? @map("etapa_id") @db.Uuid
 
   queima Queima @relation(fields: [queimaId], references: [id], onDelete: Cascade)
   lote   Lote   @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  etapa  Etapa? @relation(fields: [etapaId], references: [id])
 
   @@unique([queimaId, loteId])
   @@index([loteId])
+  @@index([etapaId])
   @@map("queima_itens")
 }
 
