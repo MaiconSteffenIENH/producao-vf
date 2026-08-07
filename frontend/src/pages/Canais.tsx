@@ -4,7 +4,7 @@ import { api, mensagemDoErro } from '../services/api'
 import { brl } from '../lib/format'
 import { avisar } from '../components/Toaster'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { Botao, CabecalhoPagina, Campo, Card, Carregando, Input, Modal, Textarea, Vazio } from '../components/ui'
+import { Botao, CabecalhoPagina, Campo, Card, Carregando, Input, InputNumero, Modal, Textarea, Vazio } from '../components/ui'
 
 type Faixa = {
   id?: string
@@ -240,12 +240,10 @@ export function Canais() {
               <Input caixaAlta required maxLength={60} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
             </Campo>
             <Campo rotulo="Margem de lucro alvo (%)" dica="Sobre o custo real, já com a perda embutida.">
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
-                step="1"
-                value={form.margemAlvoPercentual}
-                onChange={(e) => setForm({ ...form, margemAlvoPercentual: Number(e.target.value) })}
+                valor={form.margemAlvoPercentual}
+                aoMudar={(n) => setForm({ ...form, margemAlvoPercentual: n ?? 0 })}
               />
             </Campo>
             {[
@@ -255,32 +253,29 @@ export function Canais() {
               ['percentualAntecipacao', 'Antecipação (%)'],
             ].map(([campo, rotulo]) => (
               <Campo key={campo} rotulo={rotulo}>
-                <Input
-                  type="number"
+                <InputNumero
                   min={0}
                   max={100}
-                  step="0.1"
-                  value={String(form[campo as keyof typeof form])}
-                  onChange={(e) => setForm({ ...form, [campo]: Number(e.target.value) })}
+                  decimais={1}
+                  valor={form[campo as keyof typeof form] as number}
+                  aoMudar={(n) => setForm({ ...form, [campo]: n ?? 0 })}
                 />
               </Campo>
             ))}
             <Campo rotulo="Taxa fixa padrão (R$)">
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
-                step="0.01"
-                value={form.taxaFixa}
-                onChange={(e) => setForm({ ...form, taxaFixa: Number(e.target.value) })}
+                decimais={2}
+                valor={form.taxaFixa}
+                aoMudar={(n) => setForm({ ...form, taxaFixa: n ?? 0 })}
               />
             </Campo>
             <Campo rotulo="Frete que você banca (R$)">
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
-                step="0.01"
-                value={form.freteSubsidiado}
-                onChange={(e) => setForm({ ...form, freteSubsidiado: Number(e.target.value) })}
+                decimais={2}
+                valor={form.freteSubsidiado}
+                aoMudar={(n) => setForm({ ...form, freteSubsidiado: n ?? 0 })}
               />
             </Campo>
           </div>
@@ -321,13 +316,18 @@ export function Canais() {
                   ].map(([campo, rotulo]) => (
                     <label key={campo} className="block">
                       <span className="mb-0.5 block text-[11px] text-tinta-fraca">{rotulo}</span>
-                      <Input
-                        type="number"
+                      <InputNumero
                         min={0}
-                        step="0.01"
+                        decimais={2}
                         placeholder={campo === 'valorMaximo' ? 'sem teto' : ''}
-                        value={String(f[campo as keyof Faixa] ?? '')}
-                        onChange={(e) => alterarFaixa(i, campo as keyof Faixa, e.target.value)}
+                        valor={
+                          f[campo as keyof Faixa] === '' || f[campo as keyof Faixa] === undefined
+                            ? null
+                            : Number(f[campo as keyof Faixa])
+                        }
+                        aoMudar={(n) =>
+                          alterarFaixa(i, campo as keyof Faixa, n === null ? '' : String(n))
+                        }
                       />
                     </label>
                   ))}

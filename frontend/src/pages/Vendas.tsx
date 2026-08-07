@@ -10,7 +10,7 @@ import {
   Carregando,
   Etiqueta,
   ChipCor,
-  Input,
+  InputNumero,
   Modal,
   Select,
   Textarea,
@@ -513,13 +513,11 @@ export function Vendas() {
             erro={devolucaoInvalida ? `Escreva um número inteiro de 1 a ${restaDevolver}.` : undefined}
             dica="As peças voltam ao estoque de prontas e a venda passa a valer o líquido."
           >
-            <Input
-              type="number"
+            <InputNumero
               min={1}
               max={restaDevolver}
-              value={quantosVoltam}
-              onChange={(e) => setQuantosVoltam(e.target.value)}
-              onFocus={(e) => e.target.select()}
+              valor={quantosVoltam === '' ? null : Number(quantosVoltam)}
+              aoMudar={(n) => setQuantosVoltam(n === null ? '' : String(n))}
             />
           </Campo>
           <p className="rounded-lg bg-superficie-2 p-3 text-xs leading-relaxed text-tinta-fraca">

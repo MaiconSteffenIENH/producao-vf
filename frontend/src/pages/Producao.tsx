@@ -16,6 +16,7 @@ import {
   ChipCor,
   Etiqueta,
   Input,
+  InputNumero,
   Modal,
   Select,
   Textarea,
@@ -740,12 +741,11 @@ export function Producao() {
             </Select>
           </Campo>
           <Campo rotulo="Quantidade">
-            <Input
-              type="number"
+            <InputNumero
               min={1}
               required
-              value={novo.quantidade}
-              onChange={(e) => setNovo({ ...novo, quantidade: Number(e.target.value) })}
+              valor={novo.quantidade}
+              aoMudar={(n) => setNovo({ ...novo, quantidade: n ?? 0 })}
             />
           </Campo>
           <Campo
@@ -831,13 +831,12 @@ export function Producao() {
                   : 'Pode mover só parte: o resto fica onde está.'
               }
             >
-              <Input
-                type="number"
+              <InputNumero
                 min={1}
                 max={acao.cartao.quantidade}
                 required
-                value={form.quantidade}
-                onChange={(e) => setForm({ ...form, quantidade: Number(e.target.value) })}
+                valor={form.quantidade}
+                aoMudar={(n) => setForm({ ...form, quantidade: n ?? 0 })}
               />
             </Campo>
 

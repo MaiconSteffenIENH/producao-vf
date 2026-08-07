@@ -6,7 +6,7 @@ import { useOrdenarArrastando } from '../lib/useOrdenarArrastando'
 import { normalizarBusca } from '../lib/format'
 import { avisar } from './Toaster'
 import { ConfirmDialog } from './ConfirmDialog'
-import { Botao, CabecalhoPagina, Campo, Carregando, Input, Modal, Select, Textarea, Vazio } from './ui'
+import { Botao, CabecalhoPagina, Campo, Carregando, Input, InputNumero, Modal, Select, Textarea, Vazio } from './ui'
 import { useEffect } from 'react'
 
 export type CampoCrud =
@@ -394,13 +394,11 @@ export function CrudSimples<T extends Registro>({
             if (campo.tipo === 'numero') {
               return (
                 <Campo key={campo.nome} rotulo={campo.rotulo} dica={campo.dica}>
-                  <Input
-                    type="number"
-                    inputMode="numeric"
+                  <InputNumero
                     min={campo.min ?? 0}
-                    step={campo.passo ?? 1}
-                    value={valor === null || valor === undefined ? '' : String(valor)}
-                    onChange={(e) => definir(campo.nome, e.target.value === '' ? null : Number(e.target.value))}
+                    decimais={Number(campo.passo ?? 1) < 1 ? 2 : 0}
+                    valor={valor === null || valor === undefined ? null : Number(valor)}
+                    aoMudar={(n) => definir(campo.nome, n)}
                   />
                 </Campo>
               )

@@ -10,6 +10,7 @@ import {
   Carregando,
   Etiqueta,
   Input,
+  InputNumero,
   Modal,
   Select,
   Textarea,
@@ -275,13 +276,12 @@ export function Encomendas() {
                       </option>
                     ))}
                   </Select>
-                  <Input
-                    type="number"
+                  <InputNumero
                     min={1}
-                    value={item.quantidade}
-                    onChange={(e) => {
+                    valor={item.quantidade}
+                    aoMudar={(n) => {
                       const itens = [...form.itens]
-                      itens[i] = { ...item, quantidade: Number(e.target.value) }
+                      itens[i] = { ...item, quantidade: n ?? 0 }
                       setForm({ ...form, itens })
                     }}
                   />

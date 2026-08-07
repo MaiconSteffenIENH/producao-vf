@@ -1,7 +1,8 @@
-import { forwardRef, useEffect, useRef, type ReactNode } from 'react'
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { caixaAltaAoDigitar } from '../lib/nomes'
+import { interpretarNumero, podeDigitar, textoDoNumero } from '../lib/numero'
 
 /*
  * ATENÇÃO — largura de campo.
@@ -61,6 +62,113 @@ export const Input = forwardRef<
   />
 ))
 Input.displayName = 'Input'
+
+/*
+ * CAMPO DE NÚMERO — o que o `<input type="number">` sozinho não resolve.
+ *
+ * O defeito que motivou isto tem três caras, e todas vinham do mesmo lugar: o
+ * estado guardava NÚMERO e o campo devolvia TEXTO.
+ *
+ *   1. Apagar tudo com o backspace deixava "0" no campo, porque `Number('')`
+ *      é zero. Não dá para esvaziar um campo numérico — e "0" é um valor, não
+ *      a ausência dele.
+ *   2. Com o "0" preso ali, digitar 123 escrevia ao lado: "0123".
+ *   3. Clicar num campo que vale 20 e digitar 25 produzia 2025, quando a
+ *      intenção óbvia é trocar o número.
+ *
+ * A correção é guardar TEXTO aqui dentro e entregar número para fora. O DOM
+ * passa a mostrar exatamente o que a pessoa digitou — inclusive vazio — e quem
+ * chama recebe `null` quando não há número, em vez de um zero inventado.
+ *
+ * Selecionar tudo ao focar é o que faz "clico e escrevo 25" virar 25. É o
+ * comportamento de campo de quantidade em qualquer lugar que se digita rápido,
+ * e no ateliê se digita com barro na mão.
+ */
+
+export const InputNumero = forwardRef<
+  HTMLInputElement,
+  Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> & {
+    valor: number | null | undefined
+    aoMudar: (valor: number | null) => void
+    /** casas decimais permitidas; zero (o padrão) aceita só inteiro */
+    decimais?: number
+  }
+>(({ valor, aoMudar, decimais = 0, min = 0, className = '', onFocus, onBlur, ...props }, ref) => {
+  const [texto, setTexto] = useState(() => textoDoNumero(valor))
+  /*
+   * O CLIQUE PODE DESFAZER A SELEÇÃO, e os navegadores discordam sobre isso.
+   *
+   * A ordem dos eventos é mousedown → focus → mouseup → click. Selecionar tudo
+   * no `focus` funciona, mas o `mouseup` seguinte pode colocar o cursor onde o
+   * dedo caiu e desfazer a seleção — trazendo de volta o defeito original: clico
+   * no campo que vale 20, escrevo 25 e sai 2025. O Chromium daqui não desfaz;
+   * o Safari, que é o navegador do ateliê, é conhecido por desfazer. Segurar o
+   * `mouseup` custa nada e tira a diferença do caminho.
+   *
+   * A bandeira segura o `mouseup` do PRIMEIRO clique, o que entra no campo. Do
+   * segundo em diante ele passa — porque clicar de novo num campo já em foco é
+   * a pessoa querendo posicionar o cursor para corrigir um dígito, e roubar
+   * isso dela seria trocar um incômodo por outro.
+   */
+  const primeiroClique = useRef(false)
+
+  /*
+   * O valor pode mudar POR FORA — reset do formulário, troca de lote, resposta
+   * do servidor. Só sobrescreve o texto quando o número que ele representa é
+   * outro: sem essa condição, digitar "1" num campo que já vale 1 devolveria o
+   * texto antigo e o cursor pularia.
+   */
+  useEffect(() => {
+    setTexto((atual) => (interpretarNumero(atual) === (valor ?? null) ? atual : textoDoNumero(valor)))
+  }, [valor])
+
+  return (
+    <input
+      ref={ref}
+      {...props}
+      type="text"
+      inputMode={decimais > 0 ? 'decimal' : 'numeric'}
+      value={texto}
+      /*
+       * `type="text"` e não `"number"`, de propósito. O campo numérico do
+       * navegador entrega string vazia para qualquer coisa que ele considere
+       * inválida — inclusive "-" e "1e" no meio da digitação — e aí não há como
+       * distinguir "apagou tudo" de "está escrevendo". Com texto filtrado por
+       * regex, o sinal de menos simplesmente não entra: negativo aqui nunca é
+       * intenção, é erro de digitação.
+       */
+      onChange={(e) => {
+        const bruto = e.target.value
+        if (!podeDigitar(bruto, decimais)) return
+        setTexto(bruto)
+        aoMudar(interpretarNumero(bruto))
+      }}
+      // clicar já seleciona: escrever substitui em vez de emendar
+      onFocus={(e) => {
+        e.target.select()
+        primeiroClique.current = true
+        onFocus?.(e)
+      }}
+      onMouseUp={(e) => {
+        if (primeiroClique.current) {
+          e.preventDefault()
+          primeiroClique.current = false
+        }
+      }}
+      onBlur={(e) => {
+        // tira o zero à esquerda que sobra de "0" + "25"; campo vazio continua vazio
+        const n = interpretarNumero(texto)
+        const arrumado = textoDoNumero(n)
+        if (arrumado !== texto) setTexto(arrumado)
+        primeiroClique.current = false
+        onBlur?.(e)
+      }}
+      aria-valuemin={typeof min === 'number' ? min : undefined}
+      className={`${className} ${baseCampo}`}
+    />
+  )
+})
+InputNumero.displayName = 'InputNumero'
 
 export const Textarea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
   ({ className = '', ...props }, ref) => (

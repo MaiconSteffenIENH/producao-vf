@@ -3,7 +3,7 @@ import { AlertTriangle, Calculator } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { brl, plural } from '../lib/format'
 import { avisar } from '../components/Toaster'
-import { Botao, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Input, Modal, Vazio } from '../components/ui'
+import { Botao, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, InputNumero, Modal, Vazio } from '../components/ui'
 
 type Custo = {
   materialDireto: number
@@ -261,43 +261,39 @@ export function Precos() {
               ['outrosCustos', 'Outros custos (R$)'],
             ].map(([campo, rotulo]) => (
               <Campo key={campo} rotulo={rotulo}>
-                <Input
-                  type="number"
+                <InputNumero
                   min={0}
-                  step="0.01"
-                  value={String(form[campo as keyof typeof form])}
-                  onChange={(e) => setForm({ ...form, [campo]: Number(e.target.value) })}
+                  decimais={2}
+                  valor={form[campo as keyof typeof form] as number}
+                  aoMudar={(n) => setForm({ ...form, [campo]: n ?? 0 })}
                 />
               </Campo>
             ))}
             <Campo rotulo="Minutos de mão de obra">
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
-                value={form.minutosMaoDeObra}
-                onChange={(e) => setForm({ ...form, minutosMaoDeObra: Number(e.target.value) })}
+                valor={form.minutosMaoDeObra}
+                aoMudar={(n) => setForm({ ...form, minutosMaoDeObra: n ?? 0 })}
               />
             </Campo>
             <Campo rotulo="Custo da hora (R$)">
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
-                step="0.01"
-                value={form.custoHoraMaoDeObra}
-                onChange={(e) => setForm({ ...form, custoHoraMaoDeObra: Number(e.target.value) })}
+                decimais={2}
+                valor={form.custoHoraMaoDeObra}
+                aoMudar={(n) => setForm({ ...form, custoHoraMaoDeObra: n ?? 0 })}
               />
             </Campo>
             <Campo
               rotulo="Perda estimada (%)"
               dica="Usada só enquanto não houver histórico suficiente. Depois o sistema usa a perda medida."
             >
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
                 max={100}
-                step="0.1"
-                value={form.perdaEstimadaPercentual}
-                onChange={(e) => setForm({ ...form, perdaEstimadaPercentual: Number(e.target.value) })}
+                decimais={1}
+                valor={form.perdaEstimadaPercentual}
+                aoMudar={(n) => setForm({ ...form, perdaEstimadaPercentual: n ?? 0 })}
               />
             </Campo>
           </div>
@@ -311,12 +307,13 @@ export function Precos() {
               <div className="grid gap-3 sm:grid-cols-3">
                 {editando.canais.map((c) => (
                   <Campo key={c.canalId} rotulo={c.canal}>
-                    <Input
-                      type="number"
+                    <InputNumero
                       min={0}
-                      step="0.01"
-                      value={precosAtuais[c.canalId] ?? ''}
-                      onChange={(e) => setPrecosAtuais({ ...precosAtuais, [c.canalId]: e.target.value })}
+                      decimais={2}
+                      valor={precosAtuais[c.canalId] ? Number(precosAtuais[c.canalId]) : null}
+                      aoMudar={(n) =>
+                        setPrecosAtuais({ ...precosAtuais, [c.canalId]: n === null ? '' : String(n) })
+                      }
                     />
                   </Campo>
                 ))}

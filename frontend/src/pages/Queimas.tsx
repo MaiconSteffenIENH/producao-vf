@@ -3,7 +3,7 @@ import { Flame, Plus, ThermometerSun } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
-import { Botao, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, Input, Modal, Textarea, Vazio } from '../components/ui'
+import { Botao, CabecalhoPagina, Campo, Card, Carregando, Etiqueta, InputNumero, Modal, Textarea, Vazio } from '../components/ui'
 
 /*
  * O FORNO.
@@ -304,15 +304,20 @@ function ModalConclusao({
 
                 <div className="mt-2.5 grid gap-2 sm:grid-cols-[8rem_1fr]">
                   <Campo rotulo="Quebrou">
-                    <Input
-                      type="number"
-                      inputMode="numeric"
+                    <InputNumero
                       min={0}
                       max={i.aoConcluir}
                       disabled={i.jaPerdido > 0 || i.aoConcluir === 0}
-                      value={i.jaPerdido > 0 ? String(i.jaPerdido) : (quebras[i.loteId] ?? '0')}
-                      onChange={(e) => setQuebras((a) => ({ ...a, [i.loteId]: e.target.value }))}
-                      onFocus={(e) => e.target.select()}
+                      valor={
+                        i.jaPerdido > 0
+                          ? i.jaPerdido
+                          : (quebras[i.loteId] ?? '') === ''
+                            ? 0
+                            : Number(quebras[i.loteId])
+                      }
+                      aoMudar={(n) =>
+                        setQuebras((a) => ({ ...a, [i.loteId]: n === null ? '' : String(n) }))
+                      }
                     />
                   </Campo>
                   {q > 0 && (

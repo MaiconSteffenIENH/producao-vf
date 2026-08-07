@@ -18,6 +18,7 @@ import {
   ChipCor,
   Etiqueta,
   Input,
+  InputNumero,
   Modal,
   Select,
   Textarea,
@@ -456,12 +457,10 @@ export function Historico() {
                     rotulo="Abriu com"
                     dica="Para o caso de ter digitado 28 onde eram 30. Subir reabre um lote já concluído."
                   >
-                    <Input
-                      type="number"
+                    <InputNumero
                       min={1}
-                      value={capa.quantidade}
-                      onChange={(e) => setCapa({ ...capa, quantidade: e.target.value })}
-                      onFocus={(e) => e.target.select()}
+                      valor={capa.quantidade === '' ? null : Number(capa.quantidade)}
+                      aoMudar={(n) => setCapa({ ...capa, quantidade: n === null ? '' : String(n) })}
                     />
                   </Campo>
                 </div>

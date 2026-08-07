@@ -13,7 +13,7 @@ import {
   Carregando,
   ChipCor,
   Etiqueta,
-  Input,
+  InputNumero,
   Modal,
   Select,
   Textarea,
@@ -212,13 +212,11 @@ function ModalBaixa({
               : undefined
           }
         >
-          <Input
-            type="number"
+          <InputNumero
             min={1}
             max={eDevolucao ? undefined : linha.prontas}
-            value={quantidade}
-            onChange={(e) => setQuantidade(e.target.value)}
-            onFocus={(e) => e.target.select()}
+            valor={quantidade === '' ? null : Number(quantidade)}
+            aoMudar={(n) => setQuantidade(n === null ? '' : String(n))}
           />
         </Campo>
 

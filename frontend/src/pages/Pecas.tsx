@@ -12,6 +12,7 @@ import {
   ChipCor,
   Etiqueta,
   Input,
+  InputNumero,
   Modal,
   Select,
   Textarea,
@@ -369,31 +370,28 @@ export function Pecas() {
               </Select>
             </Campo>
             <Campo rotulo="Tempo médio (dias)" dica="Do início ao pronto. A loja anuncia ~30 dias.">
-              <Input
-                type="number"
+              <InputNumero
                 min={1}
                 max={365}
-                value={form.tempoMedioDias}
-                onChange={(e) => setForm({ ...form, tempoMedioDias: Number(e.target.value) })}
+                valor={form.tempoMedioDias}
+                aoMudar={(n) => setForm({ ...form, tempoMedioDias: n ?? 0 })}
               />
             </Campo>
             <Campo rotulo="Mínimo desejado pronto">
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
-                value={form.qtdMinimaDesejada}
-                onChange={(e) => setForm({ ...form, qtdMinimaDesejada: Number(e.target.value) })}
+                valor={form.qtdMinimaDesejada}
+                aoMudar={(n) => setForm({ ...form, qtdMinimaDesejada: n ?? 0 })}
               />
             </Campo>
             <Campo
               rotulo="Mínimo desejado em biscoito"
               dica="O pulmão que permite atender uma cor que saiu bem sem começar do zero."
             >
-              <Input
-                type="number"
+              <InputNumero
                 min={0}
-                value={form.qtdMinimaBiscoito}
-                onChange={(e) => setForm({ ...form, qtdMinimaBiscoito: Number(e.target.value) })}
+                valor={form.qtdMinimaBiscoito}
+                aoMudar={(n) => setForm({ ...form, qtdMinimaBiscoito: n ?? 0 })}
               />
             </Campo>
             {/*
@@ -495,12 +493,11 @@ export function Pecas() {
                     </Select>
                   </div>
                   <div className="w-full sm:w-24">
-                    <Input
-                      type="number"
+                    <InputNumero
                       min={0}
                       max={365}
-                      value={linha.diasEstimados}
-                      onChange={(e) => alterarEtapa(i, 'diasEstimados', Number(e.target.value))}
+                      valor={linha.diasEstimados}
+                      aoMudar={(n) => alterarEtapa(i, 'diasEstimados', n ?? 0)}
                       aria-label={`Dias estimados da etapa ${i + 1}`}
                       title="Quantos dias esta etapa costuma levar"
                       placeholder="dias"
