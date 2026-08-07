@@ -43,6 +43,28 @@ describe('smoke — todos os GET respondem', () => {
   })
 })
 
+describe('GET com :id — não cabem na lista de caminhos fixos', () => {
+  it('/pecas/:id/nome-de-copia sugere um nome livre', async () => {
+    const lista = await comAuth('get', '/pecas')
+    const peca = lista.body[0] as { id: string; nome: string }
+    const r = await comAuth('get', `/pecas/${peca.id}/nome-de-copia`)
+    expect(r.status).toBe(200)
+    expect(r.body.nome).toMatch(/\(CÓPIA( \d+)?\)$/)
+    // o sugerido tem que estar livre, senão o modal abre com um nome que o
+    // próprio salvar vai recusar por unicidade
+    expect(r.body.nome).not.toBe(peca.nome)
+  })
+
+  it('não confunde o :id de duas partes com o de três', async () => {
+    // /pecas/:id e /pecas/:id/nome-de-copia moram no mesmo prefixo; se a ordem
+    // das rotas mudar, esta some sem ninguém perceber
+    const lista = await comAuth('get', '/pecas')
+    const r = await comAuth('get', `/pecas/${lista.body[0].id}`)
+    expect(r.status).toBe(200)
+    expect(r.body.roteiro).toBeDefined()
+  })
+})
+
 describe('busca acento-insensível', () => {
   it('acha "Xícara" digitando sem acento', async () => {
     const r = await comAuth('get', '/pecas?busca=xicara')

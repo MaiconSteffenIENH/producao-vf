@@ -25,6 +25,8 @@ import {
   materiaPrimaSchema,
   ordenacaoSchema,
   pecaSchema,
+  duplicarPecaSchema,
+  minimoBiscoitoSchema,
   responsavelSchema,
   trocarSenhaSchema,
   usuarioSchema,
@@ -120,10 +122,35 @@ rotas.post(
     res.status(201).json(await pecas.criarPeca(pecaSchema.parse(req.body)))
   }),
 )
+rotas.get(
+  '/pecas/:id/nome-de-copia',
+  rota(async (req, res) => {
+    res.json(await pecas.sugerirNomeDeCopia(req.params.id))
+  }),
+)
 rotas.post(
   '/pecas/:id/duplicar',
   rota(async (req, res) => {
-    res.status(201).json(await pecas.duplicarPeca(req.params.id))
+    const { nome } = duplicarPecaSchema.parse(req.body ?? {})
+    res.status(201).json(await pecas.duplicarPeca(req.params.id, nome))
+  }),
+)
+/*
+ * O mínimo em biscoito mora aqui, e não em `/estoque/biscoito/...`, embora seja
+ * editado na tela de Estoque de biscoito.
+ *
+ * O guarda de módulos decide pelo PRIMEIRO segmento do caminho, e para escrita
+ * vale só o dono da rota — que em `estoque` é `estoque-prontas`, escolhido de
+ * propósito por causa da baixa de peças prontas. Uma escrita de biscoito
+ * pendurada no mesmo prefixo levaria 403 justamente de quem tem só o módulo de
+ * biscoito. Sob `/pecas` a permissão fica idêntica à de antes, quando este
+ * número era salvo no PUT da peça.
+ */
+rotas.patch(
+  '/pecas/:id/minimo-biscoito',
+  rota(async (req, res) => {
+    const { qtdMinimaBiscoito } = minimoBiscoitoSchema.parse(req.body)
+    res.json(await pecas.definirMinimoBiscoito(req.params.id, qtdMinimaBiscoito))
   }),
 )
 rotas.put(

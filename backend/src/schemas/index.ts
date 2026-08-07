@@ -115,12 +115,43 @@ export const pecaSchema = z.object({
   responsavelInicialId: z.string().uuid().or(z.literal('')).nullable().optional(),
   tempoMedioDias: z.coerce.number().int().min(1).max(365).default(30),
   qtdMinimaDesejada: z.coerce.number().int().min(0).max(99999).default(0),
-  qtdMinimaBiscoito: z.coerce.number().int().min(0).max(99999).default(0),
+  /*
+   * SEM `.default(0)`, e é o ponto todo desta mudança.
+   *
+   * O mínimo em biscoito saiu do cadastro de peça e passou a ser editado na
+   * tela de Estoque de biscoito, que é onde ele é DECIDIDO — olhando o pulmão,
+   * não preenchendo formulário. Com o default, o campo fora do corpo chegaria
+   * como zero, e toda edição de peça — trocar o nome, mexer no roteiro —
+   * ZERARIA o mínimo em silêncio. Com ele opcional, chega `undefined`, o
+   * Prisma não toca na coluna, e o alerta de pulmão continua de pé.
+   *
+   * É a mesma armadilha que o `precoBase` já tinha, e a mesma saída.
+   */
+  qtdMinimaBiscoito: z.coerce.number().int().min(0).max(99999).optional(),
   precoBase: z.coerce.number().min(0).max(999999).nullable().optional(),
   observacao: z.string().trim().max(500).or(z.literal('')).optional().nullable(),
   ativo: z.boolean().default(true),
   roteiro: z.array(roteiroItemSchema).default([]),
   cores: z.array(pecaCorItemSchema).default([]),
+})
+
+/**
+ * O mínimo em biscoito, sozinho — a rota existe só para gravá-lo, então aqui
+ * ele é obrigatório: corpo vazio é engano de quem chamou, não "manter como
+ * está".
+ */
+export const minimoBiscoitoSchema = z.object({
+  qtdMinimaBiscoito: z.coerce.number().int().min(0).max(99999),
+})
+
+/**
+ * O nome da cópia. Leniente como o resto: nome vazio e corpo ausente chegam ao
+ * service, que devolve o nome sugerido por `nomeDeCopia()`. Recusar aqui
+ * daria 400 genérico onde o certo é uma sugestão pronta — e quebraria qualquer
+ * cliente antigo que ainda chame `POST /pecas/:id/duplicar` sem corpo.
+ */
+export const duplicarPecaSchema = z.object({
+  nome: z.string().trim().max(80).transform(caixaAlta).optional(),
 })
 
 // ── Usuário ─────────────────────────────────────────────

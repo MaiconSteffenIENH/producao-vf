@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { caixaAlta, caixaAltaAoDigitar } from '../../src/lib/nomes'
+import { caixaAlta, caixaAltaAoDigitar, nomeDeCopia } from '../../src/lib/nomes'
 
 describe('caixaAlta', () => {
   it('põe em maiúscula sem a pessoa precisar do caps lock', () => {
@@ -48,5 +48,48 @@ describe('caixaAltaAoDigitar', () => {
     for (const t of ['prato de pão', 'açucareiro', 'xícara', 'ção ãõ éíóú']) {
       expect(caixaAltaAoDigitar(t)).toHaveLength(t.length)
     }
+  })
+})
+
+describe('nomeDeCopia', () => {
+  it('a primeira cópia não leva número', () => {
+    expect(nomeDeCopia('BOWL RECORTADO', [])).toBe('BOWL RECORTADO (CÓPIA)')
+  })
+
+  it('já em caixa alta, como o cadastro guarda', () => {
+    expect(nomeDeCopia('bowl recortado', [])).toBe('BOWL RECORTADO (CÓPIA)')
+  })
+
+  it('duplicar duas vezes não colide — o nome da peça é único no banco', () => {
+    const existentes = ['BOWL', 'BOWL (CÓPIA)']
+    expect(nomeDeCopia('BOWL', existentes)).toBe('BOWL (CÓPIA 2)')
+    expect(nomeDeCopia('BOWL', [...existentes, 'BOWL (CÓPIA 2)'])).toBe('BOWL (CÓPIA 3)')
+  })
+
+  it('pula o buraco no meio — some com a cópia 2 e a próxima ainda é a 2', () => {
+    expect(nomeDeCopia('BOWL', ['BOWL', 'BOWL (CÓPIA)', 'BOWL (CÓPIA 3)'])).toBe('BOWL (CÓPIA 2)')
+  })
+
+  it('a comparação ignora caixa e espaço duplo — é assim que o índice único vê', () => {
+    // "Bowl (cópia)" e "BOWL (CÓPIA)" são o mesmo nome para o banco: tratá-los
+    // como diferentes só adiaria a violação de unicidade para o insert
+    expect(nomeDeCopia('BOWL', ['bowl (cópia)'])).toBe('BOWL (CÓPIA 2)')
+    expect(nomeDeCopia('BOWL', ['BOWL  (CÓPIA)'])).toBe('BOWL (CÓPIA 2)')
+  })
+
+  it('cabe nos 80 do cadastro, senão a cópia nasce maior do que a tela salva', () => {
+    const longo = 'A'.repeat(80)
+    const copia = nomeDeCopia(longo, [])
+    expect(copia.length).toBeLessThanOrEqual(80)
+    expect(copia.endsWith(' (CÓPIA)')).toBe(true)
+  })
+
+  it('nome vazio não vira "(CÓPIA)" órfão', () => {
+    expect(nomeDeCopia('', [])).toBe('PEÇA (CÓPIA)')
+    expect(nomeDeCopia('   ', [])).toBe('PEÇA (CÓPIA)')
+  })
+
+  it('acento sobe junto no nome de origem', () => {
+    expect(nomeDeCopia('xícara bojudinha', [])).toBe('XÍCARA BOJUDINHA (CÓPIA)')
   })
 })

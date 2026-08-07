@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Layers, TriangleAlert } from 'lucide-react'
+import { ArrowRight, Layers, Pencil, TriangleAlert } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { plural } from '../lib/format'
-import { CabecalhoPagina, Card, Carregando, Etiqueta, Vazio } from '../components/ui'
+import {
+  Botao,
+  CabecalhoPagina,
+  Campo,
+  Card,
+  Carregando,
+  Etiqueta,
+  InputNumero,
+  Modal,
+  Vazio,
+} from '../components/ui'
 
 /*
  * O PULMÃO DO ATELIÊ.
@@ -16,7 +26,13 @@ import { CabecalhoPagina, Card, Carregando, Etiqueta, Vazio } from '../component
  *
  * Esta tela é a VISÃO desse saldo, não um lugar novo. Mandar peça para o
  * estoque é mover o lote da 1ª queima para a etapa de biscoito, e isso o quadro
- * já faz; aqui não há nada para escrever, só o que decidir.
+ * já faz: nenhum SALDO se escreve aqui.
+ *
+ * A única escrita que existe aqui é o MÍNIMO — e ela é escrita justamente por
+ * não ser saldo. "Quanto pulmão esta peça precisa" não é característica da
+ * peça, é decisão de estoque, e ela se toma olhando o que está parado ao lado
+ * do que está vendendo. Enquanto o campo morava no cadastro de peça, a
+ * pergunta era feita no único lugar do sistema que não mostra a resposta.
  *
  * Por isso a ordem não é alfabética: quem está mais longe do mínimo abre a
  * lista. Numa tela ordenada por nome, a peça zerada dorme lá embaixo enquanto
@@ -94,6 +110,9 @@ export function EstoqueBiscoito() {
   const [resumo, setResumo] = useState<ResumoBiscoito>(VAZIO)
   const [carregando, setCarregando] = useState(true)
   const [filtro, setFiltro] = useState<Filtro>('todas')
+  const [editando, setEditando] = useState<LinhaBiscoito | null>(null)
+  const [novoMinimo, setNovoMinimo] = useState<number | null>(0)
+  const [salvando, setSalvando] = useState(false)
 
   const recarregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true)
@@ -112,6 +131,39 @@ export function EstoqueBiscoito() {
     void recarregar()
   }, [recarregar])
   useAutoRefresh(useCallback(() => void recarregar(true), [recarregar]))
+
+  const abrirMinimo = (linha: LinhaBiscoito) => {
+    setEditando(linha)
+    setNovoMinimo(linha.minimo)
+  }
+
+  /*
+   * Grava só o mínimo, por uma rota própria — não um PUT da peça inteira.
+   *
+   * Esta tela não carrega roteiro nem esmaltes; mandar a peça toda daqui
+   * significaria mandar de volta um objeto incompleto, e o cadastro é
+   * substituído inteiro no update. Uma peça perderia o roteiro por alguém ter
+   * ajustado um número de estoque.
+   */
+  const salvarMinimo = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editando || novoMinimo === null) return
+    setSalvando(true)
+    try {
+      await api.patch(`/pecas/${editando.pecaId}/minimo-biscoito`, { qtdMinimaBiscoito: novoMinimo })
+      avisar.ok(
+        novoMinimo === 0
+          ? `${editando.peca} volta a ficar sem mínimo definido.`
+          : `Mínimo de ${editando.peca} agora é ${novoMinimo}.`,
+      )
+      setEditando(null)
+      await recarregar(true)
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para salvar o mínimo.'))
+    } finally {
+      setSalvando(false)
+    }
+  }
 
   if (carregando) return <Carregando texto="Somando o biscoito parado…" />
 
@@ -211,8 +263,26 @@ export function EstoqueBiscoito() {
                   </div>
 
                   <p className="mt-0.5 text-sm text-tinta-fraca">
-                    <strong className="font-medium text-tinta">{l.emBiscoito}</strong> em biscoito
-                    {l.semMinimo ? ' · sem mínimo definido' : ` · mínimo ${l.minimo}`}
+                    <strong className="font-medium text-tinta">{l.emBiscoito}</strong> em biscoito ·{' '}
+                    {/*
+                      O NÚMERO INTEIRO É O BOTÃO, não um lápis de 13px ao lado.
+                      Esta tela é lida no celular, e ícone pequeno encostado em
+                      texto é alvo que erra: o dedo pega a linha, não o lápis.
+                      Com o rótulo dentro do botão o alvo passa de ~20px para a
+                      largura da frase, e o lápis vira só a pista visual de que
+                      dá para mudar.
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => abrirMinimo(l)}
+                      aria-label={`Mudar o mínimo em biscoito de ${l.peca}`}
+                      className="-my-1 inline-flex items-center gap-1 rounded-lg px-1.5 py-1 align-baseline
+                        text-tinta-fraca underline decoration-borda underline-offset-4 transition
+                        hover:bg-superficie-2 hover:text-tinta hover:decoration-marca"
+                    >
+                      {l.semMinimo ? 'sem mínimo definido' : `mínimo ${l.minimo}`}
+                      <Pencil size={13} className="shrink-0" />
+                    </button>
                     {l.lotes > 0 && ` · em ${plural(l.lotes, 'lote')}`}
                     {l.aCaminho > 0 && ` · ${l.aCaminho} a caminho do biscoito`}
                   </p>
@@ -236,7 +306,9 @@ export function EstoqueBiscoito() {
                 {/* o lote não é aberto aqui de propósito: quem sabe inflar a
                     quantidade pela perda é o planejamento */}
                 {l.semMinimo ? (
-                  <LinkDeAcao para="/pecas">Definir mínimo</LinkDeAcao>
+                  <Botao variante="secundario" className="shrink-0" onClick={() => abrirMinimo(l)}>
+                    Definir mínimo
+                  </Botao>
                 ) : l.abaixoDoMinimo ? (
                   <LinkDeAcao para="/planejamento">
                     Repor no planejamento <ArrowRight size={15} />
@@ -249,6 +321,50 @@ export function EstoqueBiscoito() {
           })}
         </div>
       )}
+
+      <Modal
+        aberto={Boolean(editando)}
+        aoFechar={() => setEditando(null)}
+        titulo="Mínimo em biscoito"
+        descricao={editando ? `${editando.peca} · ${editando.emBiscoito} em biscoito hoje` : undefined}
+        largura="max-w-md"
+        fecharClicandoFora={false}
+      >
+        <form onSubmit={salvarMinimo} className="flex flex-col gap-4">
+          <Campo
+            rotulo="Quantas peças manter em biscoito"
+            dica="É o pulmão: com ele cheio, a cor que sair bem é esmaltada sem começar do torno — trinta dias de diferença."
+          >
+            <InputNumero min={0} max={99999} autoFocus valor={novoMinimo} aoMudar={setNovoMinimo} />
+          </Campo>
+
+          {editando && novoMinimo !== null && novoMinimo > 0 && (
+            <p className="text-xs leading-relaxed text-tinta-fraca">
+              {novoMinimo > editando.emBiscoito
+                ? `Com esse mínimo, faltam ${plural(novoMinimo - editando.emBiscoito, 'peça')} hoje` +
+                  (editando.aCaminho > 0
+                    ? ` — e ${editando.aCaminho} já vêm a caminho do biscoito.`
+                    : ' e o planejamento passa a sugerir a reposição.')
+                : 'Com esse mínimo, o pulmão desta peça já está atendido.'}
+            </p>
+          )}
+          {novoMinimo === 0 && (
+            <p className="text-xs leading-relaxed text-alerta">
+              Zero quer dizer <strong>sem mínimo definido</strong>: o planejamento deixa de avisar que o
+              pulmão desta peça baixou e só reage quando a peça pronta acaba.
+            </p>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Botao type="button" variante="secundario" onClick={() => setEditando(null)} disabled={salvando}>
+              Cancelar
+            </Botao>
+            <Botao type="submit" disabled={salvando || novoMinimo === null}>
+              {salvando ? 'Salvando…' : 'Salvar mínimo'}
+            </Botao>
+          </div>
+        </form>
+      </Modal>
 
       <p className="mt-6 text-xs leading-relaxed text-tinta-fraca">
         O saldo é a soma do livro-razão, não um campo: mover o lote da 1ª queima para a etapa de biscoito,

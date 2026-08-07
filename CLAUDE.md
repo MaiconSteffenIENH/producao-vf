@@ -4,6 +4,20 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 **Não é** ERP, financeiro nem estoque de vendas. O foco é: o que produzir, onde cada lote está, quantas peças ficaram prontas.
 
+## Como trabalhar comigo
+
+1. **Explique antes de alterar.** Uma linha por arquivo é suficiente; a decisão precisa caber na cabeça antes de virar diff.
+2. **Leia o estado real, não o presumido.** A pasta está aberta: confira o arquivo antes de propor mudança nele. Palpite sobre commit já aplicado custou uma tarde.
+3. **Confira depois de agir, sem atalho.** Verificação parcial é o mesmo que verificação nenhuma. Rode o que dá para rodar e diga o que não deu.
+4. **Nada que aplique pela metade.** Se falhar, tem que falhar limpo, e o jeito de garantir isso é a transação, não a esperança.
+5. **Peça comando meu só quando for impossível para você** e diga por quê, numa linha. O resto é seu.
+6. **Tudo em pt-BR**, e explicação breve: código, comentário, commit, UI e mensagem de erro.
+7. **Nome de cadastro é CAIXA ALTA** (peça, esmalte, categoria, etapa, responsável). Já sobe ao digitar; `npm run caixa-alta` arruma o histórico.
+8. **Dinheiro não entra no cadastro de peça.** Quem cadastra é a Gabi, e valor não é assunto dela — preço mora na tela de Preços.
+9. **O `.env` aponta para produção (Neon).** Nunca `prisma migrate dev` nele, só `migrate deploy`; migração escrita à mão quando o CLI não puder rodar.
+10. **Push dispara deploy** (Render e Vercel). O app é PWA: depois do deploy pode ser preciso Cmd+Shift+R para sair do cache.
+11. **Mudança que mexe no livro-razão passa por revisão adversarial** antes de ir. Ela já derrubou três versões que pareciam prontas.
+
 ## Comandos
 
 - Subir tudo do zero: `./rodar-local.sh`
@@ -17,7 +31,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 1. **A cor não faz parte do nome da peça.** No site é "Bowl Pistache"; aqui é peça `Bowl` + esmalte `Pistache`. É isso que permite filtrar por peça e por cor e que faz o planejamento dizer "esmaltar 20 peças Pistache" em vez de listar SKU a SKU.
 2. **O lote nasce sem cor.** A ordem real do ateliê é: modelar → secar → **1ª queima (biscoito)** → *só então* escolher a cor conforme o que está vendendo → esmaltar → **2ª queima**. Uma única etapa tem `defineCor = true` (Esmaltação); o service recusa marcar duas, senão o lote trocaria de cor no meio do caminho.
-3. **Biscoito é estoque neutro** (`estoqueIntermediario = true`). Peça parada ali pode virar qualquer cor — é o pulmão que atende uma cor que saiu bem sem começar tudo do zero. Por isso `Peca.qtdMinimaBiscoito` existe separado de `qtdMinimaDesejada`.
+3. **Biscoito é estoque neutro** (`estoqueIntermediario = true`). Peça parada ali pode virar qualquer cor — é o pulmão que atende uma cor que saiu bem sem começar tudo do zero. Por isso `Peca.qtdMinimaBiscoito` existe separado de `qtdMinimaDesejada` — e é editado na tela de **Estoque de biscoito**, não no cadastro de peça: quanto pulmão manter é decisão de estoque, tomada olhando o saldo ao lado do mínimo, e o cadastro é a única tela que não mostra nenhum dos dois.
 4. **Cada peça tem roteiro próprio.** Xícara Bojudinha passa por alças e colagem; Tortinha vai direto da equipe pra secagem. O roteiro é substituído inteiro no update — é a única forma de reordenar sem colidir com `@@unique([pecaId, ordem])`.
 5. **Conclusão é estado derivado, nunca um campo marcado à mão.** Não iniciada = sugestão sem lote; em andamento = quantidade antes de "Pronto"; parcial = parte pronta, parte não; concluída = pronto ≥ planejado. Checkbox manual apodrece com o uso.
 6. **O saldo do lote NÃO é um campo — é a soma do livro-razão.** `MovimentoLote` é append-only: entrada = `etapaDestinoId`, saída = `etapaOrigemId`. Movimentação parcial, perda e divisão saem de graça disso, e o saldo nunca discorda do histórico porque ele *é* o histórico. Erro se corrige com movimento novo, nunca editando ou apagando.
@@ -33,7 +47,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 125 testes em ~3s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 403 testes em ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|

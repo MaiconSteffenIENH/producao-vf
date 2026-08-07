@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ArrowDown, ArrowUp, Copy, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
@@ -34,6 +35,7 @@ type Peca = {
   responsavelInicial: Responsavel | null
   tempoMedioDias: number
   qtdMinimaDesejada: number
+  /** continua vindo da API e sendo editado no Estoque de biscoito; o cadastro só mostra */
   qtdMinimaBiscoito: number
   /** continua vindo da API e sendo editado na tela de Preços; o cadastro não mexe */
   precoBase: string | null
@@ -51,7 +53,6 @@ const FORM_VAZIO = {
   responsavelInicialId: '',
   tempoMedioDias: 30,
   qtdMinimaDesejada: 0,
-  qtdMinimaBiscoito: 0,
   observacao: '',
   ativo: true,
 }
@@ -75,6 +76,9 @@ export function Pecas() {
   const [salvando, setSalvando] = useState(false)
   const [paraExcluir, setParaExcluir] = useState<Peca | null>(null)
   const [excluindo, setExcluindo] = useState(false)
+  const [paraDuplicar, setParaDuplicar] = useState<Peca | null>(null)
+  const [nomeDaCopia, setNomeDaCopia] = useState('')
+  const [duplicando, setDuplicando] = useState(false)
 
   const recarregar = useCallback(
     async (silencioso = false) => {
@@ -112,6 +116,28 @@ export function Pecas() {
 
   useAutoRefresh(useCallback(() => void recarregar(true), [recarregar]))
 
+  /*
+   * Seleciona o nome sugerido QUANDO ele chega, não quando a janela abre.
+   *
+   * A sugestão vem do servidor, então no `autoFocus` o campo ainda está vazio.
+   * Sem isto, quem quer trocar o nome inteiro — o caso comum — precisa apagar
+   * "BOWL (CÓPIA)" letra por letra antes de escrever.
+   *
+   * A trava é o que impede a seleção de voltar a cada tecla: selecionar de novo
+   * no meio da digitação faria a próxima letra apagar o que já foi escrito.
+   */
+  const campoNomeDaCopia = useRef<HTMLInputElement>(null)
+  const jaSelecionouONome = useRef(false)
+  useEffect(() => {
+    if (!paraDuplicar) {
+      jaSelecionouONome.current = false
+      return
+    }
+    if (!nomeDaCopia || jaSelecionouONome.current) return
+    jaSelecionouONome.current = true
+    campoNomeDaCopia.current?.select()
+  }, [paraDuplicar, nomeDaCopia])
+
   const etapaQueDefineCor = useMemo(() => etapas.find((e) => e.defineCor), [etapas])
 
   const abrirNova = () => {
@@ -130,7 +156,6 @@ export function Pecas() {
       responsavelInicialId: peca.responsavelInicialId ?? '',
       tempoMedioDias: peca.tempoMedioDias,
       qtdMinimaDesejada: peca.qtdMinimaDesejada,
-      qtdMinimaBiscoito: peca.qtdMinimaBiscoito,
       observacao: peca.observacao ?? '',
       ativo: peca.ativo,
     })
@@ -166,13 +191,46 @@ export function Pecas() {
     }
   }
 
-  const duplicar = async (peca: Peca) => {
+  /*
+   * DUPLICAR PASSOU A PERGUNTAR O NOME.
+   *
+   * Antes ela criava "BOWL (CÓPIA)" e pronto — e ninguém quer uma peça chamada
+   * assim, então toda duplicação virava duas operações: copiar e depois abrir
+   * a edição para renomear. O nome sugerido vem do servidor, que é quem sabe
+   * quais já existem.
+   *
+   * A janela abre ANTES de a sugestão chegar, de propósito: o backend do plano
+   * gratuito hiberna e a primeira chamada do dia pode levar um minuto — segurar
+   * a janela até lá pareceria que o botão não funcionou. A seleção do texto
+   * fica por conta do efeito abaixo, porque no instante do `autoFocus` o campo
+   * ainda está vazio e não há o que selecionar.
+   */
+  const abrirDuplicacao = async (peca: Peca) => {
+    setParaDuplicar(peca)
+    setNomeDaCopia('')
     try {
-      await api.post(`/pecas/${peca.id}/duplicar`)
+      const { data } = await api.get(`/pecas/${peca.id}/nome-de-copia`)
+      setNomeDaCopia(data.nome)
+    } catch (erro) {
+      // sugestão é conveniência, não requisito: o campo continua editável
+      setNomeDaCopia(`${peca.nome} (CÓPIA)`)
+      avisar.erro(mensagemDoErro(erro, 'Não deu para sugerir um nome — confira antes de salvar.'))
+    }
+  }
+
+  const duplicar = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!paraDuplicar) return
+    setDuplicando(true)
+    try {
+      await api.post(`/pecas/${paraDuplicar.id}/duplicar`, { nome: nomeDaCopia })
       avisar.ok('Cópia criada como inativa — revise e ative.')
+      setParaDuplicar(null)
       await recarregar(true)
     } catch (erro) {
       avisar.erro(mensagemDoErro(erro, 'Não deu para duplicar.'))
+    } finally {
+      setDuplicando(false)
     }
   }
 
@@ -260,9 +318,16 @@ export function Pecas() {
                 <span>
                   Mínimo pronto: <strong>{peca.qtdMinimaDesejada}</strong>
                 </span>
-                <span>
+                {/* link e não texto: o número deixou de ser editável aqui, e
+                    campo que some sem dizer para onde foi é indistinguível de
+                    campo apagado */}
+                <Link
+                  to="/estoque/biscoito"
+                  className="underline decoration-borda underline-offset-4 hover:decoration-marca"
+                  title="O mínimo em biscoito é definido no Estoque de biscoito"
+                >
                   Mínimo biscoito: <strong>{peca.qtdMinimaBiscoito}</strong>
-                </span>
+                </Link>
               </div>
 
               <div className="mt-3">
@@ -300,7 +365,7 @@ export function Pecas() {
 
               <div className="mt-4 flex justify-end gap-1 border-t border-borda pt-3">
                 <button
-                  onClick={() => duplicar(peca)}
+                  onClick={() => void abrirDuplicacao(peca)}
                   aria-label={`Duplicar ${peca.nome}`}
                   className="rounded-lg p-2 text-tinta-fraca hover:bg-superficie-2 hover:text-tinta"
                 >
@@ -377,16 +442,18 @@ export function Pecas() {
                 aoMudar={(n) => setForm({ ...form, qtdMinimaDesejada: n ?? 0 })}
               />
             </Campo>
-            <Campo
-              rotulo="Mínimo desejado em biscoito"
-              dica="O pulmão que permite atender uma cor que saiu bem sem começar do zero."
-            >
-              <InputNumero
-                min={0}
-                valor={form.qtdMinimaBiscoito}
-                aoMudar={(n) => setForm({ ...form, qtdMinimaBiscoito: n ?? 0 })}
-              />
-            </Campo>
+            {/*
+              O MÍNIMO EM BISCOITO SAIU DAQUI.
+              Ele não é característica da peça, é decisão de estoque: quanto
+              pulmão esta peça precisa se decide olhando o que está parado e o
+              que está vendendo — coisa que esta tela não mostra. Agora ele é
+              editado na tela de Estoque de biscoito, onde os dois números
+              aparecem lado a lado.
+              A coluna continua no banco e continua alimentando o alerta do
+              planejamento. Por isso o cartão da lista ainda mostra o valor,
+              com link para onde ele se muda: tirar da tela sem dizer para onde
+              foi é como apagar.
+            */}
             {/*
               O CADASTRO DE PEÇA NÃO PEDE MAIS DINHEIRO.
               Quem cadastra peça é a Gabi, e ela cadastra o que o ateliê PRODUZ:
@@ -575,6 +642,46 @@ export function Pecas() {
             </Botao>
             <Botao type="submit" disabled={salvando}>
               {salvando ? 'Salvando…' : 'Salvar peça'}
+            </Botao>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        aberto={Boolean(paraDuplicar)}
+        aoFechar={() => setParaDuplicar(null)}
+        titulo="Duplicar peça"
+        descricao={paraDuplicar ? `Cópia de ${paraDuplicar.nome}` : undefined}
+        largura="max-w-md"
+        fecharClicandoFora={false}
+      >
+        <form onSubmit={duplicar} className="flex flex-col gap-4">
+          <Campo
+            rotulo="Nome da cópia"
+            dica="Roteiro, esmaltes possíveis, mínimos e o custo da original vêm junto. O preço praticado por canal, não: aquilo é venda da peça original."
+          >
+            {/* sem `onFocus={select}`: num campo de texto isso rouba o clique
+                de quem só queria corrigir uma letra no meio */}
+            <Input
+              ref={campoNomeDaCopia}
+              required
+              autoFocus
+              maxLength={80}
+              caixaAlta
+              value={nomeDaCopia}
+              onChange={(e) => setNomeDaCopia(e.target.value)}
+            />
+          </Campo>
+          <p className="text-xs leading-relaxed text-tinta-fraca">
+            A cópia nasce <strong>inativa</strong>: ela só entra no planejamento depois de você revisar e
+            ativar.
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Botao type="button" variante="secundario" onClick={() => setParaDuplicar(null)} disabled={duplicando}>
+              Cancelar
+            </Botao>
+            <Botao type="submit" disabled={duplicando || !nomeDaCopia.trim()}>
+              {duplicando ? 'Duplicando…' : 'Duplicar'}
             </Botao>
           </div>
         </form>

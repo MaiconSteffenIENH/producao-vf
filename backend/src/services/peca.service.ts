@@ -2,7 +2,8 @@ import type { Prisma } from '@prisma/client'
 import type { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { normalizarBusca } from '../lib/busca'
-import { invalido, naoEncontrado } from '../lib/erros'
+import { nomeDeCopia } from '../lib/nomes'
+import { conflito, invalido, naoEncontrado } from '../lib/erros'
 import type { pecaSchema } from '../schemas'
 
 type DadosPeca = z.infer<typeof pecaSchema>
@@ -121,6 +122,13 @@ export async function atualizarPeca(id: string, dados: DadosPeca) {
         responsavelInicialId: dados.responsavelInicialId || null,
         tempoMedioDias: dados.tempoMedioDias,
         qtdMinimaDesejada: dados.qtdMinimaDesejada,
+        /*
+         * Também NÃO É `?? 0`, pelo mesmo motivo do preço logo abaixo. O
+         * mínimo em biscoito saiu do cadastro e passou a ser editado na tela
+         * de Estoque de biscoito; com um zero inventado aqui, renomear uma
+         * peça apagaria o mínimo dela e o alerta de pulmão se desligaria
+         * sozinho, sem ninguém ver.
+         */
         qtdMinimaBiscoito: dados.qtdMinimaBiscoito,
         /*
          * NÃO É `?? null`. O cadastro de peça deixou de ter campo de preço, e
@@ -147,42 +155,128 @@ export async function excluirPeca(id: string) {
   await prisma.peca.delete({ where: { id } })
 }
 
-/** Duplicar acelera o cadastro: as peças da casa compartilham quase todo o roteiro. */
-export async function duplicarPeca(id: string) {
+/**
+ * O nome que a tela oferece ao duplicar, antes de duplicar de fato.
+ *
+ * Existe separado porque o modal precisa abrir com o campo já preenchido: a
+ * mesma conta feita na hora de gravar, só que sem gravar nada.
+ */
+export async function sugerirNomeDeCopia(id: string) {
+  const original = await prisma.peca.findUnique({ where: { id }, select: { nome: true } })
+  if (!original) throw naoEncontrado('Peça')
+  const existentes = await prisma.peca.findMany({ select: { nome: true } })
+  return { nome: nomeDeCopia(original.nome, existentes.map((p: { nome: string }) => p.nome)) }
+}
+
+/**
+ * Duplicar acelera o cadastro: as peças da casa compartilham quase todo o
+ * roteiro.
+ *
+ * DUAS COISAS QUE A PRIMEIRA VERSÃO ERRAVA.
+ *
+ * 1. O NOME ERA IMPOSTO. "BOWL (CÓPIA)" nunca é o nome que se quer, então toda
+ *    duplicação virava duas operações: copiar e depois renomear. Agora o nome
+ *    chega de fora; quando não chega, o sugerido continua valendo.
+ *
+ * 2. O CUSTO NÃO VINHA JUNTO. A cópia herdava roteiro e esmaltes e nascia sem
+ *    `CustoPeca` — e a tela de Preços passava a mostrar uma peça sem custo, que
+ *    parece peça nova ainda não precificada. Só que a cópia é a MESMA argila,
+ *    o mesmo esmalte e a mesma queima: é justamente o caso em que o custo é
+ *    reaproveitável. Preço praticado por canal (`PrecoCanal`) NÃO vem junto de
+ *    propósito — aquilo é fato de venda da peça original, não característica
+ *    de produção.
+ *
+ * Tudo numa transação: peça sem o custo que deveria ter acompanhado é pior do
+ * que duplicação nenhuma, porque ninguém desconfia dela.
+ */
+export async function duplicarPeca(id: string, nomePedido?: string) {
   const original = await obterPeca(id)
-  let nome = `${original.nome} (cópia)`
-  for (let i = 2; await prisma.peca.findUnique({ where: { nome } }); i++) {
-    nome = `${original.nome} (cópia ${i})`
+  const custo = await prisma.custoPeca.findUnique({ where: { pecaId: id } })
+
+  let nome = nomePedido?.trim() ?? ''
+  if (!nome) {
+    const existentes = await prisma.peca.findMany({ select: { nome: true } })
+    nome = nomeDeCopia(original.nome, existentes.map((p: { nome: string }) => p.nome))
   }
-  return prisma.peca.create({
-    data: {
-      nome,
-      nomeBusca: normalizarBusca(nome),
-      categoriaId: original.categoriaId,
-      responsavelInicialId: original.responsavelInicialId,
-      tempoMedioDias: original.tempoMedioDias,
-      qtdMinimaDesejada: original.qtdMinimaDesejada,
-      qtdMinimaBiscoito: original.qtdMinimaBiscoito,
-      precoBase: original.precoBase,
-      observacao: original.observacao,
-      ativo: false, // nasce inativa: obriga a revisar antes de entrar no planejamento
-      roteiro: {
-        create: original.roteiro.map(
-          (r: { etapaId: string; ordem: number; responsavelId: string | null; diasEstimados: number }) => ({
-            etapaId: r.etapaId,
-            ordem: r.ordem,
-            responsavelId: r.responsavelId,
-            diasEstimados: r.diasEstimados,
-          }),
-        ),
+
+  // `Peca.nome` é único: conferir antes troca uma violação de índice em inglês
+  // por uma frase que diz o que fazer
+  const ocupado = await prisma.peca.findUnique({ where: { nome }, select: { id: true } })
+  if (ocupado) throw conflito(`Já existe uma peça chamada "${nome}". Escolha outro nome para a cópia.`)
+
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const copia = await tx.peca.create({
+      data: {
+        nome,
+        nomeBusca: normalizarBusca(nome),
+        categoriaId: original.categoriaId,
+        responsavelInicialId: original.responsavelInicialId,
+        tempoMedioDias: original.tempoMedioDias,
+        qtdMinimaDesejada: original.qtdMinimaDesejada,
+        qtdMinimaBiscoito: original.qtdMinimaBiscoito,
+        precoBase: original.precoBase,
+        observacao: original.observacao,
+        ativo: false, // nasce inativa: obriga a revisar antes de entrar no planejamento
+        roteiro: {
+          create: original.roteiro.map(
+            (r: { etapaId: string; ordem: number; responsavelId: string | null; diasEstimados: number }) => ({
+              etapaId: r.etapaId,
+              ordem: r.ordem,
+              responsavelId: r.responsavelId,
+              diasEstimados: r.diasEstimados,
+            }),
+          ),
+        },
+        cores: {
+          create: original.cores.map((c: { corId: string; qtdMinimaDesejada: number }) => ({
+            corId: c.corId,
+            qtdMinimaDesejada: c.qtdMinimaDesejada,
+          })),
+        },
       },
-      cores: {
-        create: original.cores.map((c: { corId: string; qtdMinimaDesejada: number }) => ({
-          corId: c.corId,
-          qtdMinimaDesejada: c.qtdMinimaDesejada,
-        })),
-      },
-    },
-    include: incluirTudo,
+      include: incluirTudo,
+    })
+
+    if (custo) {
+      await tx.custoPeca.create({
+        data: {
+          pecaId: copia.id,
+          custoArgila: custo.custoArgila,
+          custoEsmalte: custo.custoEsmalte,
+          custoQueima: custo.custoQueima,
+          custoEmbalagem: custo.custoEmbalagem,
+          minutosMaoDeObra: custo.minutosMaoDeObra,
+          custoHoraMaoDeObra: custo.custoHoraMaoDeObra,
+          outrosCustos: custo.outrosCustos,
+          perdaEstimadaPercentual: custo.perdaEstimadaPercentual,
+        },
+      })
+    }
+
+    return copia
+  })
+}
+
+/**
+ * O mínimo em biscoito, gravado de onde ele é decidido.
+ *
+ * Ele saiu do cadastro de peça: quem cadastra é a Gabi, e "quanto pulmão esta
+ * peça precisa" não é pergunta de cadastro — é decisão de estoque, tomada
+ * olhando o que está parado e o que está vendendo. Por isso a edição vive na
+ * tela de Estoque de biscoito, e por isso ela é uma rota própria: um PUT da
+ * peça inteira, disparado dali, arrastaria roteiro e esmaltes junto.
+ *
+ * A rota fica sob `/pecas`, e não sob `/estoque`, por causa do guarda de
+ * módulos: ele decide pelo PRIMEIRO segmento do caminho, e o dono da escrita
+ * em `estoque` é `estoque-prontas`. Pendurada ali, ela daria 403 exatamente em
+ * quem só tem o módulo de biscoito — a pessoa que usa a tela.
+ */
+export async function definirMinimoBiscoito(id: string, qtdMinimaBiscoito: number) {
+  const peca = await prisma.peca.findUnique({ where: { id }, select: { id: true } })
+  if (!peca) throw naoEncontrado('Peça')
+  return prisma.peca.update({
+    where: { id },
+    data: { qtdMinimaBiscoito },
+    select: { id: true, nome: true, qtdMinimaBiscoito: true },
   })
 }

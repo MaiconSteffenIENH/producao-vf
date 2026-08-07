@@ -46,3 +46,33 @@ export function caixaAlta(texto: string): string {
 export function caixaAltaAoDigitar(texto: string): string {
   return texto.toLocaleUpperCase('pt-BR')
 }
+
+/** Tamanho máximo de nome de peça aceito no cadastro (`nomeDeCadastro(80)`). */
+const MAX_NOME = 80
+
+/**
+ * O nome sugerido ao duplicar uma peça, garantido livre.
+ *
+ * `Peca.nome` é único no banco. Sem resolver a colisão ANTES, duplicar duas
+ * vezes a mesma peça estoura violação de unicidade — e o que chega na tela é
+ * um erro de banco em inglês, no lugar de um nome pronto para editar.
+ *
+ * A comparação passa por `caixaAlta` dos dois lados porque é assim que o nome
+ * é guardado: "Bowl (cópia)" e "BOWL (CÓPIA)" são o mesmo nome para o índice
+ * único, e tratá-los como diferentes só adiaria o erro para o insert.
+ *
+ * O corte em 80 mantém o resultado dentro do que o cadastro aceita: sem ele, a
+ * cópia de um nome já longo nasceria maior do que a tela consegue salvar
+ * depois, e a pessoa só descobriria ao tentar renomear.
+ */
+export function nomeDeCopia(original: string, jaExistem: Iterable<string>): string {
+  const base = caixaAlta(original) || 'PEÇA'
+  const ocupados = new Set<string>()
+  for (const nome of jaExistem) ocupados.add(caixaAlta(nome))
+
+  for (let i = 1; ; i++) {
+    const sufixo = i === 1 ? ' (CÓPIA)' : ` (CÓPIA ${i})`
+    const candidato = base.slice(0, Math.max(1, MAX_NOME - sufixo.length)).trim() + sufixo
+    if (!ocupados.has(candidato)) return candidato
+  }
+}
