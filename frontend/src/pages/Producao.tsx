@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Scissors, Trash2 } 
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
-import { plural } from '../lib/format'
+import { dataBr, hojeNoAtelie, plural } from '../lib/format'
 import { enviarComFila } from '../lib/filaOffline'
 import { MOTIVOS_PERDA, ajudaDoMotivo } from '../lib/motivos-perda'
 import { useArrastar } from '../lib/useArrastar'
@@ -27,6 +27,9 @@ type Cartao = {
   id: string
   codigo: string
   quantidade: number
+  /** o que quem abriu o lote escreveu — estava sendo salvo e não aparecia em lugar nenhum */
+  observacao: string | null
+  iniciadoEm: string
   proximaEtapaId: string | null
   responsavelSugeridoId: string | null
   peca: { id: string; nome: string; categoria: { nome: string } }
@@ -67,15 +70,21 @@ const CORES_TIPO: Record<string, string> = {
 function MapaDoFluxo({
   colunas,
   aoEscolher,
+  refFaixa,
 }: {
   colunas: Coluna[]
   aoEscolher: (etapaId: string) => void
+  /** a altura desta faixa é o teto por onde o quadro pode subir */
+  refFaixa: React.Ref<HTMLDivElement>
 }) {
   const maior = Math.max(1, ...colunas.map((c) => c.total))
   return (
     // sticky na viewport: rolando a página atrás de uma coluna comprida, o
     // total das outras etapas continua à vista
-    <div className="sticky top-14 z-20 mb-4 overflow-x-auto rounded-2xl border border-borda bg-superficie/95 p-1.5 shadow-baixa backdrop-blur-md">
+    <div
+      ref={refFaixa}
+      className="sticky top-14 z-20 mb-4 overflow-x-auto rounded-2xl border border-borda bg-superficie/95 p-1.5 shadow-baixa backdrop-blur-md"
+    >
       <ol className="flex min-w-max items-stretch gap-1">
         {colunas.map((coluna, i) => {
           const cor = CORES_TIPO[coluna.etapa.tipo] ?? '#BBA58C'
@@ -132,11 +141,22 @@ export function Producao() {
 
   const [paraApagar, setParaApagar] = useState<string | null>(null)
   const [novoAberto, setNovoAberto] = useState(false)
-  const [novo, setNovo] = useState({ pecaId: '', quantidade: 20, observacao: '' })
+  /*
+   * A data já vem preenchida com hoje.
+   *
+   * O caso comum continua sendo um clique: quem abre o lote no dia não toca no
+   * campo. O campo existe para o outro caso, que é frequente no ateliê — o
+   * oleiro torneia na segunda e o lote só é lançado na quarta. Sem ele, esses
+   * dois dias somem da conta de "parado há X dias", que é o que ordena a fila
+   * do forno.
+   */
+  const hojeTexto = hojeNoAtelie
+  const [novo, setNovo] = useState({ pecaId: '', quantidade: 20, observacao: '', iniciadoEm: hojeTexto() })
 
   // rolagem horizontal do quadro: os degradês só existem do lado que ainda tem
   // quadro, então precisam saber onde o trilho está
   const trilho = useRef<HTMLDivElement>(null)
+  const faixa = useRef<HTMLDivElement>(null)
   const [temMaisAEsquerda, setTemMaisAEsquerda] = useState(false)
   const [temMaisADireita, setTemMaisADireita] = useState(false)
 
@@ -323,7 +343,7 @@ export function Producao() {
       const { data } = await api.post('/lotes', novo)
       avisar.ok(`Lote ${data.codigo} aberto.`)
       setNovoAberto(false)
-      setNovo({ pecaId: '', quantidade: 20, observacao: '' })
+      setNovo({ pecaId: '', quantidade: 20, observacao: '', iniciadoEm: hojeTexto() })
       await recarregar(true)
     } catch (erro) {
       avisar.erro(mensagemDoErro(erro, 'Não deu para abrir o lote.'))
@@ -336,9 +356,51 @@ export function Producao() {
 
   const vazio = colunas.every((c) => c.cartoes.length === 0)
 
+  /*
+   * IR ATÉ UMA ETAPA, sem embaralhar a tela.
+   *
+   * Era `scrollIntoView({ block: 'nearest', inline: 'start' })`, e o problema
+   * é que ele rola TODOS os ancestrais roláveis — inclusive a página. Como a
+   * coluna é alta (são os cartões dela), o navegador subia a página até o topo
+   * da coluna, e o cabeçalho "SECAGEM 112" ia parar EMBAIXO da faixa do fluxo,
+   * que é `sticky`. O que sobrava na tela eram os cartões soltos, com o nome da
+   * etapa escondido e as colunas vizinhas mostrando "vazio" — exatamente a
+   * bagunça da imagem que o Maicon mandou.
+   *
+   * Agora são dois movimentos independentes e explícitos:
+   *
+   *   1. o trilho rola na HORIZONTAL até a coluna, e só ele;
+   *   2. a página sobe na VERTICAL apenas o suficiente para o cabeçalho da
+   *      coluna encostar logo abaixo da faixa — e só se ele estiver escondido.
+   *
+   * O resultado é o nome da etapa em cima e os cartões embaixo, que é como a
+   * tela precisa ficar para alguém saber o que está olhando.
+   */
   const irParaEtapa = (etapaId: string) => {
-    const alvo = trilho.current?.querySelector<HTMLElement>(`[data-etapa="${etapaId}"]`)
-    alvo?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+    const pista = trilho.current
+    const alvo = pista?.querySelector<HTMLElement>(`[data-etapa="${etapaId}"]`)
+    if (!pista || !alvo) return
+
+    /*
+     * A folga é LIDA do elemento, não chutada.
+     *
+     * O trilho é `px-4 sm:px-6`: cravar 16 aqui deixava a primeira coluna com
+     * `scrollLeft = 8` no desktop, o que acende o degradê de "tem mais quadro à
+     * esquerda" sobre um quadro que já está no começo — e briga com o
+     * `snap-start`, cujo ponto de encaixe é o zero.
+     */
+    const folga = parseFloat(getComputedStyle(pista).paddingLeft) || 0
+    // rects em vez de offsetLeft: o offsetParent aqui é a div de degradês, e
+    // depender dela quebraria em silêncio se o wrapper mudasse
+    const desloc = alvo.getBoundingClientRect().left - pista.getBoundingClientRect().left
+    pista.scrollBy({ left: desloc - folga, behavior: 'smooth' })
+
+    const limite = faixa.current?.getBoundingClientRect().bottom ?? 0
+    const topoDoQuadro = pista.getBoundingClientRect().top
+    const respiro = 16
+    if (topoDoQuadro < limite + respiro) {
+      window.scrollBy({ top: topoDoQuadro - limite - respiro, behavior: 'smooth' })
+    }
   }
 
   return (
@@ -384,7 +446,7 @@ export function Producao() {
         />
       ) : (
         <>
-          <MapaDoFluxo colunas={colunas} aoEscolher={irParaEtapa} />
+          <MapaDoFluxo colunas={colunas} aoEscolher={irParaEtapa} refFaixa={faixa} />
 
           <div className="relative -mx-4 sm:-mx-6">
             {/* degradês nas duas bordas: aparecem só do lado para onde ainda
@@ -512,6 +574,32 @@ export function Producao() {
 
                       {cartao.loteOrigem && (
                         <p className="mt-1 text-[11px] text-tinta-fraca">veio do {cartao.loteOrigem.codigo}</p>
+                      )}
+
+                      <p className="mt-1 text-[11px] text-tinta-fraca">
+                        aberto em {dataBr(cartao.iniciadoEm)}
+                      </p>
+
+                      {/*
+                        A OBSERVAÇÃO, ONDE ELA SERVE PARA ALGUMA COISA.
+
+                        O texto era gravado desde sempre e não aparecia em tela
+                        nenhuma — nem no cartão, nem no detalhe. Quem escrevia
+                        "argila da leva nova, conferir retração" tinha toda razão
+                        de achar que o campo não salvava.
+
+                        Fica no cartão, e não só no detalhe, porque quem precisa
+                        dela é quem está com a peça na mão: ler exige não abrir
+                        nada. `line-clamp-2` corta o texto longo sem esticar a
+                        coluna, e o `title` mostra o resto ao passar o mouse.
+                      */}
+                      {cartao.observacao && (
+                        <p
+                          className="mt-1.5 line-clamp-2 rounded-lg bg-superficie-2 px-2 py-1 text-[11px] leading-snug text-tinta"
+                          title={cartao.observacao}
+                        >
+                          {cartao.observacao}
+                        </p>
                       )}
 
                       {/*
@@ -660,7 +748,19 @@ export function Producao() {
               onChange={(e) => setNovo({ ...novo, quantidade: Number(e.target.value) })}
             />
           </Campo>
-          <Campo rotulo="Observação">
+          <Campo
+            rotulo="Aberto em"
+            dica="Já vem hoje. Mude se o lote começou antes — a espera conta a partir daqui."
+          >
+            <Input
+              type="date"
+              required
+              max={hojeTexto()}
+              value={novo.iniciadoEm}
+              onChange={(e) => setNovo({ ...novo, iniciadoEm: e.target.value })}
+            />
+          </Campo>
+          <Campo rotulo="Observação" dica="Aparece no cartão do lote, no quadro.">
             <Textarea
               rows={2}
               maxLength={300}

@@ -29,6 +29,7 @@ import {
   trocarSenhaSchema,
   usuarioSchema,
   criarLoteSchema,
+  editarLoteSchema,
   avancarLoteSchema,
   perdaSchema,
   divisaoSchema,
@@ -251,6 +252,19 @@ rotas.post(
   '/lotes',
   rota(async (req, res) => {
     res.status(201).json(await lotes.criarLote(criarLoteSchema.parse(req.body), req.sessao!))
+  }),
+)
+/*
+ * Corrigir a capa do lote: observação, data de abertura e quantidade inicial.
+ *
+ * PATCH e não PUT porque o corpo é parcial de propósito: o lote tem peça, cor,
+ * roteiro e movimentos, e nada disso se corrige por aqui. Mandar o lote inteiro
+ * daria a impressão de que dá.
+ */
+rotas.patch(
+  '/lotes/:id',
+  rota(async (req, res) => {
+    res.json(await lotes.editarLote(req.params.id, editarLoteSchema.parse(req.body)))
   }),
 )
 rotas.post(

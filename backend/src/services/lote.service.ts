@@ -5,6 +5,13 @@ import type { Sessao } from '../lib/token'
 import { plural } from '../lib/plural'
 import { avaliarExclusao } from '../lib/exclusao-lote'
 import {
+  avaliarQuantidadeDeAbertura,
+  corrigirAbertura,
+  diaDaAbertura,
+  ehObservacaoAutomatica,
+  instanteDaAbertura,
+} from '../lib/abertura-lote'
+import {
   calcularSaldos,
   saldoNaEtapa as saldoNaEtapaPuro,
   saldoTotalDoLote as saldoTotalPuro,
@@ -181,6 +188,8 @@ export async function listarLotes(filtros: {
     const perda = resumoDeMotivos(perdasPorLote.get(lote.id) ?? [])
     return {
       ...lote,
+      // mesmo dia mastigado do detalhe: a lista e o detalhe não podem discordar
+      iniciadoEmDia: diaDaAbertura((lote as unknown as { iniciadoEm: Date }).iniciadoEm),
       saldoTotal: distribuicao.reduce((s, d) => s + d.quantidade, 0),
       distribuicao,
       perdaTotal: perda.total,
@@ -240,6 +249,15 @@ export async function obterLote(id: string) {
 
   return {
     ...lote,
+    /*
+     * O DIA, JÁ MASTIGADO PELO SERVIDOR.
+     *
+     * A tela fazia `iniciadoEm.slice(0, 10)` para preencher o campo de data —
+     * o que é o dia em UTC. Um lote aberto às 23h de Novo Hamburgo é 02h UTC do
+     * dia seguinte: a tela mostrava 2 de agosto e o campo vinha com 3, e quem
+     * abrisse para arrumar a observação empurrava a data um dia.
+     */
+    iniciadoEmDia: diaDaAbertura(lote.iniciadoEm),
     roteiro,
     distribuicao: roteiro.map((r: { etapaId: string; etapa: { nome: string } }) => ({
       etapaId: r.etapaId,
@@ -289,6 +307,21 @@ export async function kanban(filtros: { pecaId?: string; corId?: string; respons
         const proxima = atual ? roteiro.find((r) => r.ordem === atual.ordem + 1) : undefined
         return {
           ...lote,
+          /*
+           * A OBSERVAÇÃO QUE O SISTEMA ESCREVEU NÃO VAI PARA O CARTÃO.
+           *
+           * `dividirLote` grava "Dividido de L-0031." no mesmo campo em que a
+           * pessoa escreve o recado dela. Isso passou despercebido enquanto
+           * nada exibia observação; agora que o cartão mostra, todo lote de
+           * divisão ganharia uma tarja repetindo o "veio do L-0031" que já
+           * está logo acima. No detalhe do lote ela continua visível — lá é
+           * histórico, e histórico pode ser prolixo.
+           */
+          observacao: ehObservacaoAutomatica(
+            (lote as unknown as { observacao: string | null }).observacao,
+          )
+            ? null
+            : (lote as unknown as { observacao: string | null }).observacao,
           quantidade: saldos.get(lote.id)?.get(etapa.id) ?? 0,
           responsavelSugeridoId: atual?.responsavelId ?? null,
           proximaEtapaId: proxima?.etapaId ?? null,
@@ -325,13 +358,32 @@ export async function criarLote(
     quantidade: number
     observacao?: string | null
     origem?: string
+    /** AAAA-MM-DD; ausente = agora */
+    iniciadoEm?: string | null
     /** lote nascido de encomenda herda o prazo dela e passa na frente */
     encomendaId?: string | null
   },
   sessao: Sessao,
+  agora = new Date(),
 ) {
   const roteiro = await roteiroDaPeca(dados.pecaId)
   const primeira = roteiro[0]
+
+  /*
+   * A DATA VALE PARA O LOTE E PARA O MOVIMENTO DE ABERTURA.
+   *
+   * São o mesmo fato guardado em dois lugares. Se só o lote recuasse, a fila do
+   * forno continuaria vendo o lote como aberto hoje — porque "parado há X dias"
+   * sai do ÚLTIMO movimento, e o de abertura é o único que existe. O lote
+   * lançado com três dias de atraso entraria na fila atrás de quem chegou
+   * depois dele de verdade, que é exatamente o que a data veio resolver.
+   */
+  let abertura = agora
+  if (dados.iniciadoEm) {
+    const avaliada = instanteDaAbertura(dados.iniciadoEm, agora)
+    if (!avaliada.ok) throw invalido(avaliada.erro)
+    abertura = avaliada.instante
+  }
 
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const lote = await tx.lote.create({
@@ -342,6 +394,7 @@ export async function criarLote(
         origem: dados.origem ?? 'manual',
         encomendaId: dados.encomendaId ?? null,
         observacao: dados.observacao || null,
+        iniciadoEm: abertura,
       },
     })
     // a encomenda passa a "em produção" assim que o primeiro lote dela nasce
@@ -361,10 +414,154 @@ export async function criarLote(
         responsavelId: primeira.responsavelId,
         usuarioId: sessao.id,
         usuarioNome: sessao.nome,
+        criadoEm: abertura,
       },
     })
     return lote
   })
+}
+
+/*
+ * CONTROLE TOTAL DO LOTE: corrigir o que foi digitado, sem apagar nada.
+ *
+ * "Hoje tivemos uma abertura de 28 peças mas deveria ser 30 e não tivemos como
+ * editar e tivemos que apagar tudo e abrir um novo lote."
+ *
+ * Apagar e reabrir custa o código do lote, o histórico inteiro e a espera já
+ * acumulada — e nem sempre é possível, porque lote que já se mexeu não se
+ * apaga. Aqui dá para corrigir os três campos que a pessoa DIGITA: observação,
+ * data de abertura e quantidade inicial.
+ *
+ * ── O QUE NÃO ENTRA, E POR QUÊ ──
+ *
+ * Etapa e cor ficam de fora. Essas só mudam por movimento, que é o que mantém o
+ * saldo auditável — um PATCH que as mexesse seria uma porta lateral para o
+ * livro-razão, sem deixar rastro de para onde a peça foi.
+ *
+ * ── POR QUE REESCREVER O MOVIMENTO DE ABERTURA, E NÃO LANÇAR UM AJUSTE ──
+ *
+ * Um movimento de ajuste seria mais puro, mas contaria uma história falsa: não
+ * entraram 2 peças hoje, entraram 30 na segunda-feira e alguém digitou 28. O
+ * carimbo de abertura é a única linha do razão que descreve um fato ANTERIOR ao
+ * próprio registro, e é por isso que ele — e só ele — é corrigível.
+ *
+ * Quem corrigiu fica registrado de outra forma: `middlewares/auditoria.ts` grava
+ * método, caminho, usuário e id em `LogAtividade` a cada requisição.
+ *
+ * ── LOTE NASCIDO DE DIVISÃO NÃO ENTRA ──
+ *
+ * O filho não tem movimento de abertura: ele tem `divisao_entrada`, que é o par
+ * do `divisao_saida` do pai. Mexer num sem o outro faria o filho receber peça
+ * antes de o pai soltá-la — e o teto de data olha só os movimentos do PRÓPRIO
+ * lote, então nada impediria recuar o filho para antes de o pai existir. A
+ * correção certa é no lote de origem.
+ */
+export async function editarLote(
+  id: string,
+  dados: { observacao?: string | null; iniciadoEm?: string | null; quantidade?: number | null },
+  agora = new Date(),
+) {
+  const lote = await prisma.lote.findUnique({ where: { id } })
+  if (!lote) throw naoEncontrado('Lote')
+  if (lote.canceladoEm) throw conflito('Este lote foi cancelado.')
+
+  /*
+   * "QUER MUDAR" NÃO É "MANDOU O CAMPO".
+   *
+   * A tela manda os três campos sempre, inclusive quando a pessoa só arrumou
+   * uma vírgula na observação. Tratar "veio o campo" como "quer mexer no razão"
+   * já quebrou isto uma vez: o lote de divisão tomava 409 numa mensagem que
+   * dizia, ela mesma, que a observação continuava editável — e não continuava.
+   */
+  const diaAtual = diaDaAbertura(lote.iniciadoEm)
+  const querMudarData = Boolean(dados.iniciadoEm) && dados.iniciadoEm !== diaAtual
+  const querMudarQuantidade = dados.quantidade != null && dados.quantidade !== lote.quantidadeInicial
+  const mexeNoRazao = querMudarData || querMudarQuantidade
+
+  if (mexeNoRazao && lote.origem === 'divisao') {
+    throw conflito(
+      'Este lote nasceu da divisão de outro, então a data e a quantidade dele vêm de lá. ' +
+        'Corrija no lote de origem — a observação daqui continua editável.',
+    )
+  }
+
+  const mudancas: { observacao?: string | null; iniciadoEm?: Date; quantidadeInicial?: number } = {}
+  const doMovimento: { criadoEm?: Date; quantidade?: number } = {}
+
+  if (dados.observacao !== undefined) {
+    mudancas.observacao = dados.observacao?.trim() ? dados.observacao.trim() : null
+  }
+
+  let abertura: { id: string; quantidade: number; etapaDestinoId: string | null } | null = null
+  let segundoEm: Date | null = null
+
+  if (mexeNoRazao) {
+    const movimentos = (await prisma.movimentoLote.findMany({
+      where: { loteId: id },
+      orderBy: { criadoEm: 'asc' },
+      select: { id: true, tipo: true, quantidade: true, criadoEm: true, etapaDestinoId: true },
+    })) as { id: string; tipo: string; quantidade: number; criadoEm: Date; etapaDestinoId: string | null }[]
+
+    const primeiro = movimentos[0]
+    if (!primeiro || primeiro.tipo !== 'inicio') {
+      throw conflito('Não achei o movimento de abertura deste lote, então não dá para corrigi-lo por aqui.')
+    }
+    abertura = primeiro
+    segundoEm = movimentos[1]?.criadoEm ?? null
+  }
+
+  if (querMudarData && dados.iniciadoEm && abertura) {
+    const avaliada = corrigirAbertura(dados.iniciadoEm, agora, diaAtual, segundoEm)
+    if (!avaliada.ok) throw invalido(avaliada.erro)
+    // `instante: null` = o dia não mudou; não se toca em carimbo à toa
+    if (avaliada.instante) {
+      mudancas.iniciadoEm = avaliada.instante
+      doMovimento.criadoEm = avaliada.instante
+    }
+  }
+
+  if (querMudarQuantidade && dados.quantidade != null && abertura) {
+    /*
+     * TUDO QUE JÁ SAIU DA PRIMEIRA ETAPA — e não o saldo que está lá agora.
+     *
+     * O quadro permite retorno de etapa. Um lote que avançou inteiro e voltou
+     * inteiro tem o saldo cheio de novo, e medir por saldo deixaria a abertura
+     * cair para 1 com 27 peças evaporando do estoque sem virar perda.
+     */
+    const saidas = (await prisma.movimentoLote.aggregate({
+      _sum: { quantidade: true },
+      where: { loteId: id, etapaOrigemId: abertura.etapaDestinoId ?? undefined },
+    })) as { _sum: { quantidade: number | null } }
+    const jaSaiu = abertura.etapaDestinoId ? (saidas._sum.quantidade ?? 0) : 0
+
+    const avaliada = avaliarQuantidadeDeAbertura(dados.quantidade, abertura.quantidade, jaSaiu)
+    if (!avaliada.ok) throw invalido(avaliada.erro)
+    if (avaliada.diferenca !== 0) {
+      mudancas.quantidadeInicial = dados.quantidade
+      doMovimento.quantidade = dados.quantidade
+    }
+  }
+
+  if (Object.keys(mudancas).length === 0) return lote
+
+  /*
+   * OS DOIS NA MESMA TRANSAÇÃO.
+   *
+   * O lote e o movimento de abertura guardam o mesmo fato. Gravados em duas
+   * idas ao banco, uma falha no meio deixaria um movimento dizendo 30 e um lote
+   * dizendo 28 — e as duas linhas são plausíveis sozinhas, então ninguém
+   * descobriria depois qual estava certa.
+   */
+  const atualizado = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    if (abertura && Object.keys(doMovimento).length > 0) {
+      await tx.movimentoLote.update({ where: { id: abertura.id }, data: doMovimento })
+    }
+    return tx.lote.update({ where: { id }, data: mudancas })
+  })
+
+  // subir a quantidade pode tirar o lote de "concluído", e baixar pode fechá-lo
+  await atualizarConclusao(id)
+  return atualizado
 }
 
 /*

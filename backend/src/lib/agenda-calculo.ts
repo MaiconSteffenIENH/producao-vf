@@ -16,7 +16,7 @@
 
 const DIA_MS = 24 * 60 * 60 * 1000
 /** O ateliê é em Novo Hamburgo/RS. UTC-3, sem horário de verão desde 2019. */
-const FUSO_ATELIE_MS = 3 * 60 * 60 * 1000
+export const FUSO_ATELIE_MS = 3 * 60 * 60 * 1000
 
 /** Segunda-feira 00:00 no fuso do ateliê. */
 export function inicioDaSemana(agora: Date): Date {

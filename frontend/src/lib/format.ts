@@ -11,6 +11,20 @@ export const brl = (v: number | string | null | undefined): string => {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+/*
+ * HOJE, no fuso do ateliê — a mesma definição que o servidor usa.
+ *
+ * O campo de data manda "AAAA-MM-DD" e o servidor resolve o dia com
+ * `diaDoAtelie` (UTC-3, Novo Hamburgo). Se a tela perguntasse "que dia é hoje?"
+ * ao relógio do aparelho, um celular configurado noutro fuso mandaria amanhã e
+ * o servidor responderia "o lote não pode ter começado no futuro" — sobre uma
+ * data que a própria tela sugeriu.
+ */
+const FUSO_ATELIE_MS = 3 * 60 * 60 * 1000
+
+export const hojeNoAtelie = (agora: Date = new Date()): string =>
+  new Date(agora.getTime() - FUSO_ATELIE_MS).toISOString().slice(0, 10)
+
 export const dataBr = (iso: string | Date | null | undefined): string => {
   if (!iso) return '—'
   const d = typeof iso === 'string' ? new Date(iso) : iso

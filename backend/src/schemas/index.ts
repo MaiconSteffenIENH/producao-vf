@@ -133,13 +133,50 @@ export const usuarioSchema = z.object({
 })
 
 // ── Produção (Fase 3) ───────────────────────────────────
+/*
+ * A data vem como AAAA-MM-DD, do jeito que o <input type="date"> manda.
+ *
+ * O que a data SIGNIFICA — se cabe no calendário, se não é futuro, se não está
+ * a um ano atrás por erro de digitação — é regra de negócio e mora em
+ * lib/abertura-lote.ts, com teste. Aqui só se confere o formato, senão a mesma
+ * regra ficaria escrita em dois lugares e um deles envelheceria.
+ */
+const dataSimples = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'use o formato AAAA-MM-DD')
+
 export const criarLoteSchema = z.object({
   encomendaId: z.string().uuid().optional().nullable(),
   pecaId: z.string().uuid('escolha a peça'),
   quantidade: z.coerce.number().int().min(1, 'quantidade mínima 1').max(99999),
   observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
-  origem: z.enum(['manual', 'planejamento']).default('manual'),
+  iniciadoEm: dataSimples.or(z.literal('')).optional().nullable(),
+  // 'encomenda' faltava: a tela de Planejamento manda esse valor desde sempre e
+  // toda sugestão vinda de encomenda tomava 400 sem ninguém entender por quê
+  origem: z.enum(['manual', 'planejamento', 'encomenda']).default('manual'),
 })
+
+/*
+ * O que dá para corrigir num lote já aberto: o que a pessoa DIGITOU.
+ *
+ * Etapa e cor ficam de fora de propósito — essas só mudam por movimento, que é
+ * o que mantém rastro de para onde a peça foi. A quantidade INICIAL entra
+ * porque ela também é digitação, e errá-la obrigava a apagar o lote e refazer,
+ * perdendo código e histórico; o service confere que a correção não deixa
+ * buraco no razão.
+ */
+export const editarLoteSchema = z
+  .object({
+    observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+    // aceita '' porque o campo de data da tela pode ser apagado, e isso quer
+    // dizer "não mexe na data" — não pode virar 400 no meio de salvar o texto
+    iniciadoEm: dataSimples.or(z.literal('')).optional().nullable(),
+    // nulo = "não mexe na quantidade". A tela manda nulo quando o campo está
+    // vazio, e sem isso apagar o campo derrubava o salvamento da observação
+    // junto, com mensagem de validador em inglês.
+    quantidade: z.coerce.number().int().min(1).max(99999).optional().nullable(),
+  })
+  .refine((c) => c.observacao !== undefined || Boolean(c.iniciadoEm) || c.quantidade != null, {
+    message: 'Não veio nada para mudar.',
+  })
 
 export const avancarLoteSchema = z.object({
   chaveIdempotencia: z.string().trim().min(8).max(80).optional().nullable(),

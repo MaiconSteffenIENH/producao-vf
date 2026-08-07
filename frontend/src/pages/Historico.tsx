@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
-import { dataBr } from '../lib/format'
+import { dataBr, hojeNoAtelie } from '../lib/format'
 import {
   MOTIVOS_PERDA,
   MOTIVO_NAO_INFORMADO,
@@ -10,7 +10,19 @@ import {
   rotuloDoMotivo,
 } from '../lib/motivos-perda'
 import { avisar } from '../components/Toaster'
-import { Botao, CabecalhoPagina, Carregando, ChipCor, Etiqueta, Input, Modal, Select, Vazio } from '../components/ui'
+import {
+  Botao,
+  CabecalhoPagina,
+  Campo,
+  Carregando,
+  ChipCor,
+  Etiqueta,
+  Input,
+  Modal,
+  Select,
+  Textarea,
+  Vazio,
+} from '../components/ui'
 import { ConfirmarExclusaoLote } from '../components/ConfirmarExclusaoLote'
 
 /** Uma fatia do ranking de perdas: a conta vem pronta do backend, de propósito. */
@@ -23,6 +35,8 @@ type Lote = {
   saldoTotal: number
   origem: string
   iniciadoEm: string
+  /** AAAA-MM-DD no fuso do ateliê, pronto para o campo de data */
+  iniciadoEmDia: string
   concluidoEm: string | null
   canceladoEm: string | null
   observacao: string | null
@@ -101,6 +115,49 @@ export function Historico() {
   const [paraCancelar, setParaCancelar] = useState<Lote | null>(null)
   const [paraApagar, setParaApagar] = useState<string | null>(null)
   const [motivoCancelar, setMotivoCancelar] = useState('')
+  /*
+   * A capa do lote: observação e data de abertura.
+   *
+   * `null` = não está editando. Guardar o rascunho separado do `detalhe` é o
+   * que faz Cancelar de fato desfazer — mexer no `detalhe` deixaria o texto
+   * alterado na tela mesmo depois de desistir.
+   */
+  const [capa, setCapa] = useState<{ observacao: string; iniciadoEm: string; quantidade: string } | null>(
+    null,
+  )
+  const [salvandoCapa, setSalvandoCapa] = useState(false)
+
+  const salvarCapa = async () => {
+    if (!detalhe || !capa) return
+    setSalvandoCapa(true)
+    try {
+      await api.patch(`/lotes/${detalhe.id}`, {
+        observacao: capa.observacao,
+        iniciadoEm: capa.iniciadoEm,
+        // campo vazio = não mexe. `Number('')` é 0, e mandar 0 derrubava o
+        // salvamento da OBSERVAÇÃO junto, num erro sobre quantidade
+        quantidade: capa.quantidade.trim() === '' ? null : Number(capa.quantidade),
+      })
+      /*
+       * RECARREGA O DETALHE INTEIRO, e não só os campos que mudaram.
+       *
+       * A resposta do PATCH é o lote cru — sem movimentos, sem distribuição. Se
+       * a tela só costurasse os escalares, a linha do movimento de abertura no
+       * histórico continuaria mostrando a data e a quantidade velhas até alguém
+       * fechar e reabrir o lote, que é a forma mais convincente de parecer que
+       * não salvou.
+       */
+      const { data } = await api.get(`/lotes/${detalhe.id}`)
+      setDetalhe(data)
+      setCapa(null)
+      avisar.ok('Lote atualizado.')
+      await recarregar(true)
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para salvar.'))
+    } finally {
+      setSalvandoCapa(false)
+    }
+  }
 
   const recarregar = useCallback(
     async (silencioso = false) => {
@@ -336,7 +393,12 @@ export function Historico() {
 
       <Modal
         aberto={Boolean(detalhe)}
-        aoFechar={() => setDetalhe(null)}
+        aoFechar={() => {
+          // fechar descarta a edição junto: o rascunho não pode sobreviver
+          // para reaparecer em cima do PRÓXIMO lote que a pessoa abrir
+          setCapa(null)
+          setDetalhe(null)
+        }}
         titulo={detalhe ? `${detalhe.codigo} — ${detalhe.peca.nome}` : ''}
         largura="max-w-3xl"
       >
@@ -361,6 +423,81 @@ export function Historico() {
                 </span>
               )}
             </div>
+
+            {/*
+              OBSERVAÇÃO E DATA, QUE ATÉ AQUI NÃO APARECIAM.
+
+              A observação era gravada desde sempre e não tinha nenhuma tela que
+              a mostrasse — quem escrevia achava, com razão, que o campo não
+              salvava. A data existia e era sempre a do clique.
+            */}
+            {capa ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-borda p-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Campo
+                    rotulo="Aberto em"
+                    dica="Mudar isto move também o registro de abertura no histórico."
+                  >
+                    <Input
+                      type="date"
+                      max={hojeNoAtelie()}
+                      value={capa.iniciadoEm}
+                      onChange={(e) => setCapa({ ...capa, iniciadoEm: e.target.value })}
+                    />
+                  </Campo>
+                  <Campo
+                    rotulo="Abriu com"
+                    dica="Para o caso de ter digitado 28 onde eram 30. Subir reabre um lote já concluído."
+                  >
+                    <Input
+                      type="number"
+                      min={1}
+                      value={capa.quantidade}
+                      onChange={(e) => setCapa({ ...capa, quantidade: e.target.value })}
+                      onFocus={(e) => e.target.select()}
+                    />
+                  </Campo>
+                </div>
+                <Campo rotulo="Observação" dica="Aparece no cartão do lote, no quadro.">
+                  <Textarea
+                    rows={3}
+                    maxLength={300}
+                    value={capa.observacao}
+                    onChange={(e) => setCapa({ ...capa, observacao: e.target.value })}
+                  />
+                </Campo>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Botao variante="secundario" onClick={() => setCapa(null)} disabled={salvandoCapa}>
+                    Cancelar
+                  </Botao>
+                  <Botao onClick={salvarCapa} disabled={salvandoCapa}>
+                    {salvandoCapa ? 'Salvando…' : 'Salvar'}
+                  </Botao>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 text-sm leading-relaxed text-tinta">
+                  {detalhe.observacao || <span className="text-tinta-fraca">Sem observação.</span>}
+                </p>
+                {!detalhe.canceladoEm && (
+                  <Botao
+                    variante="secundario"
+                    onClick={() =>
+                      setCapa({
+                        observacao: detalhe.observacao ?? '',
+                        // vem pronto do servidor, no fuso do ateliê: fatiar o
+                        // ISO aqui devolveria o dia seguinte para lote da noite
+                        iniciadoEm: detalhe.iniciadoEmDia,
+                        quantidade: String(detalhe.quantidadeInicial),
+                      })
+                    }
+                  >
+                    <Pencil size={15} /> Editar
+                  </Botao>
+                )}
+              </div>
+            )}
 
             <div>
               <h3 className="mb-2 text-sm font-semibold text-tinta">Onde as peças estão</h3>
