@@ -3,7 +3,7 @@ import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
 import { CalendarOff } from 'lucide-react'
-import { Botao, CabecalhoPagina, Card, Carregando, Etiqueta, Select, Vazio } from '../components/ui'
+import { Botao, CabecalhoPagina, Card, Carregando, Etiqueta, SelecaoBuscavel, Vazio } from '../components/ui'
 import { useAuth } from '../store/auth'
 
 type Agenda = {
@@ -191,14 +191,14 @@ export function MeuDia() {
         descricao="A meta considera a semana: o que não saiu ontem soma hoje, o que passou abate."
         acoes={
           <div className="w-full sm:w-56">
-            <Select value={foco} onChange={(e) => setFoco(e.target.value)}>
-              <option value="">Todo mundo</option>
-              {agendas.map((a) => (
-                <option key={a.responsavel.id} value={a.responsavel.id}>
-                  {a.responsavel.nome}
-                </option>
-              ))}
-            </Select>
+            <SelecaoBuscavel
+              valor={foco}
+              aoEscolher={setFoco}
+              limpavel
+              placeholder="Todo mundo"
+              vazio="Ninguém com esse nome."
+              opcoes={agendas.map((a) => ({ valor: a.responsavel.id, rotulo: a.responsavel.nome }))}
+            />
           </div>
         }
       />

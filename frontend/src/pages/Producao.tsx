@@ -19,6 +19,7 @@ import {
   InputNumero,
   Modal,
   Select,
+  SelecaoBuscavel,
   Textarea,
   Vazio,
 } from '../components/ui'
@@ -412,24 +413,24 @@ export function Producao() {
         acoes={
           <>
             <div className="min-w-0 sm:w-52">
-              <Select value={filtroPeca} onChange={(e) => setFiltroPeca(e.target.value)}>
-                <option value="">Todas as peças</option>
-                {pecas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
-              </Select>
+              <SelecaoBuscavel
+                valor={filtroPeca}
+                aoEscolher={setFiltroPeca}
+                limpavel
+                placeholder="Todas as peças"
+                vazio="Nenhuma peça com esse nome."
+                opcoes={pecas.map((p) => ({ valor: p.id, rotulo: p.nome }))}
+              />
             </div>
             <div className="min-w-0 sm:w-52">
-              <Select value={filtroCor} onChange={(e) => setFiltroCor(e.target.value)}>
-                <option value="">Todos os esmaltes</option>
-                {cores.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </Select>
+              <SelecaoBuscavel
+                valor={filtroCor}
+                aoEscolher={setFiltroCor}
+                limpavel
+                placeholder="Todos os esmaltes"
+                vazio="Nenhum esmalte com esse nome."
+                opcoes={cores.map((c) => ({ valor: c.id, rotulo: c.nome }))}
+              />
             </div>
             <Botao onClick={() => setNovoAberto(true)} className="col-span-2 justify-center sm:col-span-1">
               <Plus size={16} /> Novo lote
@@ -731,14 +732,13 @@ export function Producao() {
       >
         <form onSubmit={criarLote} className="flex flex-col gap-4">
           <Campo rotulo="Peça" dica="O lote entra na primeira etapa do roteiro dela.">
-            <Select required value={novo.pecaId} onChange={(e) => setNovo({ ...novo, pecaId: e.target.value })}>
-              <option value="">— escolha —</option>
-              {pecas.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </Select>
+            <SelecaoBuscavel
+              required
+              valor={novo.pecaId}
+              aoEscolher={(v) => setNovo({ ...novo, pecaId: v })}
+              vazio="Nenhuma peça com esse nome. Cadastre em Peças antes de abrir o lote."
+              opcoes={pecas.map((p) => ({ valor: p.id, rotulo: p.nome }))}
+            />
           </Campo>
           <Campo rotulo="Quantidade">
             <InputNumero
@@ -849,32 +849,40 @@ export function Producao() {
                     : 'Se você esmaltar só parte, o sistema separa um lote novo com esta cor.'
                 }
               >
-                <Select
+                <SelecaoBuscavel
                   required
                   disabled={Boolean(acao.cartao.cor)}
-                  value={form.corId}
-                  onChange={(e) => setForm({ ...form, corId: e.target.value })}
-                >
-                  <option value="">— escolha o esmalte —</option>
-                  {cores.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome}
-                    </option>
-                  ))}
-                </Select>
+                  valor={form.corId}
+                  aoEscolher={(v) => setForm({ ...form, corId: v })}
+                  placeholder="— escolha o esmalte —"
+                  vazio="Nenhum esmalte com esse nome."
+                  opcoes={cores.map((c) => ({
+                    valor: c.id,
+                    rotulo: c.nome,
+                    // a bolinha da cor: escolher esmalte pelo nome é decorar
+                    // doze palavras; pela cor é olhar
+                    enfeite: (
+                      <span
+                        aria-hidden
+                        className="h-3.5 w-3.5 shrink-0 rounded-full border border-borda"
+                        style={{ backgroundColor: c.hex }}
+                      />
+                    ),
+                  }))}
+                />
               </Campo>
             )}
 
             {acao.tipo === 'avancar' && (
               <Campo rotulo="Quem fez">
-                <Select value={form.responsavelId} onChange={(e) => setForm({ ...form, responsavelId: e.target.value })}>
-                  <option value="">— responsável padrão da etapa —</option>
-                  {responsaveis.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.nome}
-                    </option>
-                  ))}
-                </Select>
+                <SelecaoBuscavel
+                  valor={form.responsavelId}
+                  aoEscolher={(v) => setForm({ ...form, responsavelId: v })}
+                  limpavel
+                  placeholder="— responsável padrão da etapa —"
+                  vazio="Ninguém com esse nome."
+                  opcoes={responsaveis.map((r) => ({ valor: r.id, rotulo: r.nome }))}
+                />
               </Campo>
             )}
 

@@ -1,7 +1,8 @@
-import { forwardRef, useEffect, useRef, useState, type ReactNode } from 'react'
+import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { X } from 'lucide-react'
+import { ChevronDown, X } from 'lucide-react'
 import { caixaAltaAoDigitar } from '../lib/nomes'
+import { filtrarPorBusca, grifar } from '../lib/busca'
 import { interpretarNumero, podeDigitar, textoDoNumero } from '../lib/numero'
 
 /*
@@ -193,6 +194,255 @@ export const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<H
   ),
 )
 Select.displayName = 'Select'
+
+/*
+ * ESCOLHA COM BUSCA — a lista suspensa que aceita você digitar.
+ *
+ * O ateliê tem 16 peças e 12 esmaltes, e as duas listas só crescem. Rolar até
+ * achar, em pé e com a peça na mão, é onde a pessoa desiste e escolhe a errada.
+ *
+ * ── CLICAR CONTINUA ABRINDO TUDO ──
+ *
+ * A busca é um ATALHO, não um pedágio. Quem não lembra o nome tem exatamente o
+ * que tinha antes: a lista inteira. Um campo que só funciona para quem já sabe
+ * o que procurar é pior do que a lista suspensa que ele substitui.
+ *
+ * ── SAIR SEM ESCOLHER APAGA O TEXTO ──
+ *
+ * É o defeito clássico deste tipo de campo: fica "xic" escrito, a tela parece
+ * preenchida e nada foi selecionado. Aqui o campo volta a mostrar o que está de
+ * fato escolhido — ou vazio, se não há nada.
+ *
+ * ── TECLADO RESOLVE SOZINHO ──
+ *
+ * Digitar, ↓ e Enter. Quem abre dez lotes seguidos faz isso sem olhar, e o
+ * primeiro da lista é o mais provável porque `filtrarPorBusca` ordena por
+ * relevância, não por alfabeto.
+ */
+
+export type OpcaoBuscavel = {
+  valor: string
+  rotulo: string
+  /** o que MAIS encontra esta opção: categoria, tipo. "café" acha o BULE. */
+  extra?: string | null
+  /** desenhado à esquerda do rótulo — a bolinha do esmalte, por exemplo */
+  enfeite?: ReactNode
+}
+
+export function SelecaoBuscavel({
+  opcoes,
+  valor,
+  aoEscolher,
+  placeholder = 'Clique ou comece a digitar…',
+  vazio = 'Nenhum resultado.',
+  limpavel = false,
+  id,
+  required,
+  disabled,
+}: {
+  opcoes: readonly OpcaoBuscavel[]
+  valor: string
+  aoEscolher: (valor: string) => void
+  placeholder?: string
+  /** o que dizer quando a busca não acha nada — cada tela sabe o próprio caminho */
+  vazio?: string
+  /** mostra o X para desmarcar; usar em filtro, não em campo obrigatório */
+  limpavel?: boolean
+  id?: string
+  required?: boolean
+  disabled?: boolean
+}) {
+  const escolhida = opcoes.find((o) => o.valor === valor) ?? null
+  const [aberta, setAberta] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [ativa, setAtiva] = useState(0)
+  const caixa = useRef<HTMLDivElement>(null)
+  const entrada = useRef<HTMLInputElement>(null)
+  const listaRef = useRef<HTMLUListElement>(null)
+
+  const visiveis = useMemo(
+    () => (aberta ? filtrarPorBusca(opcoes, busca) : []),
+    [aberta, busca, opcoes],
+  )
+
+  // clicar fora fecha; sem isto a lista fica pendurada sobre a tela
+  useEffect(() => {
+    if (!aberta) return
+    const aoClicar = (e: MouseEvent) => {
+      if (!caixa.current?.contains(e.target as Node)) setAberta(false)
+    }
+    document.addEventListener('mousedown', aoClicar)
+    return () => document.removeEventListener('mousedown', aoClicar)
+  }, [aberta])
+
+  /*
+   * A opção ativa tem de ficar VISÍVEL ao navegar com as setas.
+   *
+   * Sem isto, segurar ↓ move a seleção para fora da janela rolável e a pessoa
+   * escolhe às cegas — que é pior do que não ter teclado nenhum.
+   */
+  useEffect(() => {
+    if (!aberta) return
+    listaRef.current?.children[ativa]?.scrollIntoView({ block: 'nearest' })
+  }, [ativa, aberta, visiveis.length])
+
+  const abrir = () => {
+    setBusca('')
+    setAtiva(0)
+    setAberta(true)
+  }
+
+  /*
+   * ESCOLHER FECHA A LISTA, MAS NÃO TIRA O FOCO.
+   *
+   * A primeira versão dava `blur()` aqui, e isso quebrava o caminho normal de um
+   * formulário: escolhida a peça, o Tab seguinte partia do começo da página em
+   * vez de ir para a Quantidade, e um Enter logo depois não enviava nada. Quem
+   * abre dez lotes seguidos faz peça → Tab → quantidade → Enter sem olhar.
+   */
+  const escolher = (opcao: OpcaoBuscavel | undefined) => {
+    if (!opcao) return
+    aoEscolher(opcao.valor)
+    setAberta(false)
+    setBusca('')
+  }
+
+  const aoTeclar = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!aberta) return abrir()
+      setAtiva((i) => Math.min(i + 1, visiveis.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setAtiva((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      // só engole o Enter com a lista ABERTA: fechada, ele envia o formulário
+      if (aberta) {
+        e.preventDefault()
+        escolher(visiveis[ativa])
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setAberta(false)
+      setBusca('')
+    }
+  }
+
+  return (
+    <div ref={caixa} className="relative">
+      <input
+        ref={entrada}
+        id={id}
+        role="combobox"
+        aria-expanded={aberta}
+        aria-autocomplete="list"
+        autoComplete="off"
+        disabled={disabled}
+        /*
+         * O `required` do HTML mede o TEXTO do campo, e com a lista aberta esse
+         * texto é a busca, não a escolha. Amarrá-lo ao que está de fato
+         * selecionado evita o formulário recusar um campo que a pessoa preencheu.
+         */
+        required={required && !escolhida}
+        placeholder={escolhida && !aberta ? undefined : placeholder}
+        value={aberta ? busca : (escolhida?.rotulo ?? '')}
+        onFocus={abrir}
+        // com o foco já no campo, clicar não dispara `focus` — e sem isto a
+        // lista não reabriria depois de escolher, porque escolher não tira o foco
+        onClick={() => {
+          if (!aberta) abrir()
+        }}
+        onChange={(e) => {
+          setBusca(e.target.value)
+          setAtiva(0)
+          if (!aberta) setAberta(true)
+        }}
+        onKeyDown={aoTeclar}
+        /*
+         * SAIR DO CAMPO FECHA A LISTA — e não só limpa a busca.
+         *
+         * Fechar só no clique de fora deixava o Tab de lado: a lista continuava
+         * "aberta" no estado, o campo mostrava a busca vazia em vez do nome
+         * escolhido, e o botão de limpar (que só aparece com a lista fechada)
+         * sumia. Quem sai pelo teclado via um campo em branco sobre uma escolha
+         * que estava lá.
+         */
+        onBlur={() => {
+          setBusca('')
+          setAberta(false)
+        }}
+        className={`${baseCampo} cursor-pointer pr-16`}
+      />
+
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-tinta-fraca"
+      >
+        <ChevronDown size={15} />
+      </span>
+
+      {limpavel && escolhida && !aberta && (
+        <button
+          type="button"
+          aria-label="Limpar"
+          // mousedown antes do click: sem isto o blur do campo re-renderiza e o
+          // botão some debaixo do dedo antes de o click chegar
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => aoEscolher('')}
+          className="absolute right-9 top-1/2 -translate-y-1/2 rounded-md p-1 text-tinta-fraca hover:bg-superficie-2 hover:text-tinta"
+        >
+          <X size={14} />
+        </button>
+      )}
+
+      {aberta && (
+        <ul
+          ref={listaRef}
+          role="listbox"
+          className="anima-surgir absolute left-0 right-0 top-[calc(100%+0.35rem)] z-30 max-h-72 overflow-auto rounded-xl border border-borda bg-superficie p-1.5 shadow-media"
+        >
+          {visiveis.length === 0 ? (
+            <li className="px-3 py-3.5 text-sm leading-relaxed text-tinta-fraca">{vazio}</li>
+          ) : (
+            visiveis.map((o, i) => (
+              <li
+                key={o.valor}
+                role="option"
+                aria-selected={i === ativa}
+                // mousedown, e não click: o click chega DEPOIS do blur, e o blur
+                // já teria fechado a lista debaixo do dedo
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  escolher(o)
+                }}
+                onMouseEnter={() => setAtiva(i)}
+                className={`flex cursor-pointer items-center justify-between gap-2.5 rounded-lg px-3 py-2 text-sm text-tinta ${
+                  i === ativa ? 'bg-marca/12' : ''
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {o.enfeite}
+                  <span className="truncate">
+                    {grifar(o.rotulo, busca).map((p, n) =>
+                      p.forte ? (
+                        <strong key={n} className="font-semibold text-marca-escura">
+                          {p.texto}
+                        </strong>
+                      ) : (
+                        <span key={n}>{p.texto}</span>
+                      ),
+                    )}
+                  </span>
+                </span>
+                {o.extra && <span className="shrink-0 text-xs text-tinta-fraca">{o.extra}</span>}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 export function Campo({
   rotulo,

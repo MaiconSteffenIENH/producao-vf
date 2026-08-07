@@ -21,6 +21,7 @@ import {
   InputNumero,
   Modal,
   Select,
+  SelecaoBuscavel,
   Textarea,
   Vazio,
 } from '../components/ui'
@@ -108,7 +109,7 @@ const COR_SEM_MOTIVO = '#918787'
 export function Historico() {
   const [lotes, setLotes] = useState<LoteDaLista[]>([])
   const [pecas, setPecas] = useState<{ id: string; nome: string }[]>([])
-  const [cores, setCores] = useState<{ id: string; nome: string }[]>([])
+  const [cores, setCores] = useState<{ id: string; nome: string; hex: string }[]>([])
   const [etapas, setEtapas] = useState<{ id: string; nome: string }[]>([])
   const [carregando, setCarregando] = useState(true)
   const [filtros, setFiltros] = useState({
@@ -237,34 +238,44 @@ export function Historico() {
         acoes={
           <>
             <div className="w-full sm:w-40">
-              <Select value={filtros.pecaId} onChange={(e) => setFiltros({ ...filtros, pecaId: e.target.value })}>
-                <option value="">Todas as peças</option>
-                {pecas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
-              </Select>
+              <SelecaoBuscavel
+                valor={filtros.pecaId}
+                aoEscolher={(v) => setFiltros({ ...filtros, pecaId: v })}
+                limpavel
+                placeholder="Todas as peças"
+                vazio="Nenhuma peça com esse nome."
+                opcoes={pecas.map((p) => ({ valor: p.id, rotulo: p.nome }))}
+              />
             </div>
             <div className="w-full sm:w-36">
-              <Select value={filtros.corId} onChange={(e) => setFiltros({ ...filtros, corId: e.target.value })}>
-                <option value="">Todas as cores</option>
-                {cores.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </Select>
+              <SelecaoBuscavel
+                valor={filtros.corId}
+                aoEscolher={(v) => setFiltros({ ...filtros, corId: v })}
+                limpavel
+                placeholder="Todas as cores"
+                vazio="Nenhum esmalte com esse nome."
+                opcoes={cores.map((c) => ({
+                  valor: c.id,
+                  rotulo: c.nome,
+                  enfeite: (
+                    <span
+                      aria-hidden
+                      className="h-3.5 w-3.5 shrink-0 rounded-full border border-borda"
+                      style={{ backgroundColor: c.hex }}
+                    />
+                  ),
+                }))}
+              />
             </div>
             <div className="w-full sm:w-36">
-              <Select value={filtros.etapaId} onChange={(e) => setFiltros({ ...filtros, etapaId: e.target.value })}>
-                <option value="">Todas as etapas</option>
-                {etapas.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nome}
-                  </option>
-                ))}
-              </Select>
+              <SelecaoBuscavel
+                valor={filtros.etapaId}
+                aoEscolher={(v) => setFiltros({ ...filtros, etapaId: v })}
+                limpavel
+                placeholder="Todas as etapas"
+                vazio="Nenhuma etapa com esse nome."
+                opcoes={etapas.map((e) => ({ valor: e.id, rotulo: e.nome }))}
+              />
             </div>
             <div className="w-full sm:w-36">
               <Select value={filtros.situacao} onChange={(e) => setFiltros({ ...filtros, situacao: e.target.value })}>

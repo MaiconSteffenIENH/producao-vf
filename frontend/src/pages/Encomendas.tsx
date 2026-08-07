@@ -13,6 +13,7 @@ import {
   InputNumero,
   Modal,
   Select,
+  SelecaoBuscavel,
   Textarea,
   Vazio,
 } from '../components/ui'
@@ -245,37 +246,30 @@ export function Encomendas() {
             <div className="flex flex-col gap-2">
               {form.itens.map((item, i) => (
                 <div key={i} className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[2fr_1.5fr_5rem_auto]">
-                  <Select
+                  <SelecaoBuscavel
                     required
-                    value={item.pecaId}
-                    onChange={(e) => {
+                    valor={item.pecaId}
+                    aoEscolher={(v) => {
                       const itens = [...form.itens]
-                      itens[i] = { ...item, pecaId: e.target.value }
+                      itens[i] = { ...item, pecaId: v }
                       setForm({ ...form, itens })
                     }}
-                  >
-                    <option value="">— peça —</option>
-                    {pecas.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nome}
-                      </option>
-                    ))}
-                  </Select>
-                  <Select
-                    value={item.corId ?? ''}
-                    onChange={(e) => {
+                    placeholder="— peça —"
+                    vazio="Nenhuma peça com esse nome."
+                    opcoes={pecas.map((p) => ({ valor: p.id, rotulo: p.nome }))}
+                  />
+                  <SelecaoBuscavel
+                    valor={item.corId ?? ''}
+                    aoEscolher={(v) => {
                       const itens = [...form.itens]
-                      itens[i] = { ...item, corId: e.target.value }
+                      itens[i] = { ...item, corId: v }
                       setForm({ ...form, itens })
                     }}
-                  >
-                    <option value="">cor a definir</option>
-                    {cores.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nome}
-                      </option>
-                    ))}
-                  </Select>
+                    limpavel
+                    placeholder="cor a definir"
+                    vazio="Nenhum esmalte com esse nome."
+                    opcoes={cores.map((c) => ({ valor: c.id, rotulo: c.nome }))}
+                  />
                   <InputNumero
                     min={1}
                     valor={item.quantidade}

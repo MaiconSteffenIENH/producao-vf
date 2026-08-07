@@ -15,6 +15,7 @@ import {
   InputNumero,
   Modal,
   Select,
+  SelecaoBuscavel,
   Textarea,
   Vazio,
 } from '../components/ui'
@@ -219,14 +220,14 @@ export function Pecas() {
               <Input placeholder="Buscar peça…" value={busca} onChange={(e) => setBusca(e.target.value)} />
             </div>
             <div className="w-full sm:w-48">
-              <Select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
-                <option value="">Todas as categorias</option>
-                {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </Select>
+              <SelecaoBuscavel
+                valor={filtroCategoria}
+                aoEscolher={setFiltroCategoria}
+                limpavel
+                placeholder="Todas as categorias"
+                vazio="Nenhuma categoria com esse nome."
+                opcoes={categorias.map((c) => ({ valor: c.id, rotulo: c.nome }))}
+              />
             </div>
             <Botao onClick={abrirNova}>
               <Plus size={16} /> Nova peça
@@ -343,31 +344,23 @@ export function Pecas() {
               />
             </Campo>
             <Campo rotulo="Categoria">
-              <Select
+              <SelecaoBuscavel
                 required
-                value={form.categoriaId}
-                onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
-              >
-                <option value="">— escolha —</option>
-                {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </Select>
+                valor={form.categoriaId}
+                aoEscolher={(v) => setForm({ ...form, categoriaId: v })}
+                vazio="Nenhuma categoria com esse nome."
+                opcoes={categorias.map((c) => ({ valor: c.id, rotulo: c.nome }))}
+              />
             </Campo>
             <Campo rotulo="Responsável inicial">
-              <Select
-                value={form.responsavelInicialId}
-                onChange={(e) => setForm({ ...form, responsavelInicialId: e.target.value })}
-              >
-                <option value="">— nenhum —</option>
-                {responsaveis.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.nome}
-                  </option>
-                ))}
-              </Select>
+              <SelecaoBuscavel
+                valor={form.responsavelInicialId}
+                aoEscolher={(v) => setForm({ ...form, responsavelInicialId: v })}
+                limpavel
+                placeholder="— nenhum —"
+                vazio="Ninguém com esse nome."
+                opcoes={responsaveis.map((r) => ({ valor: r.id, rotulo: r.nome }))}
+              />
             </Campo>
             <Campo rotulo="Tempo médio (dias)" dica="Do início ao pronto. A loja anuncia ~30 dias.">
               <InputNumero
