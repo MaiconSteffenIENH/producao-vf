@@ -138,12 +138,26 @@ async function main() {
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    for (const m of mudancas) {
-      const modelo = (tx as unknown as Record<string, { update: (a: unknown) => Promise<unknown> }>)[m.modelo]
-      await modelo.update({ where: { id: m.id }, data: { nome: m.para } })
-    }
-  })
+  /*
+   * TRANSAÇÃO EM LOTE, NÃO INTERATIVA.
+   *
+   * A primeira versão abria `$transaction(async (tx) => …)` e mandava um
+   * `update` de cada vez. Contra o Neon isso estourou no meio: cada ida e
+   * volta até o pooler custa uns 100 ms, 54 nomes passam dos 5 s que a
+   * transação interativa do Prisma espera por padrão, e ela morre com
+   * "Transaction not found" — nada gravado, o que ao menos foi seguro.
+   *
+   * A forma em ARRAY manda tudo de uma vez e o servidor executa dentro de um
+   * BEGIN/COMMIT só. Não tem relógio de transação interativa correndo, e a
+   * garantia continua a mesma: se um update falhar, nenhum vale.
+   */
+  const escritas = mudancas.map((m) =>
+    (prisma as unknown as Record<string, { update: (a: unknown) => Promise<unknown> }>)[m.modelo].update({
+      where: { id: m.id },
+      data: { nome: m.para },
+    }),
+  )
+  await prisma.$transaction(escritas as never)
 
   console.log(`\nPronto. ${mudancas.length} nome(s) em caixa alta.`)
   console.log('A busca não muda de comportamento: `nomeBusca` já é minúsculo e sem')
