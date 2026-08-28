@@ -22,6 +22,7 @@ const incluirTudo = {
   cores: {
     include: { cor: { select: { id: true, nome: true, hex: true, malhado: true, amostraUrl: true, ativo: true } } },
   },
+  argila: { select: { id: true, nome: true, unidade: true, estoqueAtual: true } },
   insumos: {
     include: {
       materiaPrima: { select: { id: true, nome: true, tipo: true, unidade: true, estoqueAtual: true } },
@@ -140,6 +141,25 @@ async function validarInsumos(insumos: ReturnType<typeof normalizarInsumos>) {
  * carrega a lista inteira de problemas: quem cadastra quer saber tudo o que
  * falta de uma vez, e não descobrir um erro por tentativa de salvar.
  */
+/**
+ * A argila escolhida existe e é mesmo argila?
+ *
+ * O tipo é conferido de propósito: a tela só oferece matéria-prima do tipo
+ * `argila`, mas o campo aceita qualquer id, e uma peça "feita de caixa de
+ * papelão" faria o planejamento mandar comprar embalagem pelo peso do barro.
+ */
+async function validarArgila(argilaId: string | null | undefined) {
+  if (!argilaId) return
+  const mp = await prisma.materiaPrima.findUnique({
+    where: { id: argilaId },
+    select: { tipo: true, nome: true },
+  })
+  if (!mp) throw invalido('A argila escolhida não existe mais. Recarregue a tela.')
+  if (mp.tipo !== 'argila') {
+    throw invalido(`"${mp.nome}" não é uma argila. Escolha uma matéria-prima do tipo argila.`)
+  }
+}
+
 function validarFicha(dados: DadosPeca) {
   const problemas = conferirFicha({
     alturaCm: dados.alturaCm ?? null,
@@ -173,6 +193,8 @@ const fichaDe = (dados: DadosPeca) => ({
   pesoCruG: dados.pesoCruG,
   medidasMomento: dados.medidasMomento,
   medidaToleranciaPct: dados.medidaToleranciaPct,
+  // string vazia do select vira nulo; ausente continua ausente
+  argilaId: dados.argilaId === undefined ? undefined : dados.argilaId || null,
 })
 
 export async function criarPeca(dados: DadosPeca) {
@@ -181,6 +203,7 @@ export async function criarPeca(dados: DadosPeca) {
   const insumos = normalizarInsumos(dados.insumos)
   await validarReferencias(roteiro, cores)
   await validarInsumos(insumos)
+  await validarArgila(dados.argilaId)
   validarFicha(dados)
 
   const peca = await prisma.peca.create({
@@ -211,6 +234,7 @@ export async function atualizarPeca(id: string, dados: DadosPeca) {
   const insumos = normalizarInsumos(dados.insumos)
   await validarReferencias(roteiro, cores)
   await validarInsumos(insumos)
+  await validarArgila(dados.argilaId)
   validarFicha(dados)
 
   // Roteiro, cores e insumos são substituídos inteiros: é a única forma de
@@ -334,6 +358,7 @@ export async function duplicarPeca(id: string, nomePedido?: string) {
         pesoCruG: original.pesoCruG,
         medidasMomento: original.medidasMomento,
         medidaToleranciaPct: original.medidaToleranciaPct,
+        argilaId: original.argilaId,
         observacao: original.observacao,
         ativo: false, // nasce inativa: obriga a revisar antes de entrar no planejamento
         roteiro: {

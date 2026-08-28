@@ -258,6 +258,10 @@ model Peca {
   /// margem aceitável, em %. Peça artesanal não sai idêntica: sem tolerância a
   /// ficha vira número exato que nenhuma peça cumpre, e a equipe ignora o campo
   medidaToleranciaPct  Decimal? @map("medida_tolerancia_pct") @db.Decimal(4, 1)
+  /// De que argila esta peça é feita. Junto com `pesoCruG` ele JÁ é o consumo:
+  /// 420 g de barro por peça é exatamente o que sai do estoque de argila, e é
+  /// por isso que o cadastro não pede a quantidade duas vezes.
+  argilaId             String?  @map("argila_id") @db.Uuid
 
   observacao           String?
   ativo                Boolean  @default(true)
@@ -265,6 +269,7 @@ model Peca {
 
   categoria          Categoria      @relation(fields: [categoriaId], references: [id])
   responsavelInicial Responsavel?   @relation("responsavelInicial", fields: [responsavelInicialId], references: [id])
+  argila             MateriaPrima?  @relation("argilaDaPeca", fields: [argilaId], references: [id])
   roteiro            RoteiroEtapa[]
   cores              PecaCor[]
   lotes              Lote[]
@@ -375,6 +380,8 @@ model MateriaPrima {
   criadoEm      DateTime @default(now()) @map("criado_em")
 
   insumos PecaInsumo[]
+  /// peças que são feitas desta argila
+  pecas   Peca[]       @relation("argilaDaPeca")
 
   @@map("materias_primas")
 }

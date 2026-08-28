@@ -190,6 +190,45 @@ export function resumoDaFicha(m: MedidasDaPeca): string {
   return `${medidas}${tolerancia}${momento}`
 }
 
+/*
+ * ─────────── A ARGILA: o consumo que não precisa ser digitado ───────────
+ *
+ * O peso do barro cru JÁ É a quantidade de argila que a peça consome. Uma peça
+ * de 420 g tira 420 g do estoque de argila — não há segundo número a informar.
+ *
+ * Isso importa mais do que parece. A primeira versão deste cadastro pedia a
+ * argila numa tabela de insumos, com quantidade própria, e aí passavam a existir
+ * DOIS números para a mesma coisa: o peso na ficha técnica e a quantidade no
+ * insumo. Eles divergem no primeiro ajuste que alguém faz em um e esquece no
+ * outro, e a partir daí a compra é calculada por um número que ninguém revisa.
+ */
+
+/** Quanto vale 1 grama na unidade da matéria-prima. `null` = não dá para converter. */
+function fatorDoGrama(unidade: string): number | null {
+  const u = unidade.trim().toLocaleLowerCase('pt-BR')
+  if (u === 'g' || u === 'grama' || u === 'gramas') return 1
+  if (u === 'kg' || u === 'quilo' || u === 'quilos') return 0.001
+  // "un", "saco", "pacote": não há conversão possível a partir de gramas, e
+  // inventar uma faria o sistema mandar comprar 420 sacos de argila
+  return null
+}
+
+/**
+ * O consumo de argila por peça, na unidade em que a argila é comprada.
+ *
+ * Devolve `null` quando falta argila, falta peso, ou quando a unidade não é de
+ * massa. Nesses casos a peça simplesmente não entra na conta de compra de
+ * argila — que é melhor do que entrar com um número inventado.
+ */
+export function consumoDeArgila(pesoCruG: number | null, unidadeDaArgila: string): number | null {
+  if (pesoCruG === null || pesoCruG <= 0) return null
+  const fator = fatorDoGrama(unidadeDaArgila)
+  if (fator === null) return null
+  // três casas: é a precisão com que o estoque de insumo é guardado (kg com
+  // grama), e arredondar menos faria peça leve sumir da conta
+  return Math.round(pesoCruG * fator * 1000) / 1000
+}
+
 /** 8 e não 8,0; 7,5 continua 7,5. Casa decimal à toa polui a linha do cartão. */
 function formatar(n: number): string {
   const arredondado = umaCasa(n)

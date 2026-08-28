@@ -5,6 +5,7 @@ import { alocarBiscoito, perdaDaPeca, quantidadeComPerda } from '../lib/planejam
 import { calcularCobertura, competenciaDe, type VendaMensal } from '../lib/cobertura'
 import { preverConclusao, semanasParaRepor, type EtapaDoRoteiro } from '../lib/previsao'
 import { necessidadeDeInsumos, type ConsumoDeInsumo, type EstoqueDeInsumo } from '../lib/insumos'
+import { consumoDeArgila } from '../lib/ficha-tecnica'
 import { filaDasQueimas } from './queima.service'
 
 /*
@@ -483,6 +484,31 @@ export async function sugerir(
       corId: i.corId,
     })
     consumosPorPeca.set(i.pecaId, lista)
+  }
+
+  /*
+   * A ARGILA NÃO PRECISA ESTAR NA TABELA DE INSUMOS.
+   *
+   * Ela vem da ficha técnica: `argilaId` diz qual é, e `pesoCruG` diz quanto
+   * cada peça leva — o peso do barro cru É o consumo. Derivar aqui, em vez de
+   * pedir o número de novo no cadastro, evita ter dois valores para a mesma
+   * coisa divergindo com o tempo.
+   *
+   * Um insumo cadastrado à mão para a MESMA argila tem precedência: se alguém
+   * detalhou o consumo na seção avançada, foi de propósito, e somar os dois
+   * mandaria comprar barro em dobro.
+   */
+  for (const peca of pecas as { id: string; argilaId: string | null; pesoCruG: number | null }[]) {
+    if (!peca.argilaId) continue
+    const argila = (materias as MateriaCrua[]).find((m) => m.id === peca.argilaId)
+    if (!argila) continue
+    const quantidade = consumoDeArgila(peca.pesoCruG, argila.unidade)
+    if (quantidade === null) continue
+
+    const lista = consumosPorPeca.get(peca.id) ?? []
+    if (lista.some((c) => c.materiaPrimaId === peca.argilaId)) continue
+    lista.push({ materiaPrimaId: peca.argilaId, quantidadePorPeca: quantidade, corId: null })
+    consumosPorPeca.set(peca.id, lista)
   }
   const estoquesDeInsumo = new Map<string, EstoqueDeInsumo>(
     (materias as MateriaCrua[]).map((m) => [

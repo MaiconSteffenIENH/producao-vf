@@ -160,6 +160,12 @@ export const pecaSchema = z.object({
   pesoCruG: z.coerce.number().int().positive().max(99999).nullable().optional(),
   medidasMomento: z.enum(['cru', 'pronto']).nullable().optional(),
   medidaToleranciaPct: z.coerce.number().min(0).max(100).nullable().optional(),
+  /*
+   * De que argila a peça é feita. Um campo, e não uma linha de tabela: era isso
+   * que o ateliê pediu. A QUANTIDADE não é perguntada porque `pesoCruG` já a
+   * responde — o peso do barro cru é o consumo de argila.
+   */
+  argilaId: z.string().uuid().or(z.literal('')).nullable().optional(),
 
   observacao: z.string().trim().max(500).or(z.literal('')).optional().nullable(),
   ativo: z.boolean().default(true),

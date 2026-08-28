@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   conferirFicha,
+  consumoDeArgila,
   dentroDoPadrao,
   faixaDaMedida,
   resumoDaFicha,
@@ -138,6 +139,36 @@ describe('conferirFicha', () => {
   it('junta os problemas em vez de parar no primeiro', () => {
     const problemas = conferirFicha(ficha({ pesoCruG: 420, capacidadeMl: 500, alturaCm: 2, larguraCm: 2, momento: 'pronto' }))
     expect(problemas.length).toBeGreaterThan(1)
+  })
+})
+
+describe('consumoDeArgila', () => {
+  it('converte o peso do barro para a unidade em que a argila é comprada', () => {
+    // 420 g de barro por peça = 0,42 kg do estoque, sem ninguém digitar de novo
+    expect(consumoDeArgila(420, 'kg')).toBe(0.42)
+    expect(consumoDeArgila(420, 'g')).toBe(420)
+  })
+
+  it('aceita a unidade escrita de outras formas', () => {
+    expect(consumoDeArgila(1000, 'Kg')).toBe(1)
+    expect(consumoDeArgila(1000, ' quilos ')).toBe(1)
+    expect(consumoDeArgila(50, 'GRAMAS')).toBe(50)
+  })
+
+  it('sem peso não há consumo a calcular', () => {
+    expect(consumoDeArgila(null, 'kg')).toBeNull()
+    expect(consumoDeArgila(0, 'kg')).toBeNull()
+  })
+
+  it('unidade que não é de massa devolve nulo em vez de inventar', () => {
+    // "un" viraria "compre 420 sacos de argila", que é pior que não sugerir nada
+    expect(consumoDeArgila(420, 'un')).toBeNull()
+    expect(consumoDeArgila(420, 'saco')).toBeNull()
+  })
+
+  it('arredonda em três casas — a precisão com que o insumo é guardado', () => {
+    expect(consumoDeArgila(1, 'kg')).toBe(0.001)
+    expect(consumoDeArgila(430, 'kg')).toBe(0.43)
   })
 })
 

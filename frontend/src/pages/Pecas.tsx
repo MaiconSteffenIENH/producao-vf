@@ -50,6 +50,8 @@ type Peca = {
   pesoCruG: number | null
   medidasMomento: Momento | null
   medidaToleranciaPct: string | null
+  argilaId: string | null
+  argila: { id: string; nome: string; unidade: string } | null
   observacao: string | null
   ativo: boolean
   roteiro: { id: string; ordem: number; etapaId: string; etapa: Etapa; responsavelId: string | null; diasEstimados: number }[]
@@ -120,6 +122,7 @@ const FORM_VAZIO = {
   pesoCruG: null as number | null,
   medidasMomento: '' as '' | Momento,
   medidaToleranciaPct: null as number | null,
+  argilaId: '',
   observacao: '',
   ativo: true,
 }
@@ -145,6 +148,9 @@ export function Pecas() {
   const [salvando, setSalvando] = useState(false)
   const [paraExcluir, setParaExcluir] = useState<Peca | null>(null)
   const [excluindo, setExcluindo] = useState(false)
+  const [cadastrandoArgila, setCadastrandoArgila] = useState(false)
+  const [novaArgila, setNovaArgila] = useState({ nome: '', unidade: 'kg' })
+  const [salvandoArgila, setSalvandoArgila] = useState(false)
   const [paraDuplicar, setParaDuplicar] = useState<Peca | null>(null)
   const [nomeDaCopia, setNomeDaCopia] = useState('')
   const [duplicando, setDuplicando] = useState(false)
@@ -215,6 +221,8 @@ export function Pecas() {
   }, [paraDuplicar, nomeDaCopia])
 
   const etapaQueDefineCor = useMemo(() => etapas.find((e) => e.defineCor), [etapas])
+  // só argila entra na escolha: peça não é feita de esmalte nem de embalagem
+  const argilas = useMemo(() => materiasPrimas.filter((m) => m.tipo === 'argila'), [materiasPrimas])
 
   const abrirNova = () => {
     setEditando(null)
@@ -240,6 +248,7 @@ export function Pecas() {
       pesoCruG: peca.pesoCruG,
       medidasMomento: peca.medidasMomento ?? '',
       medidaToleranciaPct: peca.medidaToleranciaPct === null ? null : Number(peca.medidaToleranciaPct),
+      argilaId: peca.argilaId ?? '',
       observacao: peca.observacao ?? '',
       ativo: peca.ativo,
     })
@@ -359,6 +368,33 @@ export function Pecas() {
   const alterarEtapa = (i: number, campo: keyof LinhaRoteiro, valor: string | number) =>
     setRoteiro((r) => r.map((linha, idx) => (idx === i ? { ...linha, [campo]: valor } : linha)))
 
+  /*
+   * Cadastra a argila e já a deixa escolhida na peça.
+   *
+   * Deixar selecionada é o ponto: sem isso a pessoa cadastra, fecha a janela e
+   * precisa procurar na lista o que ela mesma acabou de criar.
+   */
+  const salvarArgila = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSalvandoArgila(true)
+    try {
+      const { data } = await api.post('/materias-primas', {
+        nome: novaArgila.nome,
+        tipo: 'argila',
+        unidade: novaArgila.unidade,
+      })
+      setMateriasPrimas((s) => [...s, data])
+      setForm((f) => ({ ...f, argilaId: data.id }))
+      setNovaArgila({ nome: '', unidade: 'kg' })
+      setCadastrandoArgila(false)
+      avisar.ok(`${data.nome} cadastrada e escolhida para esta peça.`)
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para cadastrar a argila.'))
+    } finally {
+      setSalvandoArgila(false)
+    }
+  }
+
   // ── insumos ───────────────────────────────────────────
   const adicionarInsumo = () =>
     setInsumos((s) => [...s, { materiaPrimaId: '', quantidadePorPeca: null, etapaId: '', corId: '' }])
@@ -444,12 +480,13 @@ export function Pecas() {
                   <p className="text-sm text-tinta-fraca">Sem padrão definido.</p>
                 )}
                 <p className="mt-1 text-sm text-tinta">
-                  {peca.insumos.length === 0 ? (
-                    <span className="text-tinta-fraca">Sem insumo cadastrado — não entra na conta de compra.</span>
+                  {peca.argila ? (
+                    <>
+                      Argila: <strong>{peca.argila.nome}</strong>
+                      {peca.pesoCruG !== null && ` · ${peca.pesoCruG} g por peça`}
+                    </>
                   ) : (
-                    peca.insumos
-                      .map((i) => `${i.materiaPrima.nome} ${Number(i.quantidadePorPeca)} ${i.materiaPrima.unidade}`)
-                      .join(' · ')
+                    <span className="text-tinta-fraca">Argila não definida.</span>
                   )}
                 </p>
               </div>
@@ -793,12 +830,46 @@ export function Pecas() {
                   placeholder="—"
                 />
               </Campo>
-              <Campo rotulo="Peso do barro cru (g)" dica="O que o oleiro pesa na hora de tornear.">
+              <Campo
+                rotulo="Peso do barro cru (g)"
+                dica="O que o oleiro pesa na hora de tornear. É também o quanto esta peça gasta de argila."
+              >
                 <InputNumero
                   valor={form.pesoCruG}
                   aoMudar={(n) => setForm({ ...form, pesoCruG: n })}
                   placeholder="—"
                 />
+              </Campo>
+
+              {/* A ARGILA É UM CAMPO, e não uma linha de tabela de insumos.
+                  Foi o pedido do ateliê, e o botão de cadastrar ao lado existe
+                  porque descobrir que falta a argila no meio do cadastro da
+                  peça não deveria obrigar a abandonar a tela e voltar depois. */}
+              <Campo
+                rotulo="Argila"
+                dica="De que barro esta peça é feita. Junto com o peso acima, é o que faz o sistema avisar quando comprar."
+              >
+                <div className="flex gap-2">
+                  <div className="min-w-0 flex-1">
+                    <SelecaoBuscavel
+                      valor={form.argilaId}
+                      aoEscolher={(v) => setForm({ ...form, argilaId: v })}
+                      limpavel
+                      placeholder="— não definida —"
+                      vazio="Nenhuma argila com esse nome."
+                      opcoes={argilas.map((a) => ({ valor: a.id, rotulo: a.nome }))}
+                    />
+                  </div>
+                  <Botao
+                    type="button"
+                    variante="secundario"
+                    className="shrink-0"
+                    onClick={() => setCadastrandoArgila(true)}
+                    title="Cadastrar uma argila nova sem sair desta tela"
+                  >
+                    <Plus size={16} />
+                  </Botao>
+                </div>
               </Campo>
               <Campo rotulo="Momento da medição">
                 <Select
@@ -841,28 +912,26 @@ export function Pecas() {
             )}
           </div>
 
-          {/* ── Insumos ───────────────────────────────── */}
-          <div className="rounded-xl border border-borda p-3">
-            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-tinta">Insumos consumidos</h3>
-                <p className="text-xs leading-relaxed text-tinta-fraca">
-                  De que argila esta peça é feita e quanto ela gasta. É daqui que sai o aviso de compra:
-                  sem este cadastro, o planejamento não tem como dizer que o esmalte vai faltar.
-                </p>
-              </div>
-              <Botao type="button" variante="secundario" onClick={adicionarInsumo}>
-                <Plus size={14} /> Adicionar insumo
+          {/* ── Outros insumos ────────────────────────────
+              Fechada por padrão, de propósito. Quem cadastra peça precisa de
+              medidas e argila; quanto de esmalte cada peça gasta é detalhe de
+              quem cuida de compra, e deixar isso aberto fazia a tela parecer
+              formulário de engenharia. */}
+          <details className="rounded-xl border border-borda p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-tinta marker:text-tinta-fraca">
+              Outros insumos{insumos.length > 0 ? ` (${insumos.length})` : ''}
+            </summary>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-relaxed text-tinta-fraca">
+                Esmalte, óxido ou embalagem que esta peça consome, além da argila. Só é preciso preencher
+                se você quiser que o sistema avise para comprar esses itens também.
+              </p>
+              <Botao type="button" variante="secundario" className="shrink-0" onClick={adicionarInsumo}>
+                <Plus size={14} /> Adicionar
               </Botao>
             </div>
 
-            {insumos.length === 0 && (
-              <p className="py-2 text-sm text-tinta-fraca">
-                Nenhum insumo cadastrado. O consumo desta peça não entra na conta de compra.
-              </p>
-            )}
-
-            <div className="flex flex-col gap-2">
+            <div className="mt-2 flex flex-col gap-2">
               {insumos.map((linha, i) => {
                 const mp = materiasPrimas.find((m) => m.id === linha.materiaPrimaId)
                 return (
@@ -909,13 +978,11 @@ export function Pecas() {
               })}
             </div>
 
-            {insumos.length > 0 && (
-              <p className="mt-2 text-xs leading-relaxed text-tinta-fraca">
-                A argila fica em “qualquer cor” — ela é a mesma em todo lote. Esmalte deve ser preso à cor
-                dele, senão o sistema pediria Pistache para um lote Coral.
-              </p>
-            )}
-          </div>
+            <p className="mt-2 text-xs leading-relaxed text-tinta-fraca">
+              Esmalte deve ser preso à cor dele, senão o sistema pediria Pistache para um lote Coral. A
+              argila não entra aqui: ela é o campo lá em cima, e a quantidade sai do peso do barro.
+            </p>
+          </details>
 
           <div className="flex flex-wrap justify-end gap-2">
             <Botao type="button" variante="secundario" onClick={() => setFormAberto(false)} disabled={salvando}>
@@ -923,6 +990,57 @@ export function Pecas() {
             </Botao>
             <Botao type="submit" disabled={salvando}>
               {salvando ? 'Salvando…' : 'Salvar peça'}
+            </Botao>
+          </div>
+        </form>
+      </Modal>
+
+      {/*
+        CADASTRAR ARGILA SEM SAIR DO CADASTRO DA PEÇA.
+        Descobrir que a argila não está cadastrada no meio do preenchimento não
+        deveria custar abandonar o formulário, ir em Matérias-primas e voltar
+        para começar de novo. Pede só o nome e a unidade; o resto tem padrão e
+        se ajusta depois na tela própria.
+      */}
+      <Modal
+        aberto={cadastrandoArgila}
+        aoFechar={() => setCadastrandoArgila(false)}
+        titulo="Nova argila"
+        descricao="Ela passa a valer para qualquer peça, e aparece em Matérias-primas."
+        largura="max-w-md"
+        fecharClicandoFora={false}
+      >
+        <form onSubmit={salvarArgila} className="flex flex-col gap-4">
+          <Campo rotulo="Nome da argila">
+            <Input
+              required
+              autoFocus
+              maxLength={80}
+              caixaAlta
+              value={novaArgila.nome}
+              onChange={(e) => setNovaArgila({ ...novaArgila, nome: e.target.value })}
+              placeholder="ex.: ARGILA DE ALTA TEMPERATURA"
+            />
+          </Campo>
+          <Campo rotulo="Unidade de compra" dica="Como ela é comprada e contada no estoque.">
+            <Select
+              value={novaArgila.unidade}
+              onChange={(e) => setNovaArgila({ ...novaArgila, unidade: e.target.value })}
+            >
+              <option value="kg">kg — quilos</option>
+              <option value="g">g — gramas</option>
+            </Select>
+          </Campo>
+          <p className="text-xs leading-relaxed text-tinta-fraca">
+            O estoque atual, o mínimo e o fornecedor ficam para a tela de Matérias-primas — aqui o que
+            importa é poder escolher a argila agora.
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Botao type="button" variante="secundario" onClick={() => setCadastrandoArgila(false)} disabled={salvandoArgila}>
+              Cancelar
+            </Botao>
+            <Botao type="submit" disabled={salvandoArgila || !novaArgila.nome.trim()}>
+              {salvandoArgila ? 'Salvando…' : 'Cadastrar e usar'}
             </Botao>
           </div>
         </form>
