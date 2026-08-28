@@ -4,6 +4,7 @@ import { ChevronDown, X } from 'lucide-react'
 import { caixaAltaAoDigitar } from '../lib/nomes'
 import { filtrarPorBusca, grifar } from '../lib/busca'
 import { interpretarNumero, podeDigitar, textoDoNumero } from '../lib/numero'
+import { temJanelaAberta, travarRolagem } from '../lib/travaDeRolagem'
 
 /*
  * ATENÇÃO — largura de campo.
@@ -544,8 +545,7 @@ export function CabecalhoPagina({
 }
 
 /** Registro global de modais abertos — o polling pausa enquanto houver algum. */
-let modaisAbertos = 0
-export const temModalAberto = () => modaisAbertos > 0
+export const temModalAberto = temJanelaAberta
 
 export function Modal({
   aberto,
@@ -575,19 +575,30 @@ export function Modal({
 }) {
   const caixa = useRef<HTMLDivElement>(null)
 
+  /*
+   * `aoFechar` numa REF, e fora das dependências do efeito.
+   *
+   * Quase toda tela passa `aoFechar={() => setX(null)}`, que é uma função nova
+   * a cada render. Com ela na lista de dependências, o efeito era desmontado e
+   * remontado a cada tecla digitada dentro da janela — e era esse ciclo que
+   * envenenava a trava de rolagem quando havia janela dentro de janela.
+   *
+   * A ref mantém o Escape sempre chamando a versão atual, sem que o efeito
+   * precise rodar de novo.
+   */
+  const aoFecharRef = useRef(aoFechar)
+  aoFecharRef.current = aoFechar
+
   useEffect(() => {
     if (!aberto) return
-    modaisAbertos++
-    const aoTeclar = (e: KeyboardEvent) => e.key === 'Escape' && aoFechar()
+    const aoTeclar = (e: KeyboardEvent) => e.key === 'Escape' && aoFecharRef.current()
     document.addEventListener('keydown', aoTeclar)
-    const overflowAntes = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const liberarRolagem = travarRolagem(document.body)
     return () => {
-      modaisAbertos--
       document.removeEventListener('keydown', aoTeclar)
-      document.body.style.overflow = overflowAntes
+      liberarRolagem()
     }
-  }, [aberto, aoFechar])
+  }, [aberto])
 
   if (!aberto) return null
 
