@@ -25,6 +25,10 @@ type Cor = { id: string; nome: string; hex: string; malhado: boolean; amostraUrl
 type Etapa = { id: string; nome: string; tipo: string; defineCor: boolean; estoqueIntermediario: boolean }
 type Responsavel = { id: string; nome: string; cor: string }
 type Categoria = { id: string; nome: string }
+type MateriaPrima = { id: string; nome: string; tipo: string; unidade: string }
+
+/** Momento em que a medida foi tomada — a argila encolhe entre um e outro. */
+type Momento = 'cru' | 'pronto'
 
 type Peca = {
   id: string
@@ -39,13 +43,70 @@ type Peca = {
   qtdMinimaBiscoito: number
   /** continua vindo da API e sendo editado na tela de Preços; o cadastro não mexe */
   precoBase: string | null
+  /** ficha técnica: o padrão a seguir ao reproduzir a peça; nulo é "ninguém definiu" */
+  alturaCm: string | null
+  larguraCm: string | null
+  capacidadeMl: number | null
+  pesoCruG: number | null
+  medidasMomento: Momento | null
+  medidaToleranciaPct: string | null
   observacao: string | null
   ativo: boolean
   roteiro: { id: string; ordem: number; etapaId: string; etapa: Etapa; responsavelId: string | null; diasEstimados: number }[]
   cores: { id: string; corId: string; qtdMinimaDesejada: number; cor: Cor }[]
+  insumos: {
+    id: string
+    materiaPrimaId: string
+    quantidadePorPeca: string
+    etapaId: string | null
+    corId: string | null
+    materiaPrima: MateriaPrima
+  }[]
 }
 
 type LinhaRoteiro = { etapaId: string; responsavelId: string; diasEstimados: number }
+type LinhaInsumo = { materiaPrimaId: string; quantidadePorPeca: number | null; etapaId: string; corId: string }
+
+/*
+ * A ficha em uma linha, para o cartão da lista.
+ *
+ * Espelha `resumoDaFicha` de backend/src/lib/ficha-tecnica.ts. Aqui é só
+ * apresentação: quem recusa ficha incoerente é o servidor, então não há regra
+ * duplicada — há a mesma frase escrita nos dois lados, e o servidor manda.
+ */
+/**
+ * A faixa aceitável, escrita como "7,6 a 8,4".
+ *
+ * Espelha `faixaDaMedida` do backend, inclusive o arredondamento para uma casa:
+ * é o número que a pessoa lê na tela, e é por ele que o servidor decide se a
+ * peça está dentro do padrão. Divergir aqui faria a tela dizer uma coisa e o
+ * sistema aceitar outra.
+ */
+function faixa(alvo: number, toleranciaPct: number): string {
+  const uma = (n: number) => Math.round(n * 10) / 10
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','))
+  const margem = (alvo * Math.max(0, Math.min(100, toleranciaPct))) / 100
+  return `${fmt(uma(alvo - margem))} a ${fmt(uma(alvo + margem))}`
+}
+
+function resumoDaFicha(p: Peca): string {
+  const num = (v: string | null) => (v === null ? null : Number(v))
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','))
+  const partes: string[] = []
+  const altura = num(p.alturaCm)
+  const largura = num(p.larguraCm)
+  if (altura !== null) partes.push(`${fmt(altura)} cm de altura`)
+  if (largura !== null) partes.push(`${fmt(largura)} cm de largura`)
+  if (p.capacidadeMl !== null) partes.push(`${p.capacidadeMl} ml`)
+  if (p.pesoCruG !== null) partes.push(`${p.pesoCruG} g de barro`)
+  if (partes.length === 0) return ''
+  const tol = num(p.medidaToleranciaPct)
+  return (
+    partes.join(' · ') +
+    (tol ? `, ± ${fmt(tol)}%` : '') +
+    (p.medidasMomento === 'cru' ? ' (medida no cru)' : '')
+  )
+}
 
 const FORM_VAZIO = {
   nome: '',
@@ -53,6 +114,12 @@ const FORM_VAZIO = {
   responsavelInicialId: '',
   tempoMedioDias: 30,
   qtdMinimaDesejada: 0,
+  alturaCm: null as number | null,
+  larguraCm: null as number | null,
+  capacidadeMl: null as number | null,
+  pesoCruG: null as number | null,
+  medidasMomento: '' as '' | Momento,
+  medidaToleranciaPct: null as number | null,
   observacao: '',
   ativo: true,
 }
@@ -63,6 +130,7 @@ export function Pecas() {
   const [cores, setCores] = useState<Cor[]>([])
   const [etapas, setEtapas] = useState<Etapa[]>([])
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([])
+  const [materiasPrimas, setMateriasPrimas] = useState<MateriaPrima[]>([])
 
   const [carregando, setCarregando] = useState(true)
   const [busca, setBusca] = useState('')
@@ -73,6 +141,7 @@ export function Pecas() {
   const [form, setForm] = useState({ ...FORM_VAZIO })
   const [roteiro, setRoteiro] = useState<LinhaRoteiro[]>([])
   const [coresSelecionadas, setCoresSelecionadas] = useState<string[]>([])
+  const [insumos, setInsumos] = useState<LinhaInsumo[]>([])
   const [salvando, setSalvando] = useState(false)
   const [paraExcluir, setParaExcluir] = useState<Peca | null>(null)
   const [excluindo, setExcluindo] = useState(false)
@@ -104,12 +173,19 @@ export function Pecas() {
   }, [recarregar])
 
   useEffect(() => {
-    Promise.all([api.get('/categorias'), api.get('/cores'), api.get('/etapas'), api.get('/responsaveis')])
-      .then(([c, co, e, r]) => {
+    Promise.all([
+      api.get('/categorias'),
+      api.get('/cores'),
+      api.get('/etapas'),
+      api.get('/responsaveis'),
+      api.get('/materias-primas'),
+    ])
+      .then(([c, co, e, r, mp]) => {
         setCategorias(c.data)
         setCores(co.data)
         setEtapas(e.data)
         setResponsaveis(r.data)
+        setMateriasPrimas(mp.data)
       })
       .catch((erro) => avisar.erro(mensagemDoErro(erro, 'Não deu para carregar os cadastros de apoio.')))
   }, [])
@@ -145,6 +221,7 @@ export function Pecas() {
     setForm({ ...FORM_VAZIO, categoriaId: categorias[0]?.id ?? '' })
     setRoteiro([])
     setCoresSelecionadas([])
+    setInsumos([])
     setFormAberto(true)
   }
 
@@ -156,6 +233,13 @@ export function Pecas() {
       responsavelInicialId: peca.responsavelInicialId ?? '',
       tempoMedioDias: peca.tempoMedioDias,
       qtdMinimaDesejada: peca.qtdMinimaDesejada,
+      // o Prisma devolve Decimal como string; o campo numérico trabalha com número
+      alturaCm: peca.alturaCm === null ? null : Number(peca.alturaCm),
+      larguraCm: peca.larguraCm === null ? null : Number(peca.larguraCm),
+      capacidadeMl: peca.capacidadeMl,
+      pesoCruG: peca.pesoCruG,
+      medidasMomento: peca.medidasMomento ?? '',
+      medidaToleranciaPct: peca.medidaToleranciaPct === null ? null : Number(peca.medidaToleranciaPct),
       observacao: peca.observacao ?? '',
       ativo: peca.ativo,
     })
@@ -167,6 +251,14 @@ export function Pecas() {
       })),
     )
     setCoresSelecionadas(peca.cores.map((c) => c.corId))
+    setInsumos(
+      peca.insumos.map((i) => ({
+        materiaPrimaId: i.materiaPrimaId,
+        quantidadePorPeca: Number(i.quantidadePorPeca),
+        etapaId: i.etapaId ?? '',
+        corId: i.corId ?? '',
+      })),
+    )
     setFormAberto(true)
   }
 
@@ -176,8 +268,12 @@ export function Pecas() {
     try {
       const corpo = {
         ...form,
+        // o select devolve string vazia quando ninguém escolheu; o servidor
+        // espera nulo, que é o que quer dizer "não definido"
+        medidasMomento: form.medidasMomento || null,
         roteiro: roteiro.filter((r) => r.etapaId),
         cores: coresSelecionadas.map((corId) => ({ corId, qtdMinimaDesejada: 0 })),
+        insumos: insumos.filter((i) => i.materiaPrimaId),
       }
       if (editando) await api.put(`/pecas/${editando.id}`, corpo)
       else await api.post('/pecas', corpo)
@@ -263,6 +359,13 @@ export function Pecas() {
   const alterarEtapa = (i: number, campo: keyof LinhaRoteiro, valor: string | number) =>
     setRoteiro((r) => r.map((linha, idx) => (idx === i ? { ...linha, [campo]: valor } : linha)))
 
+  // ── insumos ───────────────────────────────────────────
+  const adicionarInsumo = () =>
+    setInsumos((s) => [...s, { materiaPrimaId: '', quantidadePorPeca: null, etapaId: '', corId: '' }])
+  const removerInsumo = (i: number) => setInsumos((s) => s.filter((_, idx) => idx !== i))
+  const alterarInsumo = (i: number, campo: keyof LinhaInsumo, valor: string | number | null) =>
+    setInsumos((s) => s.map((linha, idx) => (idx === i ? { ...linha, [campo]: valor } : linha)))
+
   const roteiroTemEtapaDeCor = etapaQueDefineCor
     ? roteiro.some((r) => r.etapaId === etapaQueDefineCor.id)
     : true
@@ -328,6 +431,27 @@ export function Pecas() {
                 >
                   Mínimo biscoito: <strong>{peca.qtdMinimaBiscoito}</strong>
                 </Link>
+              </div>
+
+              {/* a ficha técnica no cartão: é o padrão que a equipe precisa
+                  conferir, e esconder atrás de um clique de edição é o mesmo
+                  que não ter */}
+              <div className="mt-3">
+                <p className="mb-1 text-xs uppercase tracking-wide text-tinta-fraca">Ficha técnica</p>
+                {resumoDaFicha(peca) ? (
+                  <p className="text-sm text-tinta">{resumoDaFicha(peca)}</p>
+                ) : (
+                  <p className="text-sm text-tinta-fraca">Sem padrão definido.</p>
+                )}
+                <p className="mt-1 text-sm text-tinta">
+                  {peca.insumos.length === 0 ? (
+                    <span className="text-tinta-fraca">Sem insumo cadastrado — não entra na conta de compra.</span>
+                  ) : (
+                    peca.insumos
+                      .map((i) => `${i.materiaPrima.nome} ${Number(i.quantidadePorPeca)} ${i.materiaPrima.unidade}`)
+                      .join(' · ')
+                  )}
+                </p>
               </div>
 
               <div className="mt-3">
@@ -634,6 +758,163 @@ export function Pecas() {
                 )
               })}
             </div>
+          </div>
+
+          {/* ── Ficha técnica ─────────────────────────── */}
+          <div className="rounded-xl border border-borda p-3">
+            <h3 className="text-sm font-semibold text-tinta">Ficha técnica</h3>
+            <p className="mb-3 text-xs leading-relaxed text-tinta-fraca">
+              O padrão a ser seguido ao reproduzir a peça. Tudo opcional: peça sem medida continua
+              funcionando igual. <strong>A argila encolhe na queima</strong>, então informe em que momento
+              as medidas foram tomadas — o mesmo número quer dizer tamanhos diferentes no cru e no pronto.
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo rotulo="Altura (cm)">
+                <InputNumero
+                  decimais={1}
+                  valor={form.alturaCm}
+                  aoMudar={(n) => setForm({ ...form, alturaCm: n })}
+                  placeholder="—"
+                />
+              </Campo>
+              <Campo rotulo="Diâmetro ou largura (cm)">
+                <InputNumero
+                  decimais={1}
+                  valor={form.larguraCm}
+                  aoMudar={(n) => setForm({ ...form, larguraCm: n })}
+                  placeholder="—"
+                />
+              </Campo>
+              <Campo rotulo="Capacidade (ml)" dica="Só em peça que contém líquido.">
+                <InputNumero
+                  valor={form.capacidadeMl}
+                  aoMudar={(n) => setForm({ ...form, capacidadeMl: n })}
+                  placeholder="—"
+                />
+              </Campo>
+              <Campo rotulo="Peso do barro cru (g)" dica="O que o oleiro pesa na hora de tornear.">
+                <InputNumero
+                  valor={form.pesoCruG}
+                  aoMudar={(n) => setForm({ ...form, pesoCruG: n })}
+                  placeholder="—"
+                />
+              </Campo>
+              <Campo rotulo="Momento da medição">
+                <Select
+                  value={form.medidasMomento}
+                  onChange={(e) => setForm({ ...form, medidasMomento: e.target.value as '' | Momento })}
+                >
+                  <option value="">— não definido —</option>
+                  <option value="cru">Peça crua, antes de secar</option>
+                  <option value="pronto">Peça pronta, depois da 2ª queima</option>
+                </Select>
+              </Campo>
+              <Campo
+                rotulo="Tolerância (%)"
+                dica="Peça artesanal não sai idêntica. Sem margem, a ficha reprova tudo e ninguém olha."
+              >
+                <InputNumero
+                  decimais={1}
+                  max={100}
+                  valor={form.medidaToleranciaPct}
+                  aoMudar={(n) => setForm({ ...form, medidaToleranciaPct: n })}
+                  placeholder="—"
+                />
+              </Campo>
+            </div>
+
+            {/* a faixa aceitável já calculada: é o número que a equipe usa de fato */}
+            {form.medidaToleranciaPct !== null && form.medidaToleranciaPct > 0 && (
+              <p className="mt-3 rounded-lg bg-superficie-2 px-3 py-2 text-xs leading-relaxed text-tinta">
+                Com essa tolerância, aceita-se{' '}
+                {[
+                  form.alturaCm !== null && `altura de ${faixa(form.alturaCm, form.medidaToleranciaPct)} cm`,
+                  form.larguraCm !== null && `largura de ${faixa(form.larguraCm, form.medidaToleranciaPct)} cm`,
+                  form.capacidadeMl !== null && `${faixa(form.capacidadeMl, form.medidaToleranciaPct)} ml`,
+                  form.pesoCruG !== null && `${faixa(form.pesoCruG, form.medidaToleranciaPct)} g de barro`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || 'nada ainda: informe alguma medida acima'}
+                .
+              </p>
+            )}
+          </div>
+
+          {/* ── Insumos ───────────────────────────────── */}
+          <div className="rounded-xl border border-borda p-3">
+            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-tinta">Insumos consumidos</h3>
+                <p className="text-xs leading-relaxed text-tinta-fraca">
+                  De que argila esta peça é feita e quanto ela gasta. É daqui que sai o aviso de compra:
+                  sem este cadastro, o planejamento não tem como dizer que o esmalte vai faltar.
+                </p>
+              </div>
+              <Botao type="button" variante="secundario" onClick={adicionarInsumo}>
+                <Plus size={14} /> Adicionar insumo
+              </Botao>
+            </div>
+
+            {insumos.length === 0 && (
+              <p className="py-2 text-sm text-tinta-fraca">
+                Nenhum insumo cadastrado. O consumo desta peça não entra na conta de compra.
+              </p>
+            )}
+
+            <div className="flex flex-col gap-2">
+              {insumos.map((linha, i) => {
+                const mp = materiasPrimas.find((m) => m.id === linha.materiaPrimaId)
+                return (
+                  <div key={i} className="flex flex-col gap-2 rounded-lg bg-superficie-2 p-2 sm:flex-row sm:items-center">
+                    <div className="min-w-0 flex-1">
+                      <SelecaoBuscavel
+                        valor={linha.materiaPrimaId}
+                        aoEscolher={(v) => alterarInsumo(i, 'materiaPrimaId', v)}
+                        placeholder="— matéria-prima —"
+                        vazio="Nada com esse nome."
+                        opcoes={materiasPrimas.map((m) => ({ valor: m.id, rotulo: `${m.nome} (${m.tipo})` }))}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 sm:w-40">
+                      <InputNumero
+                        decimais={3}
+                        valor={linha.quantidadePorPeca}
+                        aoMudar={(n) => alterarInsumo(i, 'quantidadePorPeca', n)}
+                        aria-label="Quantidade por peça"
+                        placeholder="por peça"
+                      />
+                      <span className="shrink-0 text-sm text-tinta-fraca">{mp?.unidade ?? ''}</span>
+                    </div>
+                    <div className="min-w-0 sm:w-44">
+                      <Select value={linha.corId} onChange={(e) => alterarInsumo(i, 'corId', e.target.value)}>
+                        <option value="">— qualquer cor —</option>
+                        {cores.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            só em {c.nome}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removerInsumo(i)}
+                      aria-label="Remover insumo"
+                      className="shrink-0 self-end rounded-lg p-2 text-tinta-fraca hover:bg-superficie hover:text-perigo sm:self-auto"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {insumos.length > 0 && (
+              <p className="mt-2 text-xs leading-relaxed text-tinta-fraca">
+                A argila fica em “qualquer cor” — ela é a mesma em todo lote. Esmalte deve ser preso à cor
+                dele, senão o sistema pediria Pistache para um lote Coral.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap justify-end gap-2">

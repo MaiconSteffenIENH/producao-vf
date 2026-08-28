@@ -109,6 +109,21 @@ export const pecaCorItemSchema = z.object({
   qtdMinimaDesejada: z.coerce.number().int().min(0).max(99999).default(0),
 })
 
+/*
+ * O consumo de insumo de uma peça — a argila que o João pediu.
+ *
+ * Leniente como o resto do formulário dinâmico: linha em branco chega aqui e o
+ * service filtra. `etapaId` e `corId` são opcionais de propósito: argila não
+ * tem cor (vale para qualquer lote) e nem todo insumo precisa dizer em que
+ * etapa é gasto.
+ */
+export const pecaInsumoItemSchema = z.object({
+  materiaPrimaId: z.string().uuid().or(z.literal('')),
+  quantidadePorPeca: z.coerce.number().min(0).max(99999).default(0),
+  etapaId: z.string().uuid().or(z.literal('')).nullable().optional(),
+  corId: z.string().uuid().or(z.literal('')).nullable().optional(),
+})
+
 export const pecaSchema = z.object({
   nome: nomeDeCadastro(80),
   categoriaId: z.string().uuid('escolha uma categoria'),
@@ -129,10 +144,43 @@ export const pecaSchema = z.object({
    */
   qtdMinimaBiscoito: z.coerce.number().int().min(0).max(99999).optional(),
   precoBase: z.coerce.number().min(0).max(999999).nullable().optional(),
+  /*
+   * FICHA TÉCNICA — o padrão a ser seguido ao reproduzir a peça.
+   *
+   * Tudo `nullable().optional()`: peça sem medida é o caso normal, e nulo aqui
+   * quer dizer "ninguém definiu ainda", que é diferente de zero. A coerência
+   * entre os campos (medida sem momento, peso do cru numa ficha da peça pronta,
+   * capacidade maior que o volume da peça) é conferida em lib/ficha-tecnica.ts,
+   * porque depende de olhar os campos juntos — coisa que o zod campo a campo
+   * não faz.
+   */
+  alturaCm: z.coerce.number().positive().max(999).nullable().optional(),
+  larguraCm: z.coerce.number().positive().max(999).nullable().optional(),
+  capacidadeMl: z.coerce.number().int().positive().max(99999).nullable().optional(),
+  pesoCruG: z.coerce.number().int().positive().max(99999).nullable().optional(),
+  medidasMomento: z.enum(['cru', 'pronto']).nullable().optional(),
+  medidaToleranciaPct: z.coerce.number().min(0).max(100).nullable().optional(),
+
   observacao: z.string().trim().max(500).or(z.literal('')).optional().nullable(),
   ativo: z.boolean().default(true),
   roteiro: z.array(roteiroItemSchema).default([]),
   cores: z.array(pecaCorItemSchema).default([]),
+  /*
+   * SEM `.default([])`, ao contrário de roteiro e cores.
+   *
+   * O app é instalável e fica em cache. Depois de publicar, um celular com a
+   * tela ANTIGA ainda edita peça, e o corpo dele não tem `insumos` — a tela
+   * antiga nem sabe que o campo existe. Com default de lista vazia, essa edição
+   * chegaria aqui como "a peça não tem insumo nenhum" e o service apagaria a
+   * argila cadastrada, em silêncio.
+   *
+   * Ausente quer dizer "não mexa"; lista vazia quer dizer "apague todos". São
+   * coisas diferentes, e só quem manda o campo pode dizer a segunda.
+   *
+   * Roteiro e cores não correm o mesmo risco porque toda versão da tela que já
+   * existiu envia os dois.
+   */
+  insumos: z.array(pecaInsumoItemSchema).optional(),
 })
 
 /**

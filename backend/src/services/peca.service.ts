@@ -3,6 +3,7 @@ import type { z } from 'zod'
 import { prisma } from '../lib/prisma'
 import { normalizarBusca } from '../lib/busca'
 import { nomeDeCopia } from '../lib/nomes'
+import { conferirFicha } from '../lib/ficha-tecnica'
 import { conflito, invalido, naoEncontrado } from '../lib/erros'
 import type { pecaSchema } from '../schemas'
 
@@ -20,6 +21,13 @@ const incluirTudo = {
   },
   cores: {
     include: { cor: { select: { id: true, nome: true, hex: true, malhado: true, amostraUrl: true, ativo: true } } },
+  },
+  insumos: {
+    include: {
+      materiaPrima: { select: { id: true, nome: true, tipo: true, unidade: true, estoqueAtual: true } },
+      etapa: { select: { id: true, nome: true } },
+      cor: { select: { id: true, nome: true, hex: true } },
+    },
   },
 }
 
@@ -67,6 +75,39 @@ function normalizarCores(cores: DadosPeca['cores']) {
     .map((c) => ({ corId: c.corId, qtdMinimaDesejada: c.qtdMinimaDesejada ?? 0 }))
 }
 
+/*
+ * Os insumos que a peça consome — a argila entre eles.
+ *
+ * A chave de unicidade no banco é (peça, matéria-prima, cor): a mesma peça pode
+ * gastar dois esmaltes DIFERENTES em cores diferentes, mas não pode gastar a
+ * mesma argila duas vezes. Deduplicar por essa chave composta aqui evita que o
+ * formulário estoure a violação de índice — e devolva um erro do Postgres em
+ * inglês onde cabia simplesmente descartar a linha repetida.
+ *
+ * Insumo sem quantidade é linha esquecida no formulário, não consumo zero: ele
+ * inflaria o cadastro e não mudaria conta nenhuma, então some.
+ */
+function normalizarInsumos(insumos: DadosPeca['insumos']) {
+  // `undefined` é "não mexa" e precisa atravessar sem virar lista vazia, senão
+  // a edição feita de uma tela antiga apagaria a argila cadastrada
+  if (insumos === undefined) return null
+  const vistos = new Set<string>()
+  return insumos
+    .filter((i) => i.materiaPrimaId && (i.quantidadePorPeca ?? 0) > 0)
+    .filter((i) => {
+      const chave = `${i.materiaPrimaId}|${i.corId || ''}`
+      if (vistos.has(chave)) return false
+      vistos.add(chave)
+      return true
+    })
+    .map((i) => ({
+      materiaPrimaId: i.materiaPrimaId,
+      quantidadePorPeca: i.quantidadePorPeca,
+      etapaId: i.etapaId || null,
+      corId: i.corId || null,
+    }))
+}
+
 async function validarReferencias(roteiro: ReturnType<typeof normalizarRoteiro>, cores: ReturnType<typeof normalizarCores>) {
   if (roteiro.length > 0) {
     const existentes = await prisma.etapa.count({ where: { id: { in: roteiro.map((r) => r.etapaId) } } })
@@ -78,10 +119,69 @@ async function validarReferencias(roteiro: ReturnType<typeof normalizarRoteiro>,
   }
 }
 
+async function validarInsumos(insumos: ReturnType<typeof normalizarInsumos>) {
+  if (!insumos || insumos.length === 0) return
+  const ids = [...new Set(insumos.map((i) => i.materiaPrimaId))]
+  const existentes = await prisma.materiaPrima.count({ where: { id: { in: ids } } })
+  if (existentes !== ids.length) {
+    throw invalido('Alguma matéria-prima selecionada não existe mais. Recarregue a tela.')
+  }
+  const etapas = [...new Set(insumos.map((i) => i.etapaId).filter((e): e is string => Boolean(e)))]
+  if (etapas.length > 0) {
+    const achadas = await prisma.etapa.count({ where: { id: { in: etapas } } })
+    if (achadas !== etapas.length) throw invalido('Alguma etapa do consumo não existe mais. Recarregue a tela.')
+  }
+}
+
+/**
+ * A ficha técnica é coerente?
+ *
+ * A conta mora em `lib/ficha-tecnica.ts`, sem Prisma, e é chamada aqui. O 422
+ * carrega a lista inteira de problemas: quem cadastra quer saber tudo o que
+ * falta de uma vez, e não descobrir um erro por tentativa de salvar.
+ */
+function validarFicha(dados: DadosPeca) {
+  const problemas = conferirFicha({
+    alturaCm: dados.alturaCm ?? null,
+    larguraCm: dados.larguraCm ?? null,
+    capacidadeMl: dados.capacidadeMl ?? null,
+    pesoCruG: dados.pesoCruG ?? null,
+    momento: dados.medidasMomento ?? null,
+    toleranciaPct: dados.medidaToleranciaPct ?? null,
+  })
+  if (problemas.length > 0) {
+    throw invalido(problemas.map((p) => p.mensagem).join(' '), problemas)
+  }
+}
+
+/*
+ * Os campos da ficha técnica, do jeito que vão para o banco.
+ *
+ * NADA de `?? null` aqui, pelo mesmo motivo do `precoBase` logo abaixo: o app
+ * fica em cache, e depois de publicar um celular com a tela ANTIGA continua
+ * editando peça sem mandar estes campos. Com o `?? null`, essa edição apagaria
+ * as medidas que alguém acabou de cadastrar.
+ *
+ * `undefined` faz o Prisma não tocar na coluna — "não mexa".
+ * `null` explícito apaga — "limpei o campo na tela".
+ * São intenções diferentes e precisam continuar diferentes até o banco.
+ */
+const fichaDe = (dados: DadosPeca) => ({
+  alturaCm: dados.alturaCm,
+  larguraCm: dados.larguraCm,
+  capacidadeMl: dados.capacidadeMl,
+  pesoCruG: dados.pesoCruG,
+  medidasMomento: dados.medidasMomento,
+  medidaToleranciaPct: dados.medidaToleranciaPct,
+})
+
 export async function criarPeca(dados: DadosPeca) {
   const roteiro = normalizarRoteiro(dados.roteiro)
   const cores = normalizarCores(dados.cores)
+  const insumos = normalizarInsumos(dados.insumos)
   await validarReferencias(roteiro, cores)
+  await validarInsumos(insumos)
+  validarFicha(dados)
 
   const peca = await prisma.peca.create({
     data: {
@@ -93,10 +193,12 @@ export async function criarPeca(dados: DadosPeca) {
       qtdMinimaDesejada: dados.qtdMinimaDesejada,
       qtdMinimaBiscoito: dados.qtdMinimaBiscoito,
       precoBase: dados.precoBase ?? null,
+      ...fichaDe(dados),
       observacao: dados.observacao || null,
       ativo: dados.ativo,
       roteiro: { create: roteiro },
       cores: { create: cores },
+      insumos: { create: insumos ?? [] },
     },
     include: incluirTudo,
   })
@@ -106,13 +208,20 @@ export async function criarPeca(dados: DadosPeca) {
 export async function atualizarPeca(id: string, dados: DadosPeca) {
   const roteiro = normalizarRoteiro(dados.roteiro)
   const cores = normalizarCores(dados.cores)
+  const insumos = normalizarInsumos(dados.insumos)
   await validarReferencias(roteiro, cores)
+  await validarInsumos(insumos)
+  validarFicha(dados)
 
-  // Roteiro e cores são substituídos inteiros: é a única forma de reordenar
-  // sem colidir com o @@unique([pecaId, ordem]) no meio da atualização.
+  // Roteiro, cores e insumos são substituídos inteiros: é a única forma de
+  // reordenar sem colidir com o @@unique([pecaId, ordem]) no meio da
+  // atualização, e a mesma razão vale para a chave (peça, insumo, cor).
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.roteiroEtapa.deleteMany({ where: { pecaId: id } })
     await tx.pecaCor.deleteMany({ where: { pecaId: id } })
+    // só apaga os insumos quando a tela de fato mandou a lista; ver o comentário
+    // em `normalizarInsumos` sobre a versão antiga do app em cache
+    if (insumos) await tx.pecaInsumo.deleteMany({ where: { pecaId: id } })
     return tx.peca.update({
       where: { id },
       data: {
@@ -139,10 +248,12 @@ export async function atualizarPeca(id: string, dados: DadosPeca) {
          * um campo que esta tela não edita mais.
          */
         precoBase: dados.precoBase,
+        ...fichaDe(dados),
         observacao: dados.observacao || null,
         ativo: dados.ativo,
         roteiro: { create: roteiro },
         cores: { create: cores },
+        ...(insumos ? { insumos: { create: insumos } } : {}),
       },
       include: incluirTudo,
     })
@@ -215,6 +326,14 @@ export async function duplicarPeca(id: string, nomePedido?: string) {
         qtdMinimaDesejada: original.qtdMinimaDesejada,
         qtdMinimaBiscoito: original.qtdMinimaBiscoito,
         precoBase: original.precoBase,
+        // a ficha técnica vem junto: a cópia é a mesma peça com outro nome, e
+        // remedir tudo de novo seria o oposto do motivo de duplicar
+        alturaCm: original.alturaCm,
+        larguraCm: original.larguraCm,
+        capacidadeMl: original.capacidadeMl,
+        pesoCruG: original.pesoCruG,
+        medidasMomento: original.medidasMomento,
+        medidaToleranciaPct: original.medidaToleranciaPct,
         observacao: original.observacao,
         ativo: false, // nasce inativa: obriga a revisar antes de entrar no planejamento
         roteiro: {
@@ -232,6 +351,17 @@ export async function duplicarPeca(id: string, nomePedido?: string) {
             corId: c.corId,
             qtdMinimaDesejada: c.qtdMinimaDesejada,
           })),
+        },
+        // o consumo de insumo também: mesma argila, mesmo esmalte, mesma queima
+        insumos: {
+          create: original.insumos.map(
+            (i: { materiaPrimaId: string; quantidadePorPeca: unknown; etapaId: string | null; corId: string | null }) => ({
+              materiaPrimaId: i.materiaPrimaId,
+              quantidadePorPeca: i.quantidadePorPeca as never,
+              etapaId: i.etapaId,
+              corId: i.corId,
+            }),
+          ),
         },
       },
       include: incluirTudo,

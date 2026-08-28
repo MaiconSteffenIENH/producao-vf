@@ -235,6 +235,30 @@ model Peca {
   /// uma cor que saiu bem sem começar tudo do zero
   qtdMinimaBiscoito    Int      @default(0) @map("qtd_minima_biscoito")
   precoBase            Decimal? @map("preco_base") @db.Decimal(10, 2)
+
+  /// ─────────────── FICHA TÉCNICA ───────────────
+  /// O padrão a ser seguido ao reproduzir a peça. Pedido do João: sem isto,
+  /// cada pessoa reproduz de memória e a diferença só aparece quando as peças
+  /// estão lado a lado na prateleira.
+  ///
+  /// Tudo opcional: peça antiga não tem medida, e obrigar a preencher travaria
+  /// o cadastro de quem só quer registrar uma peça nova. Nulo aqui quer dizer
+  /// "ninguém definiu ainda", e a tela diz isso em vez de mostrar zero.
+  alturaCm             Decimal? @map("altura_cm") @db.Decimal(6, 1)
+  /// diâmetro na peça redonda, largura na que não é
+  larguraCm            Decimal? @map("largura_cm") @db.Decimal(6, 1)
+  /// só faz sentido em peça que contém líquido (xícara, bowl, jarra)
+  capacidadeMl         Int?     @map("capacidade_ml")
+  /// peso do barro antes de secar — é o que o oleiro pesa na hora de tornear
+  pesoCruG             Int?     @map("peso_cru_g")
+  /// `cru` | `pronto` — a argila ENCOLHE na queima, então a mesma peça mede
+  /// diferente antes e depois do forno. Sem registrar o momento, a medida não
+  /// serve para conferir nada.
+  medidasMomento       String?  @map("medidas_momento")
+  /// margem aceitável, em %. Peça artesanal não sai idêntica: sem tolerância a
+  /// ficha vira número exato que nenhuma peça cumpre, e a equipe ignora o campo
+  medidaToleranciaPct  Decimal? @map("medida_tolerancia_pct") @db.Decimal(4, 1)
+
   observacao           String?
   ativo                Boolean  @default(true)
   criadoEm             DateTime @default(now()) @map("criado_em")
