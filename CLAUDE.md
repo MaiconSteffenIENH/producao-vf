@@ -11,12 +11,13 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 3. **Confira depois de agir, sem atalho.** Verificação parcial é o mesmo que verificação nenhuma. Rode o que dá para rodar e diga o que não deu.
 4. **Nada que aplique pela metade.** Se falhar, tem que falhar limpo, e o jeito de garantir isso é a transação, não a esperança.
 5. **Peça comando meu só quando for impossível para você** e diga por quê, numa linha. O resto é seu.
-6. **Tudo em pt-BR**, e explicação breve: código, comentário, commit, UI e mensagem de erro.
-7. **Nome de cadastro é CAIXA ALTA** (peça, esmalte, categoria, etapa, responsável). Já sobe ao digitar; `npm run caixa-alta` arruma o histórico.
-8. **Dinheiro não entra no cadastro de peça.** Quem cadastra é a Gabi, e valor não é assunto dela — preço mora na tela de Preços.
-9. **O `.env` aponta para produção (Neon).** Nunca `prisma migrate dev` nele, só `migrate deploy`; migração escrita à mão quando o CLI não puder rodar.
-10. **Push dispara deploy** (Render e Vercel). O app é PWA: depois do deploy pode ser preciso Cmd+Shift+R para sair do cache.
-11. **Mudança que mexe no livro-razão passa por revisão adversarial** antes de ir. Ela já derrubou três versões que pareciam prontas.
+6. **Commite sempre, sem eu pedir.** Trabalho validado e não commitado é trabalho que eu esqueço e perco. Terminou e passou no `validar.sh`? Commita. Se o push não for possível daí, diga quantos commits estão esperando — mas o commit em si nunca fica para depois.
+7. **Tudo em pt-BR**, e explicação breve: código, comentário, commit, UI e mensagem de erro.
+8. **Nome de cadastro é CAIXA ALTA** (peça, esmalte, categoria, etapa, responsável). Já sobe ao digitar; `npm run caixa-alta` arruma o histórico.
+9. **Dinheiro não entra no cadastro de peça.** Quem cadastra é a Gabi, e valor não é assunto dela — preço mora na tela de Preços.
+10. **O `.env` aponta para produção (Neon).** Nunca `prisma migrate dev` nele, só `migrate deploy`; migração escrita à mão quando o CLI não puder rodar.
+11. **Push dispara deploy** (Render e Vercel). O app é PWA: depois do deploy pode ser preciso Cmd+Shift+R para sair do cache.
+12. **Mudança que mexe no livro-razão passa por revisão adversarial** antes de ir. Ela já derrubou três versões que pareciam prontas.
 
 ## Comandos
 
