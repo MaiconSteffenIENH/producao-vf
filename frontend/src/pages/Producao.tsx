@@ -142,6 +142,30 @@ export function Producao() {
   const [filtroCor, setFiltroCor] = useState('')
 
   const [paraApagar, setParaApagar] = useState<string | null>(null)
+
+  /*
+   * MONTAR A ORDEM DE PRODUÇÃO — um modo, e não uma caixinha em cada cartão.
+   *
+   * Marcar vários lotes é operação rara: acontece quando a xícara e o pires do
+   * mesmo conjunto vão para a bancada juntos. Uma caixa de seleção fixa em todo
+   * cartão cobraria esse preço o dia inteiro, num quadro que fica aberto numa
+   * tela de toque e cujo gesto principal é arrastar.
+   *
+   * Enquanto o modo está ligado o arraste é desligado: os dois no mesmo dedo
+   * fariam a pessoa mover um lote de etapa quando só queria escolhê-lo.
+   */
+  const [modoOrdem, setModoOrdem] = useState(false)
+  const [selecionados, setSelecionados] = useState<string[]>([])
+
+  const alternarSelecao = (id: string) =>
+    setSelecionados((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+
+  const abrirOrdem = () => {
+    if (selecionados.length === 0) return
+    window.open(`/ordem-producao?lotes=${selecionados.join(',')}`, '_blank', 'noopener')
+    setModoOrdem(false)
+    setSelecionados([])
+  }
   const [novoAberto, setNovoAberto] = useState(false)
   /*
    * A data já vem preenchida com hoje.
@@ -409,9 +433,22 @@ export function Producao() {
     <>
       <CabecalhoPagina
         titulo="Produção"
-        descricao="Onde cada lote está agora. Arraste o cartão até a etapa, ou use os botões dele para mover, perder ou dividir."
+        descricao={
+          modoOrdem
+            ? 'Toque nos lotes que entram na mesma folha. Xícara e pires do mesmo conjunto saem juntos.'
+            : 'Onde cada lote está agora. Arraste o cartão até a etapa, ou use os botões dele para mover, perder ou dividir.'
+        }
         acoes={
           <>
+            <Botao
+              variante={modoOrdem ? 'primario' : 'secundario'}
+              onClick={() => {
+                setModoOrdem((v) => !v)
+                setSelecionados([])
+              }}
+            >
+              <Printer size={16} /> {modoOrdem ? 'Sair da seleção' : 'Ordem de produção'}
+            </Botao>
             <div className="min-w-0 sm:w-52">
               <SelecaoBuscavel
                 valor={filtroPeca}
@@ -542,12 +579,36 @@ export function Producao() {
                   {coluna.cartoes.map((cartao) => (
                     <article
                       key={cartao.id}
-                      {...pegar({ ...cartao, etapaOrigemId: coluna.etapa.id })}
-                      className={`anima-surgir rounded-2xl border border-borda bg-superficie p-3.5 shadow-baixa transition-all duration-200 ${
-                        arrasto.item?.id === cartao.id && arrasto.item?.etapaOrigemId === coluna.etapa.id
-                          ? // o original vira contorno vazado: mostra de onde saiu
-                            'border-dashed opacity-35'
-                          : 'cursor-grab hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media active:cursor-grabbing'
+                      /*
+                        No modo de montar ordem o cartão NÃO arrasta: o gesto
+                        passa a ser escolher, e manter os dois no mesmo dedo
+                        faria a pessoa mover um lote de etapa quando só queria
+                        marcá-lo para imprimir.
+                      */
+                      {...(modoOrdem ? {} : pegar({ ...cartao, etapaOrigemId: coluna.etapa.id }))}
+                      onClick={modoOrdem ? () => alternarSelecao(cartao.id) : undefined}
+                      role={modoOrdem ? 'checkbox' : undefined}
+                      aria-checked={modoOrdem ? selecionados.includes(cartao.id) : undefined}
+                      tabIndex={modoOrdem ? 0 : undefined}
+                      onKeyDown={
+                        modoOrdem
+                          ? (e) => {
+                              if (e.key === ' ' || e.key === 'Enter') {
+                                e.preventDefault()
+                                alternarSelecao(cartao.id)
+                              }
+                            }
+                          : undefined
+                      }
+                      className={`anima-surgir rounded-2xl border bg-superficie p-3.5 shadow-baixa transition-all duration-200 ${
+                        modoOrdem
+                          ? selecionados.includes(cartao.id)
+                            ? 'cursor-pointer border-marca bg-marca/10 ring-2 ring-marca'
+                            : 'cursor-pointer border-borda hover:border-marca-clara'
+                          : arrasto.item?.id === cartao.id && arrasto.item?.etapaOrigemId === coluna.etapa.id
+                            ? // o original vira contorno vazado: mostra de onde saiu
+                              'border-borda border-dashed opacity-35'
+                            : 'cursor-grab border-borda hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media active:cursor-grabbing'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -622,7 +683,7 @@ export function Producao() {
                         que não tem volta, e misturá-lo aos outros três
                         convidaria ao toque errado numa tela de dedo.
                       */}
-                      <div className="mt-3 grid grid-cols-2 gap-1.5">
+                      <div className={`mt-3 grid grid-cols-2 gap-1.5 ${modoOrdem ? 'hidden' : ''}`}>
                         <button
                           onClick={() => abrirAcao('avancar', cartao, coluna.etapa.id)}
                           className="inline-flex items-center justify-start gap-1.5 rounded-lg bg-marca px-2.5 py-1.5 text-xs font-medium text-contraste hover:bg-marca-escura"
@@ -974,6 +1035,45 @@ export function Producao() {
         aoFechar={() => setParaApagar(null)}
         aoApagar={() => void recarregar()}
       />
+
+      {/*
+        A barra da seleção fica presa embaixo, e não no topo junto do botão.
+        O quadro rola muito na horizontal e na vertical; com a contagem lá em
+        cima, quem marca um lote na última coluna não vê que marcou. Embaixo
+        ela acompanha o polegar, que é onde a mão está numa tela de toque.
+      */}
+      {modoOrdem && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-borda bg-superficie/95 px-4 py-3 backdrop-blur">
+          <div className="mx-auto flex max-w-[100rem] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-tinta">
+              {selecionados.length === 0 ? (
+                <span className="text-tinta-fraca">Toque nos lotes que vão na mesma folha.</span>
+              ) : (
+                <>
+                  <strong>{plural(selecionados.length, 'lote')}</strong> na ordem
+                  {selecionados.length > 1 && ' — sai tudo numa folha só'}
+                </>
+              )}
+            </p>
+            <div className="flex gap-2">
+              <Botao
+                variante="secundario"
+                onClick={() => {
+                  setModoOrdem(false)
+                  setSelecionados([])
+                }}
+              >
+                Cancelar
+              </Botao>
+              <Botao onClick={abrirOrdem} disabled={selecionados.length === 0}>
+                <Printer size={16} /> Gerar ordem
+              </Botao>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* respiro para a barra não cobrir o último cartão da coluna */}
+      {modoOrdem && <div className="h-20" />}
     </>
   )
 }
