@@ -135,13 +135,6 @@ async function validarInsumos(insumos: ReturnType<typeof normalizarInsumos>) {
 }
 
 /**
- * A ficha técnica é coerente?
- *
- * A conta mora em `lib/ficha-tecnica.ts`, sem Prisma, e é chamada aqui. O 422
- * carrega a lista inteira de problemas: quem cadastra quer saber tudo o que
- * falta de uma vez, e não descobrir um erro por tentativa de salvar.
- */
-/**
  * A argila escolhida existe e é mesmo argila?
  *
  * O tipo é conferido de propósito: a tela só oferece matéria-prima do tipo
@@ -160,10 +153,19 @@ async function validarArgila(argilaId: string | null | undefined) {
   }
 }
 
+/**
+ * A ficha técnica é coerente?
+ *
+ * A conta mora em `lib/ficha-tecnica.ts`, sem Prisma, e é chamada aqui. O 422
+ * carrega a lista inteira de problemas: quem cadastra quer saber tudo o que
+ * falta de uma vez, e não descobrir um erro por tentativa de salvar.
+ */
 function validarFicha(dados: DadosPeca) {
   const problemas = conferirFicha({
     alturaCm: dados.alturaCm ?? null,
     larguraCm: dados.larguraCm ?? null,
+    diametroBocaCm: dados.diametroBocaCm ?? null,
+    diametroBaseCm: dados.diametroBaseCm ?? null,
     capacidadeMl: dados.capacidadeMl ?? null,
     pesoCruG: dados.pesoCruG ?? null,
     momento: dados.medidasMomento ?? null,
@@ -189,6 +191,8 @@ function validarFicha(dados: DadosPeca) {
 const fichaDe = (dados: DadosPeca) => ({
   alturaCm: dados.alturaCm,
   larguraCm: dados.larguraCm,
+  diametroBocaCm: dados.diametroBocaCm,
+  diametroBaseCm: dados.diametroBaseCm,
   capacidadeMl: dados.capacidadeMl,
   pesoCruG: dados.pesoCruG,
   medidasMomento: dados.medidasMomento,
@@ -354,6 +358,8 @@ export async function duplicarPeca(id: string, nomePedido?: string) {
         // remedir tudo de novo seria o oposto do motivo de duplicar
         alturaCm: original.alturaCm,
         larguraCm: original.larguraCm,
+        diametroBocaCm: original.diametroBocaCm,
+        diametroBaseCm: original.diametroBaseCm,
         capacidadeMl: original.capacidadeMl,
         pesoCruG: original.pesoCruG,
         medidasMomento: original.medidasMomento,

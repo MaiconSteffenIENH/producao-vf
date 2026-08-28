@@ -34,7 +34,12 @@ export const ROTULO_MOMENTO: Record<MomentoDaMedida, string> = {
 /** As medidas como elas vêm do cadastro; `null` é "ninguém definiu ainda". */
 export type MedidasDaPeca = {
   alturaCm: number | null
+  /** a medida mais larga do corpo */
   larguraCm: number | null
+  /** abertura de cima; o oleiro confere com o compasso enquanto torneia */
+  diametroBocaCm: number | null
+  /** apoio de baixo; peça que não assenta reta volta torta da queima */
+  diametroBaseCm: number | null
   capacidadeMl: number | null
   pesoCruG: number | null
   momento: MomentoDaMedida | null
@@ -87,7 +92,12 @@ export function dentroDoPadrao(medido: number, alvo: number, toleranciaPct: numb
 /** A peça tem alguma medida cadastrada? */
 export function temMedida(m: MedidasDaPeca): boolean {
   return (
-    m.alturaCm !== null || m.larguraCm !== null || m.capacidadeMl !== null || m.pesoCruG !== null
+    m.alturaCm !== null ||
+    m.larguraCm !== null ||
+    m.diametroBocaCm !== null ||
+    m.diametroBaseCm !== null ||
+    m.capacidadeMl !== null ||
+    m.pesoCruG !== null
   )
 }
 
@@ -150,6 +160,33 @@ export function conferirFicha(m: MedidasDaPeca): ProblemaNaFicha[] {
     })
   }
 
+  /*
+   * Boca ou base MAIOR que a largura não é peça exótica: é contradição.
+   *
+   * `larguraCm` está definida como a medida mais larga do corpo. Se a abertura
+   * de cima passa dela, uma das duas está errada — e a ficha vai para a bancada
+   * mandando o oleiro tornear algo impossível.
+   *
+   * A comparação usa a faixa de tolerância, e não o valor cravado: numa peça
+   * reta a boca é igual à largura, e medir 9,5 num lugar e 9,4 no outro é a
+   * variação normal do trabalho, não erro de cadastro.
+   */
+  if (m.larguraCm !== null && m.toleranciaPct !== null) {
+    const teto = faixaDaMedida(m.larguraCm, m.toleranciaPct).maximo
+    if (m.diametroBocaCm !== null && m.diametroBocaCm > teto) {
+      problemas.push({
+        campo: 'diametroBocaCm',
+        mensagem: `A boca (${m.diametroBocaCm} cm) não pode passar da largura da peça (${m.larguraCm} cm).`,
+      })
+    }
+    if (m.diametroBaseCm !== null && m.diametroBaseCm > teto) {
+      problemas.push({
+        campo: 'diametroBaseCm',
+        mensagem: `A base (${m.diametroBaseCm} cm) não pode passar da largura da peça (${m.larguraCm} cm).`,
+      })
+    }
+  }
+
   // Peça mais larga que alta ou mais alta que larga é normal — bowl e vaso
   // existem. O que não existe é peça que cabe mais líquido do que o volume do
   // cilindro que a contém: aí uma das duas medidas está errada.
@@ -180,6 +217,8 @@ export function resumoDaFicha(m: MedidasDaPeca): string {
   const partes: string[] = []
   if (m.alturaCm !== null) partes.push(`${formatar(m.alturaCm)} cm de altura`)
   if (m.larguraCm !== null) partes.push(`${formatar(m.larguraCm)} cm de largura`)
+  if (m.diametroBocaCm !== null) partes.push(`boca ${formatar(m.diametroBocaCm)} cm`)
+  if (m.diametroBaseCm !== null) partes.push(`base ${formatar(m.diametroBaseCm)} cm`)
   if (m.capacidadeMl !== null) partes.push(`${m.capacidadeMl} ml`)
   if (m.pesoCruG !== null) partes.push(`${m.pesoCruG} g de barro`)
   if (partes.length === 0) return ''

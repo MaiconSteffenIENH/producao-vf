@@ -12,6 +12,8 @@ import {
 const VAZIA: MedidasDaPeca = {
   alturaCm: null,
   larguraCm: null,
+  diametroBocaCm: null,
+  diametroBaseCm: null,
   capacidadeMl: null,
   pesoCruG: null,
   momento: null,
@@ -134,6 +136,44 @@ describe('conferirFicha', () => {
 
   it('sem altura ou sem largura não dá para conferir o volume, e não inventa erro', () => {
     expect(conferirFicha(ficha({ capacidadeMl: 9999, momento: 'pronto' }))).toEqual([])
+  })
+
+  it('boca maior que a largura é contradição, não peça exótica', () => {
+    // largura está definida como a medida MAIS LARGA do corpo
+    const problemas = conferirFicha(
+      ficha({ larguraCm: 9, diametroBocaCm: 12, momento: 'cru', toleranciaPct: 5 }),
+    )
+    expect(problemas.map((p) => p.campo)).toContain('diametroBocaCm')
+  })
+
+  it('base maior que a largura também', () => {
+    const problemas = conferirFicha(
+      ficha({ larguraCm: 9, diametroBaseCm: 11, momento: 'cru', toleranciaPct: 5 }),
+    )
+    expect(problemas.map((p) => p.campo)).toContain('diametroBaseCm')
+  })
+
+  it('peça reta passa: boca igual à largura dentro da tolerância', () => {
+    // a xícara reta da ficha do ateliê é assim, e medir 9,5 num lugar e 9,4 no
+    // outro é a variação do trabalho, não erro de cadastro
+    expect(
+      conferirFicha(ficha({ larguraCm: 9.4, diametroBocaCm: 9.5, momento: 'cru', toleranciaPct: 5 })),
+    ).toEqual([])
+  })
+
+  it('sem tolerância definida não reprova a boca, para não brigar por 1 mm', () => {
+    expect(
+      conferirFicha(ficha({ larguraCm: 9.4, diametroBocaCm: 9.5, momento: 'cru' })),
+    ).toEqual([])
+  })
+
+  it('a xícara reta da ficha do ateliê passa inteira', () => {
+    // dados reais: 340 g de argila, 10,5 de altura, boca 9,5
+    expect(
+      conferirFicha(
+        ficha({ alturaCm: 10.5, larguraCm: 9.5, diametroBocaCm: 9.5, diametroBaseCm: 7, pesoCruG: 340, momento: 'cru', toleranciaPct: 5 }),
+      ),
+    ).toEqual([])
   })
 
   it('junta os problemas em vez de parar no primeiro', () => {

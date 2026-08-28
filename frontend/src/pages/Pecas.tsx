@@ -46,6 +46,8 @@ type Peca = {
   /** ficha técnica: o padrão a seguir ao reproduzir a peça; nulo é "ninguém definiu" */
   alturaCm: string | null
   larguraCm: string | null
+  diametroBocaCm: string | null
+  diametroBaseCm: string | null
   capacidadeMl: number | null
   pesoCruG: number | null
   medidasMomento: Momento | null
@@ -69,13 +71,6 @@ type Peca = {
 type LinhaRoteiro = { etapaId: string; responsavelId: string; diasEstimados: number }
 type LinhaInsumo = { materiaPrimaId: string; quantidadePorPeca: number | null; etapaId: string; corId: string }
 
-/*
- * A ficha em uma linha, para o cartão da lista.
- *
- * Espelha `resumoDaFicha` de backend/src/lib/ficha-tecnica.ts. Aqui é só
- * apresentação: quem recusa ficha incoerente é o servidor, então não há regra
- * duplicada — há a mesma frase escrita nos dois lados, e o servidor manda.
- */
 /**
  * A faixa aceitável, escrita como "7,6 a 8,4".
  *
@@ -91,6 +86,13 @@ function faixa(alvo: number, toleranciaPct: number): string {
   return `${fmt(uma(alvo - margem))} a ${fmt(uma(alvo + margem))}`
 }
 
+/*
+ * A ficha em uma linha, para o cartão da lista.
+ *
+ * Espelha `resumoDaFicha` de backend/src/lib/ficha-tecnica.ts. Aqui é só
+ * apresentação: quem recusa ficha incoerente é o servidor, então não há regra
+ * duplicada — há a mesma frase escrita nos dois lados, e o servidor manda.
+ */
 function resumoDaFicha(p: Peca): string {
   const num = (v: string | null) => (v === null ? null : Number(v))
   const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ','))
@@ -99,6 +101,10 @@ function resumoDaFicha(p: Peca): string {
   const largura = num(p.larguraCm)
   if (altura !== null) partes.push(`${fmt(altura)} cm de altura`)
   if (largura !== null) partes.push(`${fmt(largura)} cm de largura`)
+  const boca = num(p.diametroBocaCm)
+  const base = num(p.diametroBaseCm)
+  if (boca !== null) partes.push(`boca ${fmt(boca)} cm`)
+  if (base !== null) partes.push(`base ${fmt(base)} cm`)
   if (p.capacidadeMl !== null) partes.push(`${p.capacidadeMl} ml`)
   if (p.pesoCruG !== null) partes.push(`${p.pesoCruG} g de barro`)
   if (partes.length === 0) return ''
@@ -118,6 +124,8 @@ const FORM_VAZIO = {
   qtdMinimaDesejada: 0,
   alturaCm: null as number | null,
   larguraCm: null as number | null,
+  diametroBocaCm: null as number | null,
+  diametroBaseCm: null as number | null,
   capacidadeMl: null as number | null,
   pesoCruG: null as number | null,
   medidasMomento: '' as '' | Momento,
@@ -244,6 +252,8 @@ export function Pecas() {
       // o Prisma devolve Decimal como string; o campo numérico trabalha com número
       alturaCm: peca.alturaCm === null ? null : Number(peca.alturaCm),
       larguraCm: peca.larguraCm === null ? null : Number(peca.larguraCm),
+      diametroBocaCm: peca.diametroBocaCm === null ? null : Number(peca.diametroBocaCm),
+      diametroBaseCm: peca.diametroBaseCm === null ? null : Number(peca.diametroBaseCm),
       capacidadeMl: peca.capacidadeMl,
       pesoCruG: peca.pesoCruG,
       medidasMomento: peca.medidasMomento ?? '',
@@ -815,11 +825,27 @@ export function Pecas() {
                   placeholder="—"
                 />
               </Campo>
-              <Campo rotulo="Diâmetro ou largura (cm)">
+              <Campo rotulo="Diâmetro ou largura (cm)" dica="A medida mais larga do corpo da peça.">
                 <InputNumero
                   decimais={1}
                   valor={form.larguraCm}
                   aoMudar={(n) => setForm({ ...form, larguraCm: n })}
+                  placeholder="—"
+                />
+              </Campo>
+              <Campo rotulo="Diâmetro da boca (cm)" dica="A abertura de cima. Deixe vazio em peça que não tem.">
+                <InputNumero
+                  decimais={1}
+                  valor={form.diametroBocaCm}
+                  aoMudar={(n) => setForm({ ...form, diametroBocaCm: n })}
+                  placeholder="—"
+                />
+              </Campo>
+              <Campo rotulo="Diâmetro da base (cm)" dica="O apoio de baixo, que decide se a peça assenta reta.">
+                <InputNumero
+                  decimais={1}
+                  valor={form.diametroBaseCm}
+                  aoMudar={(n) => setForm({ ...form, diametroBaseCm: n })}
                   placeholder="—"
                 />
               </Campo>

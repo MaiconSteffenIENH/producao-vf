@@ -245,8 +245,12 @@ model Peca {
   /// o cadastro de quem só quer registrar uma peça nova. Nulo aqui quer dizer
   /// "ninguém definiu ainda", e a tela diz isso em vez de mostrar zero.
   alturaCm             Decimal? @map("altura_cm") @db.Decimal(6, 1)
-  /// diâmetro na peça redonda, largura na que não é
+  /// diâmetro na peça redonda, largura na que não é — a medida mais larga
   larguraCm            Decimal? @map("largura_cm") @db.Decimal(6, 1)
+  /// abertura de cima. Numa xícara é o que o oleiro confere com o compasso
+  diametroBocaCm       Decimal? @map("diametro_boca_cm") @db.Decimal(6, 1)
+  /// apoio de baixo. Peça que não assenta reta volta da queima torta
+  diametroBaseCm       Decimal? @map("diametro_base_cm") @db.Decimal(6, 1)
   /// só faz sentido em peça que contém líquido (xícara, bowl, jarra)
   capacidadeMl         Int?     @map("capacidade_ml")
   /// peso do barro antes de secar — é o que o oleiro pesa na hora de tornear

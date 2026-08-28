@@ -156,6 +156,8 @@ export const pecaSchema = z.object({
    */
   alturaCm: z.coerce.number().positive().max(999).nullable().optional(),
   larguraCm: z.coerce.number().positive().max(999).nullable().optional(),
+  diametroBocaCm: z.coerce.number().positive().max(999).nullable().optional(),
+  diametroBaseCm: z.coerce.number().positive().max(999).nullable().optional(),
   capacidadeMl: z.coerce.number().int().positive().max(99999).nullable().optional(),
   pesoCruG: z.coerce.number().int().positive().max(99999).nullable().optional(),
   medidasMomento: z.enum(['cru', 'pronto']).nullable().optional(),
