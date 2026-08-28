@@ -85,6 +85,146 @@ async function roteiroDaPeca(pecaId: string) {
   return roteiro
 }
 
+/*
+ * ─────────────────── A ORDEM DE PRODUÇÃO ───────────────────
+ *
+ * A folha que o João imprime e entrega na bancada, no lugar da ficha
+ * plastificada que hoje fica pendurada — e que semana passada se perdeu,
+ * levando junto as medidas e uma tarde de trabalho para remedi-las.
+ *
+ * Ela sai do LOTE, e não da peça, por dois motivos. O primeiro é que quantidade
+ * a produzir só existe no lote. O segundo é a rastreabilidade: a folha leva o
+ * código do lote impresso, então perder o papel custa uma reimpressão, e não o
+ * dado. É o inverso da ficha de papel, onde o papel ERA o dado.
+ *
+ * A conta que a ficha de papel não fazia: quanto de argila separar ao todo.
+ * 40 xícaras × 340 g são 13,6 kg, e hoje alguém faz essa multiplicação de
+ * cabeça toda vez que abre uma produção.
+ */
+export async function ordemDeProducao(ids: string[]) {
+  if (ids.length === 0) throw invalido('Escolha ao menos um lote para gerar a ordem.')
+
+  const lotes = await prisma.lote.findMany({
+    where: { id: { in: ids }, canceladoEm: null },
+    orderBy: { codigo: 'asc' },
+    include: {
+      cor: { select: { nome: true, hex: true } },
+      peca: {
+        select: {
+          nome: true,
+          alturaCm: true,
+          larguraCm: true,
+          diametroBocaCm: true,
+          diametroBaseCm: true,
+          capacidadeMl: true,
+          pesoCruG: true,
+          medidasMomento: true,
+          medidaToleranciaPct: true,
+          argila: { select: { nome: true, unidade: true } },
+        },
+      },
+    },
+  })
+
+  if (lotes.length === 0) throw naoEncontrado('Lote')
+
+  const itens: ItemDaOrdem[] = lotes.map((l: LoteDaOrdem) => {
+    const p = l.peca
+    const pesoCruG = p.pesoCruG
+    // o total só existe quando há peso por peça; sem ele a folha diz "—" em
+    // vez de mostrar zero, que a bancada leria como "não precisa de argila"
+    const argilaTotalG = pesoCruG === null ? null : pesoCruG * l.quantidadeInicial
+    return {
+      loteId: l.id,
+      codigo: l.codigo,
+      quantidade: l.quantidadeInicial,
+      observacao: l.observacao,
+      peca: p.nome,
+      cor: l.cor?.nome ?? null,
+      corHex: l.cor?.hex ?? null,
+      argila: p.argila?.nome ?? null,
+      argilaUnidade: p.argila?.unidade ?? null,
+      pesoCruG,
+      argilaTotalG,
+      medidas: {
+        alturaCm: numero(p.alturaCm),
+        larguraCm: numero(p.larguraCm),
+        diametroBocaCm: numero(p.diametroBocaCm),
+        diametroBaseCm: numero(p.diametroBaseCm),
+        capacidadeMl: p.capacidadeMl,
+        momento: p.medidasMomento,
+        toleranciaPct: numero(p.medidaToleranciaPct),
+      },
+    }
+  })
+
+  const totalArgilaG = itens.reduce((n: number, i: ItemDaOrdem) => n + (i.argilaTotalG ?? 0), 0)
+  return {
+    geradoEm: new Date().toISOString(),
+    itens,
+    // só faz sentido somar quando todas as peças usam a mesma argila; com
+    // argilas diferentes o número seria a soma de coisas que não se misturam
+    totalArgilaG: argilaUnica(itens) ? totalArgilaG : null,
+  }
+}
+
+/*
+ * Tipos escritos à mão, e não derivados do client.
+ *
+ * O client do Prisma nem sempre pode ser gerado neste projeto (o CLI não
+ * alcança o servidor de binários em alguns ambientes), e aí `Awaited<ReturnType
+ * <typeof prisma...>>` vira `any` sem avisar. Escrever o formato aqui mantém o
+ * compilador útil nos dois cenários.
+ */
+type LoteDaOrdem = {
+  id: string
+  codigo: string
+  quantidadeInicial: number
+  observacao: string | null
+  cor: { nome: string; hex: string } | null
+  peca: {
+    nome: string
+    alturaCm: unknown
+    larguraCm: unknown
+    diametroBocaCm: unknown
+    diametroBaseCm: unknown
+    capacidadeMl: number | null
+    pesoCruG: number | null
+    medidasMomento: string | null
+    medidaToleranciaPct: unknown
+    argila: { nome: string; unidade: string } | null
+  }
+}
+
+type ItemDaOrdem = {
+  loteId: string
+  codigo: string
+  quantidade: number
+  observacao: string | null
+  peca: string
+  cor: string | null
+  corHex: string | null
+  argila: string | null
+  argilaUnidade: string | null
+  pesoCruG: number | null
+  argilaTotalG: number | null
+  medidas: {
+    alturaCm: number | null
+    larguraCm: number | null
+    diametroBocaCm: number | null
+    diametroBaseCm: number | null
+    capacidadeMl: number | null
+    momento: string | null
+    toleranciaPct: number | null
+  }
+}
+
+/** Prisma devolve Decimal; a folha precisa de número. */
+const numero = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
+
+const argilaUnica = (itens: ItemDaOrdem[]) =>
+  new Set(itens.map((i) => i.argila).filter(Boolean)).size === 1
+
 // ─────────────────────────── Consultas ───────────────────────────
 
 type MovimentoDePerdaDoLote = MovimentoDePerda & { loteId: string }

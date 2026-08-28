@@ -276,6 +276,23 @@ rotas.get('/lotes/kanban', rota(async (req, res) => {
   const { pecaId, corId, responsavelId } = req.query as Record<string, string | undefined>
   res.json(await lotes.kanban({ pecaId, corId, responsavelId }))
 }))
+/*
+ * ANTES de `/lotes/:id`, e não depois.
+ *
+ * Os dois caminhos têm dois segmentos, então o Express casaria
+ * `/lotes/ordem-producao` com `:id = "ordem-producao"` e a ordem morreria num
+ * "Lote não encontrado" que não explica nada. Rota literal vem primeiro.
+ */
+rotas.get(
+  '/lotes/ordem-producao',
+  rota(async (req, res) => {
+    const ids = String((req.query.ids as string) ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    res.json(await lotes.ordemDeProducao(ids))
+  }),
+)
 rotas.get('/lotes/:id', rota(async (req, res) => void res.json(await lotes.obterLote(req.params.id))))
 rotas.post(
   '/lotes',

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Scissors, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Printer, Scissors, Trash2 } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
@@ -648,11 +648,24 @@ export function Producao() {
                         >
                           <Scissors size={13} className="shrink-0" /> Dividir
                         </button>
+                        {/* a folha que vai para a bancada, no lugar da ficha
+                            plastificada. Abre em outra aba: o quadro fica
+                            aberto o dia todo e não deve sair do lugar */}
+                        <a
+                          href={`/ordem-producao?lotes=${cartao.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Folha com medidas, argila e quantidade para entregar na produção"
+                          aria-label={`Imprimir ordem de produção do lote ${cartao.codigo}`}
+                          className="inline-flex items-center justify-start gap-1.5 rounded-lg border border-borda px-2.5 py-1.5 text-xs text-tinta hover:bg-superficie-2"
+                        >
+                          <Printer size={13} className="shrink-0" /> Ordem
+                        </a>
                         <button
                           onClick={() => setParaApagar(cartao.id)}
                           title="Lote aberto por engano — apaga de vez, e nada dele vira perda"
                           aria-label={`Apagar lote ${cartao.codigo}`}
-                          className="col-span-2 inline-flex items-center justify-start gap-1.5 rounded-lg border border-borda px-2.5 py-1.5 text-xs text-tinta-fraca hover:border-perigo/40 hover:bg-perigo/5 hover:text-perigo"
+                          className="inline-flex items-center justify-start gap-1.5 rounded-lg border border-borda px-2.5 py-1.5 text-xs text-tinta-fraca hover:border-perigo/40 hover:bg-perigo/5 hover:text-perigo"
                         >
                           <Trash2 size={13} className="shrink-0" /> Apagar
                         </button>

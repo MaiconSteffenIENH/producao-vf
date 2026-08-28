@@ -55,6 +55,23 @@ describe('GET com :id — não cabem na lista de caminhos fixos', () => {
     expect(r.body.nome).not.toBe(peca.nome)
   })
 
+  it('/lotes/ordem-producao monta a folha da bancada', async () => {
+    const lotes = await comAuth('get', '/lotes')
+    const lote = lotes.body[0] as { id: string; codigo: string }
+    const r = await comAuth('get', `/lotes/ordem-producao?ids=${lote.id}`)
+    expect(r.status, JSON.stringify(r.body)).toBe(200)
+    expect(r.body.itens).toHaveLength(1)
+    expect(r.body.itens[0].codigo).toBe(lote.codigo)
+    expect(r.body.itens[0].quantidade).toBeGreaterThan(0)
+  })
+
+  it('/lotes/ordem-producao não é confundido com /lotes/:id', async () => {
+    // as duas rotas têm dois segmentos; se a literal perder a precedência,
+    // "ordem-producao" vira um id e a resposta vira 404 sem explicação
+    const r = await comAuth('get', '/lotes/ordem-producao?ids=')
+    expect(r.status).toBe(422)
+  })
+
   it('não confunde o :id de duas partes com o de três', async () => {
     // /pecas/:id e /pecas/:id/nome-de-copia moram no mesmo prefixo; se a ordem
     // das rotas mudar, esta some sem ninguém perceber

@@ -33,6 +33,9 @@ const Etapas = lazy(() => import('./pages/Etapas').then((m) => ({ default: m.Eta
 const MateriasPrimas = lazy(() => import('./pages/MateriasPrimas').then((m) => ({ default: m.MateriasPrimas })))
 const Usuarios = lazy(() => import('./pages/Usuarios').then((m) => ({ default: m.Usuarios })))
 const Ajustes = lazy(() => import('./pages/Ajustes').then((m) => ({ default: m.Ajustes })))
+const OrdemProducao = lazy(() =>
+  import('./pages/OrdemProducao').then((m) => ({ default: m.OrdemProducao })),
+)
 
 function Protegida({ children }: { children: React.ReactNode }) {
   const { perfil, carregando } = useAuth()
@@ -88,6 +91,23 @@ export function App() {
         <Suspense fallback={<Carregando />}>
           <Routes>
             <Route path="/entrar" element={<Login />} />
+
+            {/*
+              A ordem de produção fica FORA do Layout, e continua protegida.
+              O que aparece na tela é o que sai na impressora: com o menu
+              lateral em volta, a pessoa conferiria uma coisa e imprimiria
+              outra. Esconder a moldura só no `@media print` teria o mesmo
+              defeito, com o agravante de só aparecer na hora da impressão.
+            */}
+            <Route
+              path="/ordem-producao"
+              element={
+                <Protegida>
+                  <OrdemProducao />
+                </Protegida>
+              }
+            />
+
             <Route
               element={
                 <Protegida>
