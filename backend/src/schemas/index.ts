@@ -477,3 +477,20 @@ export const pecaInsumoSchema = z.object({
   etapaId: z.string().uuid().optional().nullable(),
   corId: z.string().uuid().optional().nullable(),
 })
+
+/*
+ * AVISO DO QUADRO.
+ *
+ * Título curto porque ele é o card inteiro no celular: texto longo vira parede
+ * de letra que ninguém lê no meio da produção. O que não coube vai no detalhe.
+ *
+ * Prazo é OPCIONAL de propósito. "O caminhão de argila chega quinta" tem data;
+ * "conferir a caixa de envio" não tem, e exigir uma data inventada ensinaria a
+ * equipe a preencher qualquer coisa — o que estragaria justamente a cor do
+ * menu, que é o único motivo de o prazo existir.
+ */
+export const avisoSchema = z.object({
+  titulo: texto(140),
+  detalhe: z.string().trim().max(1000).or(z.literal('')).optional().nullable(),
+  prazo: dataIso.or(z.literal('')).optional().nullable(),
+})

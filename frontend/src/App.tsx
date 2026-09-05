@@ -21,6 +21,7 @@ const Queimas = lazy(() => import('./pages/Queimas').then((m) => ({ default: m.Q
 const Vendas = lazy(() => import('./pages/Vendas').then((m) => ({ default: m.Vendas })))
 const Fotos = lazy(() => import('./pages/Fotos').then((m) => ({ default: m.Fotos })))
 const Encomendas = lazy(() => import('./pages/Encomendas').then((m) => ({ default: m.Encomendas })))
+const Avisos = lazy(() => import('./pages/Avisos').then((m) => ({ default: m.Avisos })))
 const Historico = lazy(() => import('./pages/Historico').then((m) => ({ default: m.Historico })))
 const EstoqueBiscoito = lazy(() => import('./pages/EstoqueBiscoito').then((m) => ({ default: m.EstoqueBiscoito })))
 const EstoqueProntas = lazy(() => import('./pages/EstoqueProntas').then((m) => ({ default: m.EstoqueProntas })))
@@ -124,6 +125,7 @@ export function App() {
               <Route path="/meu-dia" element={<MeuDia />} />
               <Route path="/forno" element={<Queimas />} />
               <Route path="/encomendas" element={<Encomendas />} />
+              <Route path="/avisos" element={<Avisos />} />
               <Route path="/fotos" element={<Fotos />} />
               <Route path="/vendas" element={<Vendas />} />
               <Route path="/historico" element={<Historico />} />

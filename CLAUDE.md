@@ -48,11 +48,12 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 15. **A ficha técnica da peça diz em que MOMENTO foi medida.** A argila encolhe na queima (10% a 15%), então 8 cm no cru e 8 cm no pronto são peças de tamanhos diferentes. Medida sem `medidasMomento` não significa nada, e por isso `conferirFicha()` recusa. Pela mesma razão, peso do barro cru numa ficha declarada como "pronto" é erro: alguém pesaria a bola de argila esperando o número da peça queimada e tornearia peça pequena a manhã inteira. **Tolerância existe porque peça artesanal não sai idêntica** — ficha com número exato reprova a produção toda e a equipe para de olhar o campo.
 16. **Consumo de insumo é o que liga o aviso de compra.** `PecaInsumo` alimenta `lib/insumos.ts`, que já sabia calcular o que comprar — mas ficou dois meses inerte porque nenhuma tela gravava o cadastro, e o cálculo rodava sobre tabela vazia sem nunca sugerir nada. Insumo sem `corId` vale para qualquer lote (a argila é a mesma); com `corId` só sai naquela cor (esmalte Pistache só em lote Pistache).
 17. **Campo novo no cadastro de peça nasce `optional()` SEM default.** O app é PWA e fica em cache: depois do deploy, um celular com a tela antiga continua salvando peça sem mandar o campo que acabou de nascer. Com default, essa edição vira ordem de apagar o que outra pessoa cadastrou. Ausente é "não mexa" (o Prisma não toca na coluna); nulo explícito é "limpei na tela". Já mordeu no `precoBase`, no `qtdMinimaBiscoito` e nos insumos — `tests/unidade/peca-campos-ausentes.test.ts` trava os três.
-18. **Escrita de produção passa pela fila offline.** O ateliê tem sinal ruim. `enviarComFila()` gera a chave de idempotência no CLIENTE antes de sair; o backend reconhece a chave e devolve o que já gravou em vez de gravar de novo. Num livro-razão append-only isso é decisivo: duplicata não se apaga, se corrige com estorno.
+18. **O aviso do quadro é TEXTO LIVRE, e concluir não apaga.** Amarrá-lo a uma encomenda cobriria a bandeja de tortinha que ficou para trás e deixaria de fora "o caminhão de argila chega quinta" — e aviso que não cabe no formulário volta para o quadro branco, que é o problema que o quadro veio resolver. Concluído sai da lista de abertos e continua consultável, porque poder olhar depois o que foi combinado é justamente o que o quadro branco apagado não permitia. **A comparação de prazo é de DIA, nunca de instante**: o combinado é "até sexta", e sexta às 23h59 ainda é sexta. Os dois lados são lidos de formas diferentes de propósito — `agora` é instante e vira dia no fuso do ateliê; `prazo` é coluna `DATE` e se lê sem fuso nenhum, senão a meia-noite UTC gravada recuaria três horas e o card apareceria atrasado no próprio dia combinado.
+19. **Escrita de produção passa pela fila offline.** O ateliê tem sinal ruim. `enviarComFila()` gera a chave de idempotência no CLIENTE antes de sair; o backend reconhece a chave e devolve o que já gravou em vez de gravar de novo. Num livro-razão append-only isso é decisivo: duplicata não se apaga, se corrige com estorno.
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 438 testes em ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 477 casos em 26 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -66,6 +67,7 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `agenda-calculo.ts` | meta diária com saldo rolante e folga |
 | `csv-vendas.ts` | leitura da planilha do marketplace |
 | `ficha-tecnica.ts` | faixa de tolerância da medida e coerência da ficha da peça |
+| `avisos.ts` | situação do aviso pelo prazo, e o estado que pinta o menu |
 | `plural.ts` | plural do português (gêmeo de `frontend/src/lib/format.ts`) |
 
 **Testes de unidade ficam em `backend/tests/unidade/`** e o vitest pega a pasta inteira. A configuração já listou arquivo por arquivo, e isso deixou um teste novo existir sem nunca rodar — o comando dizia "passou". Teste que não roda é pior que teste que não existe.

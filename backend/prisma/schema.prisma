@@ -740,3 +740,35 @@ model EncomendaItem {
   @@index([encomendaId])
   @@map("encomenda_itens")
 }
+
+/// O QUE NÃO PODE SER ESQUECIDO.
+///
+/// O João controlava o combinado no quadro branco e apagava depois. Uma bandeja
+/// de tortinha e duas xícaras de coração verde ficaram para trás porque não
+/// havia estoque até a data prometida, e ninguém tinha onde consultar o que
+/// tinha sido combinado. Correio fecha às 17h: um dia perdido é a entrega
+/// perdida.
+///
+/// É TEXTO LIVRE de propósito. Amarrar o aviso a uma encomenda cobriria o caso
+/// da bandeja e deixaria de fora "o caminhão de argila chega quinta" — e aviso
+/// que não cabe no formulário volta para o quadro branco.
+///
+/// Concluir NÃO apaga: o valor do quadro é justamente poder consultar depois o
+/// que foi combinado, que é o que o quadro branco não permitia.
+model Aviso {
+  id       String    @id @default(uuid()) @db.Uuid
+  titulo   String
+  detalhe  String?
+  /// dia limite; nulo é lembrete sem data marcada
+  prazo    DateTime? @db.Date
+  criadoEm DateTime  @default(now()) @map("criado_em")
+  /// nome de quem criou, copiado no ato: o aviso sobrevive ao usuário sair
+  criadoPor String?  @map("criado_por")
+
+  concluidoEm  DateTime? @map("concluido_em")
+  concluidoPor String?   @map("concluido_por")
+
+  /// aberto primeiro, prazo mais curto no topo
+  @@index([concluidoEm, prazo])
+  @@map("avisos")
+}

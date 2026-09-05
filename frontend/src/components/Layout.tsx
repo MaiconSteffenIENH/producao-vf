@@ -20,6 +20,7 @@ import {
   Users,
   Wrench,
   Boxes,
+  BellRing,
   Flame,
   Camera,
   ClipboardCheck,
@@ -31,6 +32,7 @@ import { useAuth, useModulosLiberados } from '../store/auth'
 import { MODULOS, type GrupoDeModulo } from '../lib/modulos'
 import { EVENTO_ATUALIZAR } from '../lib/useAutoRefresh'
 import { TECLA_ATALHO } from '../lib/plataforma'
+import { pinturaDoMenu, useResumoDoQuadro, type ResumoDoQuadro } from '../lib/quadroDeAvisos'
 import { Tecla } from './ui'
 import { AvisoFila } from './AvisoFila'
 
@@ -55,6 +57,7 @@ const ICONES: Record<string, typeof Package> = {
   'meu-dia': CalendarCheck,
   forno: Flame,
   encomendas: ClipboardCheck,
+  avisos: BellRing,
   fotos: Camera,
   historico: History,
   pecas: Package,
@@ -140,7 +143,14 @@ function Marca({ compacto = false }: { compacto?: boolean }) {
   )
 }
 
-function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
+function Navegacao({
+  aoNavegar,
+  quadro,
+}: {
+  aoNavegar?: () => void
+  /** o estado do quadro de avisos, para pintar o item mesmo fora da tela dele */
+  quadro: ResumoDoQuadro
+}) {
   const liberados = useModulosLiberados()
   const [abertos, setAbertos] = useState<Record<string, boolean>>(() => {
     try {
@@ -158,6 +168,7 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
     })
 
   const visiveis = MODULOS.filter((m) => !liberados || liberados.includes(m.chave))
+  const pintura = pinturaDoMenu(quadro)
 
   return (
     <nav className="flex flex-col gap-0.5 px-3 pb-6">
@@ -181,21 +192,33 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
                 // módulo sem ícone escolhido cai no genérico em vez de sumir do
                 // menu: item invisível é o defeito que ninguém consegue relatar
                 const Icone = ICONES[item.chave] ?? Package
+                /*
+                 * O ALERTA VENCE O ESTADO ATIVO.
+                 *
+                 * Estar na tela de avisos não faz a pendência sumir: enquanto
+                 * houver card aberto, o item continua marcado. O "você está
+                 * aqui" fica por conta do marcador lateral, que não depende da
+                 * cor de fundo.
+                 */
+                const alerta = item.chave === 'avisos' ? pintura : null
                 return (
                   <NavLink
                     key={item.chave}
                     to={item.rota}
                     end={item.rota === '/'}
                     onClick={aoNavegar}
+                    title={alerta?.titulo}
                     className={({ isActive }) =>
                       `group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all duration-200 ${
                         // sólido, não transparência: areia sobre areia dava
                         // 3,09:1. Assim passa em 4,54:1 e ainda devolve à lateral
                         // um bloco da cor da marca, que era o que o fundo areia
                         // fazia antes — só que num pedaço só, onde tem função.
-                        isActive
-                          ? 'bg-marca font-medium text-contraste shadow-baixa'
-                          : 'text-tinta-fraca hover:bg-tinta/6 hover:text-tinta'
+                        alerta
+                          ? `font-medium shadow-baixa ${isActive ? alerta.classeAtivo : alerta.classe}`
+                          : isActive
+                            ? 'bg-marca font-medium text-contraste shadow-baixa'
+                            : 'text-tinta-fraca hover:bg-tinta/6 hover:text-tinta'
                       }`
                     }
                   >
@@ -210,6 +233,16 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
                         />
                         <Icone size={17} className="shrink-0" />
                         {item.rotulo}
+                        {alerta && (
+                          <span
+                            aria-label={alerta.titulo}
+                            className={`ml-auto grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+                              alerta.classeBadge
+                            } ${alerta.pulsa ? 'animate-pulse' : ''}`}
+                          >
+                            {alerta.badge}
+                          </span>
+                        )}
                       </>
                     )}
                   </NavLink>
@@ -225,6 +258,15 @@ function Navegacao({ aoNavegar }: { aoNavegar?: () => void }) {
 export function Layout() {
   const { perfil, sair } = useAuth()
   const { escuro, alternar } = usarTema()
+  /*
+   * O quadro é consultado AQUI, uma vez, e desce por prop.
+   *
+   * A `Navegacao` é montada duas vezes — a lateral do desktop e a gaveta do
+   * celular. Com o hook lá dentro, cada uma abriria a sua própria requisição
+   * por minuto, e as duas poderiam divergir por alguns segundos.
+   */
+  const liberados = useModulosLiberados()
+  const quadro = useResumoDoQuadro(!liberados || liberados.includes('avisos'))
   const [menuAberto, setMenuAberto] = useState(false)
   const [perfilAberto, setPerfilAberto] = useState(false)
   const caixaPerfil = useRef<HTMLDivElement>(null)
@@ -260,7 +302,7 @@ export function Layout() {
         </div>
         <div className="mx-3 h-px bg-borda" />
         <div className="flex-1 overflow-y-auto">
-          <Navegacao />
+          <Navegacao quadro={quadro} />
         </div>
       </aside>
 
@@ -275,7 +317,7 @@ export function Layout() {
             <div className="px-5 py-5">
               <Marca />
             </div>
-            <Navegacao aoNavegar={() => setMenuAberto(false)} />
+            <Navegacao aoNavegar={() => setMenuAberto(false)} quadro={quadro} />
           </aside>
         </div>
       )}

@@ -28,6 +28,10 @@ const GETS = [
   '/agenda',
   '/precos',
   '/canais',
+  '/avisos',
+  // o menu chama esta a cada minuto, em toda tela: quebrar aqui quebra o
+  // sistema inteiro, não uma tela só
+  '/avisos/resumo',
 ]
 
 describe('smoke — todos os GET respondem', () => {

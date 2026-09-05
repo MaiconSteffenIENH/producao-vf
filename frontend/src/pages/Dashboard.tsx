@@ -218,10 +218,17 @@ export function Dashboard() {
             {porCategoria.map((c) => (
               <li
                 key={c.id}
-                className="flex items-center justify-between border-b border-borda/60 py-2 text-sm last:border-0"
+                className="flex items-center justify-between gap-3 border-b border-borda/60 py-2 text-sm last:border-0"
               >
-                <span className="text-tinta">{c.nome}</span>
-                <span className="text-tinta-fraca">{plural(c.pecas, 'peça', 'peças')}</span>
+                {/* nome de categoria é livre e chega a passar de 40 caracteres:
+                    sem truncar, ele quebra em duas linhas e desalinha a coluna
+                    da direita. O título mostra o nome inteiro ao passar o mouse. */}
+                <span className="min-w-0 flex-1 truncate text-tinta" title={c.nome}>
+                  {c.nome}
+                </span>
+                <span className="shrink-0 whitespace-nowrap text-tinta-fraca">
+                  {plural(c.pecas, 'peça', 'peças')}
+                </span>
               </li>
             ))}
           </ul>

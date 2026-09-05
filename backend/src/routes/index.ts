@@ -15,6 +15,7 @@ import * as precos from '../services/preco.service'
 import * as queimas from '../services/queima.service'
 import * as vendas from '../services/venda.service'
 import * as encomendas from '../services/encomenda.service'
+import * as avisos from '../services/aviso.service'
 import * as fotos from '../services/foto.service'
 import * as estoque from '../services/estoque.service'
 import {
@@ -48,6 +49,7 @@ import {
   vendaSchema,
   importarVendasSchema,
   encomendaSchema,
+  avisoSchema,
   fotoSchema,
 } from '../schemas'
 
@@ -481,6 +483,50 @@ rotas.delete(
   '/encomendas/:id',
   rota(async (req, res) => {
     await encomendas.apagarEncomenda(req.params.id)
+    res.status(204).end()
+  }),
+)
+
+// ── Quadro de avisos ────────────────────────────────────
+/*
+ * `/avisos/resumo` vem ANTES de qualquer `/avisos/:id`.
+ *
+ * As duas rotas têm dois segmentos, e o Express casa na ordem de registro:
+ * declarada depois, "resumo" seria lida como um id e a consulta que o menu faz
+ * a cada minuto responderia 404 em toda tela do sistema.
+ */
+rotas.get('/avisos/resumo', rota(async (_req, res) => void res.json(await avisos.resumoDoQuadro())))
+rotas.get(
+  '/avisos',
+  rota(async (req, res) => {
+    const { concluidos } = req.query as Record<string, string | undefined>
+    res.json(await avisos.listarAvisos({ concluidos: concluidos ? Number(concluidos) : undefined }))
+  }),
+)
+rotas.post(
+  '/avisos',
+  rota(async (req, res) => {
+    res.status(201).json(await avisos.criarAviso(avisoSchema.parse(req.body), req.sessao))
+  }),
+)
+rotas.put(
+  '/avisos/:id',
+  rota(async (req, res) => {
+    res.json(await avisos.atualizarAviso(req.params.id, avisoSchema.partial().parse(req.body)))
+  }),
+)
+rotas.post(
+  '/avisos/:id/concluir',
+  rota(async (req, res) => void res.json(await avisos.concluirAviso(req.params.id, req.sessao))),
+)
+rotas.post(
+  '/avisos/:id/reabrir',
+  rota(async (req, res) => void res.json(await avisos.reabrirAviso(req.params.id))),
+)
+rotas.delete(
+  '/avisos/:id',
+  rota(async (req, res) => {
+    await avisos.apagarAviso(req.params.id)
     res.status(204).end()
   }),
 )
