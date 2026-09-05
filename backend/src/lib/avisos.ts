@@ -46,6 +46,12 @@ export type LeituraDoAviso = {
   diasDeAtraso: number | null
   /** frase curta para o card, já pronta */
   urgencia: string
+  /**
+   * O prazo combinado caiu num sábado ou domingo, e o dia que vale é a sexta
+   * anterior. A tela mostra os dois: o card fica no dia em que o trabalho tem
+   * que sair, e a etiqueta lembra a data que foi prometida ao cliente.
+   */
+  recuadoDoFimDeSemana: boolean
 }
 
 /**
@@ -53,57 +59,77 @@ export type LeituraDoAviso = {
  *
  * Concluído vence tudo: aviso feito na segunda não vira "atrasado" na terça só
  * porque o prazo passou. O que foi entregue está entregue.
+ *
+ * A CONTA É CONTRA O DIA ÚTIL, NÃO CONTRA A DATA COMBINADA.
+ *
+ * Combinar "até sábado" quer dizer, na prática, despachar até sexta: o ateliê
+ * não trabalha no fim de semana e a agência dos Correios fecha. Então no sábado
+ * aquele aviso já está atrasado — a sexta passou sem ele sair.
+ *
+ * Comparar com a data crua dizia "é hoje" no sábado, enquanto o card já estava
+ * na coluna de sexta. Dois lugares da mesma tela discordando sobre o mesmo
+ * aviso, e o que gritava urgência era justamente o que dizia que estava em dia.
  */
 export function lerAviso(aviso: EntradaDeAviso, agora = new Date()): LeituraDoAviso {
   if (aviso.concluidoEm) {
-    return { situacao: 'concluido', diasDeAtraso: 0, urgencia: 'feito' }
+    return { situacao: 'concluido', diasDeAtraso: 0, urgencia: 'feito', recuadoDoFimDeSemana: false }
   }
   if (!aviso.prazo) {
-    return { situacao: 'programado', diasDeAtraso: null, urgencia: 'sem data marcada' }
+    return {
+      situacao: 'programado',
+      diasDeAtraso: null,
+      urgencia: 'sem data marcada',
+      recuadoDoFimDeSemana: false,
+    }
   }
 
-  const dias = diasEntre(aviso.prazo, agora)
+  const combinado = diaDeCalendario(aviso.prazo)
+  const util = diaUtilDoPrazo(combinado)
+  const recuadoDoFimDeSemana = util !== combinado
+  const dias = diasEntreDias(util, diaDoAtelie(agora))
   if (dias > 0) {
     return {
       situacao: 'atrasado',
       diasDeAtraso: dias,
       urgencia: dias === 1 ? 'atrasado 1 dia' : `atrasado ${dias} dias`,
+      recuadoDoFimDeSemana,
     }
   }
-  if (dias === 0) return { situacao: 'vence_hoje', diasDeAtraso: 0, urgencia: 'é hoje' }
+  if (dias === 0) {
+    return { situacao: 'vence_hoje', diasDeAtraso: 0, urgencia: 'é hoje', recuadoDoFimDeSemana }
+  }
 
   const faltam = -dias
   return {
     situacao: 'programado',
     diasDeAtraso: dias,
     urgencia: faltam === 1 ? 'amanhã' : `em ${faltam} dias`,
+    recuadoDoFimDeSemana,
   }
 }
 
 /**
- * Quantos dias inteiros separam o prazo de hoje, no calendário do ateliê.
+ * Quantos dias inteiros separam dois dias de calendário.
  *
- * Faz a conta sobre as duas datas em texto AAAA-MM-DD e não sobre a diferença
- * de milissegundos: subtrair instantes e dividir por 24h erra por um dia
- * sempre que a diferença cai perto da meia-noite.
- *
- * OS DOIS LADOS SÃO LIDOS DE FORMA DIFERENTE, e não é descuido:
- *
- * `agora` é um INSTANTE. Para saber em que dia o ateliê está, ele precisa ser
- * convertido para o fuso de lá — é o que `diaDoAtelie` faz.
- *
- * `prazo` é um DIA DE CALENDÁRIO, coluna DATE. O banco devolve isso como
- * meia-noite UTC, um instante que não representa hora nenhuma. Aplicar o fuso
- * nele subtrai três horas de uma meia-noite e joga "5 de setembro" para o dia 4
- * — o card apareceria atrasado no próprio dia em que foi combinado.
+ * Faz a conta sobre os dois textos AAAA-MM-DD, e não sobre a diferença de
+ * milissegundos entre instantes: subtrair instantes e dividir por 24h erra por
+ * um dia sempre que a diferença cai perto da meia-noite.
  */
-function diasEntre(prazo: Date, agora: Date): number {
-  const hoje = emUTCdoDia(diaDoAtelie(agora))
-  const alvo = emUTCdoDia(diaDeCalendario(prazo))
-  return Math.round((hoje - alvo) / 86_400_000)
+function diasEntreDias(alvo: string, hoje: string): number {
+  return Math.round((emUTCdoDia(hoje) - emUTCdoDia(alvo)) / 86_400_000)
 }
 
-/** O dia que a coluna DATE guarda, lido sem fuso nenhum. */
+/**
+ * O dia que a coluna DATE guarda, lido sem fuso nenhum.
+ *
+ * `prazo` é um DIA DE CALENDÁRIO, e o banco o devolve como meia-noite UTC — um
+ * instante que não representa hora nenhuma. Aplicar o fuso do ateliê nele
+ * subtrairia três horas de uma meia-noite e jogaria "5 de setembro" para o dia
+ * 4, deixando o card atrasado no próprio dia em que foi combinado.
+ *
+ * `agora`, ao contrário, é instante de verdade e passa por `diaDoAtelie`. Os
+ * dois lados são lidos de formas diferentes de propósito.
+ */
 export function diaDeCalendario(data: Date): string {
   return data.toISOString().slice(0, 10)
 }
@@ -206,20 +232,26 @@ export function posicaoNoQuadro(
   if (!aviso.prazo) {
     return { coluna: 'sem_data', dia: null, recuadoDoFimDeSemana: false }
   }
+  /*
+   * O recuo do fim de semana atravessa para a coluna de atrasado.
+   *
+   * "Até sábado" que não saiu na sexta continua sendo um combinado de sábado
+   * para o cliente, e o card precisa poder dizer isso. Zerar a marca aqui faria
+   * o aviso perder, ao atrasar, a única informação que explica por que ele
+   * atrasou um dia antes da data prometida.
+   */
   if (leitura.situacao === 'atrasado') {
-    return { coluna: 'atrasado', dia: null, recuadoDoFimDeSemana: false }
+    return { coluna: 'atrasado', dia: null, recuadoDoFimDeSemana: leitura.recuadoDoFimDeSemana }
   }
 
-  const combinado = diaDeCalendario(aviso.prazo)
-  const util = diaUtilDoPrazo(combinado)
-  const dias = diasUteisDaSemana(segunda)
-  const posicao = dias.indexOf(util)
+  // a mesma decisão que a leitura já tomou: um só lugar escolhe o dia que vale
+  const util = diaUtilDoPrazo(diaDeCalendario(aviso.prazo))
   // fora da semana que está na tela: existe, só não aqui
-  if (posicao === -1) return null
+  if (!diasUteisDaSemana(segunda).includes(util)) return null
 
   const [ano, mes, d] = util.split('-').map(Number)
   const coluna = DIA_DA_SEMANA[new Date(Date.UTC(ano, mes - 1, d)).getUTCDay()]
-  return { coluna, dia: util, recuadoDoFimDeSemana: util !== combinado }
+  return { coluna, dia: util, recuadoDoFimDeSemana: leitura.recuadoDoFimDeSemana }
 }
 
 export type ResumoDoQuadro = {

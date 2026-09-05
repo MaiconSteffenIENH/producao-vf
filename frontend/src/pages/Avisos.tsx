@@ -64,6 +64,8 @@ type Aviso = {
   situacao: 'programado' | 'vence_hoje' | 'atrasado' | 'concluido'
   diasDeAtraso: number | null
   urgencia: string
+  /** o prazo caiu no fim de semana e vale a sexta anterior */
+  recuadoDoFimDeSemana: boolean
   posicao: Posicao | null
 }
 
@@ -119,6 +121,22 @@ function somarDias(dia: string, quantos: number): string {
 const diaCurto = (iso: string) => {
   const [, mes, dia] = iso.split('-')
   return `${dia}/${mes}`
+}
+
+const NOME_DO_DIA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
+
+/**
+ * "sáb 05/09" — o dia da semana junto, porque é ele que explica a etiqueta.
+ *
+ * Só a data ("era 05/09") não diz nada a quem olha o card: a pessoa precisa ver
+ * que o combinado caiu num sábado para entender por que o aviso venceu na
+ * sexta. Lido sem fuso, como toda data de calendário aqui.
+ */
+const diaCurtoComSemana = (iso: string | null) => {
+  if (!iso) return '—'
+  const [ano, mes, dia] = iso.slice(0, 10).split('-').map(Number)
+  const semana = new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay()
+  return `${NOME_DO_DIA[semana]} ${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}`
 }
 
 export function Avisos() {
@@ -408,12 +426,15 @@ export function Avisos() {
                             <p className="text-sm font-medium leading-snug text-tinta">{aviso.titulo}</p>
                             <span className="mt-1 flex flex-wrap items-center gap-1.5">
                               <Etiqueta cor={COR_ETIQUETA[aviso.situacao]}>{aviso.urgencia}</Etiqueta>
-                              {aviso.posicao?.recuadoDoFimDeSemana && (
+                              {/* a marca vem da LEITURA, não da posição: na coluna
+                                  de atrasado o card também precisa explicar por
+                                  que venceu antes da data prometida */}
+                              {aviso.recuadoDoFimDeSemana && (
                                 <span
-                                  title={`Combinado para ${dataDeCalendarioBr(aviso.prazo)}, que cai no fim de semana`}
-                                  className="rounded-md bg-ouro/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-ouro"
+                                  title={`Combinado para ${dataDeCalendarioBr(aviso.prazo)}, que cai no fim de semana. O despacho tem que sair na sexta.`}
+                                  className="rounded-md bg-ouro/15 px-1.5 py-0.5 text-[10px] font-medium text-ouro"
                                 >
-                                  era {dataDeCalendarioBr(aviso.prazo)}
+                                  combinado {diaCurtoComSemana(aviso.prazo)}
                                 </span>
                               )}
                             </span>
