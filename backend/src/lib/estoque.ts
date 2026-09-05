@@ -241,11 +241,25 @@ function ordemDaLinha(linha: LinhaDeProntas): number {
   return linha.situacao === 'sem_esmalte' ? 1 : 2
 }
 
-function classificar(entrada: EntradaDeProntas): LinhaDeProntas {
+/**
+ * A FOTO SÓ TRAVA A VENDA SE O ATELIÊ USA O CICLO DA FOTO.
+ *
+ * O ciclo nasceu de um problema real: peça pronta e não anunciada é dinheiro
+ * parado na prateleira. Mas o ateliê parou de usar a tela, e ninguém avança o
+ * status. Com a exigência sempre ligada, TODA peça fica em "pendente" e o
+ * estoque inteiro aparece travado — o número de vendáveis vira zero permanente
+ * e o painel para de informar qualquer coisa.
+ *
+ * Quem decide é o módulo: com Fotos ligado em Ajustes, a regra vale; desligado,
+ * peça pronta com esmalte é vendável. Desligar um módulo não podia significar
+ * "esconde a tela e mantém o bloqueio que só aquela tela resolve" — isso deixa
+ * o dono sem saída, com um travamento cuja causa sumiu do menu.
+ */
+function classificar(entrada: EntradaDeProntas, exigeFoto = true): LinhaDeProntas {
   const prontas = Math.max(0, entrada.prontas)
   const fotoStatus = entrada.fotoStatus ?? null
   const semEsmalte = entrada.corId === null
-  const publicada = !semEsmalte && fotoStatus === FOTO_PUBLICADA
+  const publicada = !semEsmalte && (!exigeFoto || fotoStatus === FOTO_PUBLICADA)
   return {
     pecaId: entrada.pecaId,
     peca: entrada.peca,
@@ -276,14 +290,18 @@ function classificar(entrada: EntradaDeProntas): LinhaDeProntas {
  * primeiro, porque é dinheiro parado que só depende de uma foto para virar
  * venda.
  */
-export function visaoDasProntas(entradas: EntradaDeProntas[]): {
+export function visaoDasProntas(
+  entradas: EntradaDeProntas[],
+  /** falso quando o módulo de Fotos está desligado no ateliê */
+  exigeFoto = true,
+): {
   grupos: GrupoDeProntas[]
   resumo: ResumoDeProntas
 } {
   const porPeca = new Map<string, GrupoDeProntas>()
 
   for (const entrada of entradas) {
-    const linha = classificar(entrada)
+    const linha = classificar(entrada, exigeFoto)
     if (linha.prontas <= 0) continue
     const grupo = porPeca.get(linha.pecaId) ?? {
       pecaId: linha.pecaId,

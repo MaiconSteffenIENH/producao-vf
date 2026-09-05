@@ -7,6 +7,7 @@ import { preverConclusao, semanasParaRepor, type EtapaDoRoteiro } from '../lib/p
 import { necessidadeDeInsumos, type ConsumoDeInsumo, type EstoqueDeInsumo } from '../lib/insumos'
 import { consumoDeArgila } from '../lib/ficha-tecnica'
 import { filaDasQueimas } from './queima.service'
+import { chavesDesligadas } from './modulo.service'
 
 /*
  * O módulo que a Gabi chamou de mais importante. Ele responde "o que produzir"
@@ -155,6 +156,16 @@ export async function sugerir(
       }),
       filaDasQueimas(agora),
     ])
+
+  /*
+   * Com o módulo de Fotos desligado, a sugestão "fotografar" some do plano.
+   *
+   * Não é só a tela que sai do menu: a fila de fotos deixa de ser trabalho do
+   * ateliê, e continuar mandando fotografar encheria o planejamento de tarefas
+   * que ninguém vai fazer, empurrando para baixo o que importa. Religar o
+   * módulo traz as sugestões de volta, porque o ciclo continua gravado.
+   */
+  const exigeFoto = !(await chavesDesligadas()).includes('fotos')
 
   const lotesAbertos = await prisma.lote.groupBy({
     by: ['pecaId'],
@@ -420,7 +431,7 @@ export async function sugerir(
     //
     // Peça pronta sem foto não é peça vendável. Só combinação NOVA precisa de
     // foto: um Bowl Pistache fotografado uma vez serve toda fornada futura.
-    for (const pc of peca.cores) {
+    for (const pc of exigeFoto ? peca.cores : []) {
       if (pc.fotoStatus === 'publicado') continue
       const prontas = estoque.prontosPorCor.get(`${peca.id}:${pc.corId}`) ?? 0
       const aCaminho = estoque.emProducaoPorCor.get(`${peca.id}:${pc.corId}`) ?? 0

@@ -185,6 +185,41 @@ describe('peças prontas — pronto não é vendável', () => {
     expect(grupos[0].linhas[0].situacao).toBe('sem_esmalte')
   })
 
+  /*
+   * O ATELIÊ PAROU DE USAR O CICLO DA FOTO, E O ESTOQUE INTEIRO FICOU TRAVADO.
+   *
+   * Ninguém avança o status, então tudo continua em "pendente" e o número de
+   * vendáveis é zero permanente: a tela para de informar qualquer coisa. Com
+   * Fotos desligado em Ajustes, a exigência sai junto com a tela.
+   */
+  it('com o módulo de Fotos desligado, peça pronta com esmalte é vendável', () => {
+    const { resumo, grupos } = visaoDasProntas(
+      [
+        pronta('Bowl', 'Pistache', 12, { fotoStatus: 'pendente' }),
+        pronta('Bowl', 'Coral', 4),
+      ],
+      false,
+    )
+    expect(resumo.vendaveis).toBe(16)
+    expect(resumo.travadas).toBe(0)
+    expect(resumo.combinacoesTravadas).toBe(0)
+    expect(grupos[0].linhas.every((l) => l.situacao === 'vendavel')).toBe(true)
+  })
+
+  it('desligar Fotos não inventa venda para peça que chegou ao fim sem esmalte', () => {
+    // sem cor definida ela continua sem vender, e a culpa nunca foi da foto
+    const { resumo, grupos } = visaoDasProntas([pronta('Bowl', null, 6)], false)
+    expect(resumo.vendaveis).toBe(0)
+    expect(resumo.semEsmalte).toBe(6)
+    expect(grupos[0].linhas[0].situacao).toBe('sem_esmalte')
+  })
+
+  it('religar Fotos devolve a trava, porque o ciclo continua gravado', () => {
+    const entradas = [pronta('Bowl', 'Pistache', 12, { fotoStatus: 'editado' })]
+    expect(visaoDasProntas(entradas, false).resumo.vendaveis).toBe(12)
+    expect(visaoDasProntas(entradas, true).resumo.vendaveis).toBe(0)
+  })
+
   it('o mesmo estoque separa o que vende do que está parado', () => {
     const { grupos, resumo } = visaoDasProntas([
       pronta('Bowl', 'Pistache', 4, { fotoStatus: 'publicado' }),

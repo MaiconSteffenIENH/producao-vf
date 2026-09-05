@@ -53,7 +53,7 @@ export const MODULOS: readonly Modulo[] = [
   { chave: 'avisos', rotulo: 'Avisos', rota: '/avisos', grupo: 'producao',
     oQuePerde: 'O quadro do que foi combinado e o alerta colorido no menu. Sem ele o combinado volta para o quadro branco.' },
   { chave: 'fotos', rotulo: 'Fotos', rota: '/fotos', grupo: 'producao',
-    oQuePerde: 'A fila de fotos. O planejamento continua sabendo que peça sem foto não vende.' },
+    oQuePerde: 'A fila de fotos, e com ela a trava: peça pronta com esmalte passa a contar como vendável. O ciclo fica gravado e volta ao religar.' },
   { chave: 'historico', rotulo: 'Histórico', rota: '/historico', grupo: 'producao',
     oQuePerde: 'A consulta ao caminho de cada lote. Nada é apagado.' },
   { chave: 'pecas', rotulo: 'Peças', rota: '/pecas', grupo: 'producao', essencial: true,

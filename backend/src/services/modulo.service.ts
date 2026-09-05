@@ -13,6 +13,15 @@
  *
  * Desligar não apaga dado e não desliga cálculo: o Planejamento continua
  * inflando pela perda mesmo com a tela fora do ar. Só o caminho até ela some.
+ *
+ * A EXCEÇÃO É A REGRA QUE SÓ AQUELA TELA RESOLVE.
+ *
+ * Fotos desligado tinha um efeito perverso: a tela sumia do menu e a exigência
+ * de foto publicada continuava valendo, então o estoque inteiro aparecia
+ * travado e o dono não tinha mais como destravar — a causa do bloqueio deixara
+ * de existir no menu. Quando o módulo é a única saída para uma trava, desligar
+ * o módulo desliga a trava junto. O ciclo continua gravado e religar o traz de
+ * volta inteiro.
  */
 import { prisma } from '../lib/prisma'
 import { invalido, naoEncontrado, regraDeNegocio } from '../lib/erros'
