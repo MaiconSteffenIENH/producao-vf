@@ -25,11 +25,34 @@ const FUSO_ATELIE_MS = 3 * 60 * 60 * 1000
 export const hojeNoAtelie = (agora: Date = new Date()): string =>
   new Date(agora.getTime() - FUSO_ATELIE_MS).toISOString().slice(0, 10)
 
+/** Instante: quando algo aconteceu. Leva fuso, porque hora importa. */
 export const dataBr = (iso: string | Date | null | undefined): string => {
   if (!iso) return '—'
   const d = typeof iso === 'string' ? new Date(iso) : iso
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('pt-BR')
+}
+
+/*
+ * DIA DE CALENDÁRIO — prazo, data de entrega, dia de folga.
+ *
+ * Coluna `DATE` no banco não é um instante: "11 de setembro" não tem hora nem
+ * fuso. Mas o Prisma serializa como `2026-09-11T00:00:00.000Z`, e `dataBr`
+ * aplica o fuso do aparelho nisso: em Novo Hamburgo, três horas antes da
+ * meia-noite UTC é o dia 10. O prazo aparecia UM DIA ANTES do combinado, na
+ * mesma tela em que a etiqueta dizia "em 3 dias" — dois números que não
+ * fechavam, e quem lesse acreditaria no errado.
+ *
+ * Aqui o dia é lido do texto, sem passar por Date nenhum: não há fuso a
+ * aplicar quando não há hora.
+ */
+export const dataDeCalendarioBr = (iso: string | Date | null | undefined): string => {
+  if (!iso) return '—'
+  const texto = typeof iso === 'string' ? iso : iso.toISOString()
+  const dia = texto.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return '—'
+  const [ano, mes, d] = dia.split('-')
+  return `${d}/${mes}/${ano}`
 }
 
 /*

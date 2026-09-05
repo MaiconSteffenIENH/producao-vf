@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { lerAviso, ordenarAvisos, resumirQuadro, type EntradaDeAviso } from '../../src/lib/avisos'
+import {
+  diaUtilDoPrazo,
+  diasUteisDaSemana,
+  lerAviso,
+  ordenarAvisos,
+  posicaoNoQuadro,
+  resumirQuadro,
+  segundaDaSemana,
+  type EntradaDeAviso,
+} from '../../src/lib/avisos'
 
 /*
  * O fuso do ateliê é UTC-3. Todo instante aqui é escrito em UTC de propósito,
@@ -162,5 +171,119 @@ describe('ordem do quadro', () => {
     const copia = [...original]
     ordenarAvisos(original, agora)
     expect(original).toEqual(copia)
+  })
+})
+
+/*
+ * O QUADRO POR DIA DA SEMANA.
+ *
+ * 2026-09-07 é uma segunda-feira. Toda data usada aqui foi conferida contra o
+ * calendário: teste de dia da semana que erra o calendário passa a validar o
+ * próprio engano.
+ */
+describe('a semana do quadro', () => {
+  it('acha a segunda a partir de qualquer dia dela', () => {
+    expect(segundaDaSemana('2026-09-07')).toBe('2026-09-07') // a própria segunda
+    expect(segundaDaSemana('2026-09-09')).toBe('2026-09-07') // quarta
+    expect(segundaDaSemana('2026-09-11')).toBe('2026-09-07') // sexta
+  })
+
+  it('sábado e domingo ainda pertencem à semana que começou na segunda', () => {
+    expect(segundaDaSemana('2026-09-12')).toBe('2026-09-07') // sábado
+    expect(segundaDaSemana('2026-09-13')).toBe('2026-09-07') // domingo
+  })
+
+  it('atravessa a virada do mês', () => {
+    expect(segundaDaSemana('2026-10-01')).toBe('2026-09-28') // quinta → segunda anterior
+  })
+
+  it('a semana tem cinco dias úteis, de segunda a sexta', () => {
+    expect(diasUteisDaSemana('2026-09-07')).toEqual([
+      '2026-09-07',
+      '2026-09-08',
+      '2026-09-09',
+      '2026-09-10',
+      '2026-09-11',
+    ])
+  })
+})
+
+describe('prazo de fim de semana recua para a sexta', () => {
+  it('sábado vira a sexta anterior', () => {
+    expect(diaUtilDoPrazo('2026-09-12')).toBe('2026-09-11')
+  })
+
+  it('domingo vira a sexta anterior, e não a segunda seguinte', () => {
+    // empurrar para a frente daria dois dias de prazo que não existem
+    expect(diaUtilDoPrazo('2026-09-13')).toBe('2026-09-11')
+  })
+
+  it('dia útil não se mexe', () => {
+    for (const dia of ['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11']) {
+      expect(diaUtilDoPrazo(dia)).toBe(dia)
+    }
+  })
+
+  it('domingo que começa o mês recua para a sexta do mês anterior', () => {
+    expect(diaUtilDoPrazo('2026-11-01')).toBe('2026-10-30')
+  })
+})
+
+describe('em que coluna o aviso aparece', () => {
+  const segunda = '2026-09-07'
+  // sexta da semana anterior, às 09h no ateliê: tudo desta semana está no futuro
+  const agora = new Date('2026-09-04T12:00:00.000Z')
+
+  it('cada dia útil cai na sua coluna', () => {
+    expect(posicaoNoQuadro(aviso('2026-09-07'), segunda, agora)?.coluna).toBe('seg')
+    expect(posicaoNoQuadro(aviso('2026-09-09'), segunda, agora)?.coluna).toBe('qua')
+    expect(posicaoNoQuadro(aviso('2026-09-11'), segunda, agora)?.coluna).toBe('sex')
+  })
+
+  it('sábado aparece na sexta, marcado como recuado', () => {
+    const p = posicaoNoQuadro(aviso('2026-09-12'), segunda, agora)
+    expect(p?.coluna).toBe('sex')
+    expect(p?.dia).toBe('2026-09-11')
+    expect(p?.recuadoDoFimDeSemana).toBe(true)
+  })
+
+  it('dia útil não é marcado como recuado', () => {
+    expect(posicaoNoQuadro(aviso('2026-09-09'), segunda, agora)?.recuadoDoFimDeSemana).toBe(false)
+  })
+
+  it('aviso sem data fica na coluna própria, e não some', () => {
+    const p = posicaoNoQuadro(aviso(null), segunda, agora)
+    expect(p?.coluna).toBe('sem_data')
+    expect(p?.dia).toBeNull()
+  })
+
+  it('concluído sai do quadro', () => {
+    expect(posicaoNoQuadro(aviso('2026-09-09', new Date()), segunda, agora)).toBeNull()
+  })
+
+  it('aviso de outra semana não aparece nesta, mas continua existindo', () => {
+    expect(posicaoNoQuadro(aviso('2026-09-16'), segunda, agora)).toBeNull()
+    expect(posicaoNoQuadro(aviso('2026-09-16'), '2026-09-14', agora)?.coluna).toBe('qua')
+  })
+
+  /*
+   * Atrasado vence o dia da semana. Um aviso de terça que já passou não pode
+   * ficar deitado na coluna de terça como se ainda houvesse tempo.
+   */
+  it('o que passou do prazo vai para a coluna de atrasado', () => {
+    const naQuarta = new Date('2026-09-09T12:00:00.000Z')
+    const p = posicaoNoQuadro(aviso('2026-09-08'), segunda, naQuarta)
+    expect(p?.coluna).toBe('atrasado')
+    expect(p?.dia).toBeNull()
+  })
+
+  it('o de hoje continua na coluna de hoje, não no atrasado', () => {
+    const naQuarta = new Date('2026-09-09T12:00:00.000Z')
+    expect(posicaoNoQuadro(aviso('2026-09-09'), segunda, naQuarta)?.coluna).toBe('qua')
+  })
+
+  it('atrasado aparece mesmo olhando outra semana: ele não pode sumir', () => {
+    const naQuarta = new Date('2026-09-09T12:00:00.000Z')
+    expect(posicaoNoQuadro(aviso('2026-08-20'), '2026-09-14', naQuarta)?.coluna).toBe('atrasado')
   })
 })
