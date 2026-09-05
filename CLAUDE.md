@@ -53,7 +53,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 477 casos em 26 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 516 casos em 27 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -67,7 +67,8 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `agenda-calculo.ts` | meta diária com saldo rolante e folga |
 | `csv-vendas.ts` | leitura da planilha do marketplace |
 | `ficha-tecnica.ts` | faixa de tolerância da medida e coerência da ficha da peça |
-| `avisos.ts` | situação do aviso pelo prazo, e o estado que pinta o menu |
+| `avisos.ts` | situação do aviso pelo prazo, coluna do quadro por dia, e o estado que pinta o menu |
+| `cartao-cnpj.ts` | leitura do comprovante da Receita, coluna a coluna |
 | `plural.ts` | plural do português (gêmeo de `frontend/src/lib/format.ts`) |
 
 **Testes de unidade ficam em `backend/tests/unidade/`** e o vitest pega a pasta inteira. A configuração já listou arquivo por arquivo, e isso deixou um teste novo existir sem nunca rodar — o comando dizia "passou". Teste que não roda é pior que teste que não existe.
@@ -75,17 +76,18 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 ## Regras de código
 
 1. **Largura de campo**: `Input`/`Select`/`Textarea` têm `w-full` na classe base, que vence qualquer `w-N` do className. Largura custom = embrulhar em `<div className="w-N">`.
-2. **Tema**: os tokens são semânticos (`fundo`, `superficie`, `tinta`, `marca`, `borda`), não a escala do Tailwind. Texto sobre sólido é `text-contraste` — nunca `text-white`, que não acompanha o tema. Toda UI nova precisa ser conferida no `.dark`.
-3. **Nunca `window.prompt/confirm/alert`**: usar `Modal` e `ConfirmDialog`. Eles pausam o auto-refresh enquanto abertos, então um recarregamento não apaga o que o usuário está digitando.
-4. **Auto-refresh**: listagens usam `useAutoRefresh(() => recarregar(true))` — foco + puxar-pra-atualizar. Polling só com `{ aoVivo: true }`, reservado a dado quente (quadro de produção a 15s, tarefas do dia a 30s). Nunca passar o loader direto como handler: o evento vira o parâmetro `silencioso`.
-5. **Tela nova entra como chunk lazy** no `App.tsx`. Import estático de página engorda o bundle inicial — o ateliê usa 4G.
-6. **Busca por nome é acento-insensível**: coluna `nome_busca` preenchida com `normalizarBusca()` (`backend/src/lib/busca.ts`), espelhada em `frontend/src/lib/format.ts`. Teclado sem acento precisa achar "Xícara".
-7. **Endpoint GET novo entra no smoke test** (`backend/tests/smoke.test.ts`).
-8. **Backend leniente, regra no service**: linha em branco de formulário dinâmico chega ao backend; o zod aceita e o service filtra/dedup/rejeita com 409 ou 422. Schema rígido devolve 400 antes do service poder limpar.
-9. **Migração com SQL manual** (trigger, extensão, backfill): `npx prisma migrate dev --create-only` e editar o SQL. As migrações rodam sozinhas no deploy do Render. **Se o ambiente não alcançar `binaries.prisma.sh`** (403 em sandbox), o Prisma CLI não roda: escreva a migração à mão e rode `node scripts/conferir-schema.mjs <url>`, que aplica tudo num banco limpo e compara coluna a coluna com o DMMF (lido pelo parser WASM, que não precisa de binário). Nesse cenário o `tsc` também perde a inferência do client — `node scripts/conferir-campos-prisma.mjs` confere nome de modelo e de campo, que é o que o compilador deixaria passar.
+2. **Tema**: os tokens são semânticos (`fundo`, `superficie`, `tinta`, `marca`, `borda`), não a escala do Tailwind. Texto sobre sólido é `text-contraste` — nunca `text-white`, que não acompanha o tema. Toda UI nova precisa ser conferida no `.dark`. **Cor sobre a própria cor translúcida não passa em contraste**: areia sobre areia deu 3,09:1 no botão principal, e âmbar sobre `alerta/12` deu 4,20:1 no menu. Quem carrega a cor é o fundo e a pastilha; o rótulo fica em `text-tinta`.
+3. **Data de calendário usa `dataDeCalendarioBr`, nunca `dataBr`.** Coluna `DATE` (prazo, entrega, folga) não tem hora nem fuso, mas o Prisma serializa como meia-noite UTC — e `dataBr` aplica o fuso do aparelho nisso, mostrando o dia ANTERIOR em Novo Hamburgo. O prazo aparecia um dia antes do combinado enquanto a etiqueta ao lado dizia "em 3 dias". `dataBr` continua certo para instante (`criadoEm`, `concluidoEm`).
+4. **Nunca `window.prompt/confirm/alert`**: usar `Modal` e `ConfirmDialog`. Eles pausam o auto-refresh enquanto abertos, então um recarregamento não apaga o que o usuário está digitando.
+5. **Auto-refresh**: listagens usam `useAutoRefresh(() => recarregar(true))` — foco + puxar-pra-atualizar. Polling só com `{ aoVivo: true }`, reservado a dado quente (quadro de produção a 15s, tarefas do dia a 30s). Nunca passar o loader direto como handler: o evento vira o parâmetro `silencioso`.
+6. **Tela nova entra como chunk lazy** no `App.tsx`. Import estático de página engorda o bundle inicial — o ateliê usa 4G.
+7. **Busca por nome é acento-insensível**: coluna `nome_busca` preenchida com `normalizarBusca()` (`backend/src/lib/busca.ts`), espelhada em `frontend/src/lib/format.ts`. Teclado sem acento precisa achar "Xícara".
+8. **Endpoint GET novo entra no smoke test** (`backend/tests/smoke.test.ts`).
+9. **Backend leniente, regra no service**: linha em branco de formulário dinâmico chega ao backend; o zod aceita e o service filtra/dedup/rejeita com 409 ou 422. Schema rígido devolve 400 antes do service poder limpar.
+10. **Migração com SQL manual** (trigger, extensão, backfill): `npx prisma migrate dev --create-only` e editar o SQL. As migrações rodam sozinhas no deploy do Render. **Se o ambiente não alcançar `binaries.prisma.sh`** (403 em sandbox), o Prisma CLI não roda: escreva a migração à mão e rode `node scripts/conferir-schema.mjs <url>`, que aplica tudo num banco limpo e compara coluna a coluna com o DMMF (lido pelo parser WASM, que não precisa de binário). Nesse cenário o `tsc` também perde a inferência do client — `node scripts/conferir-campos-prisma.mjs` confere nome de modelo e de campo, que é o que o compilador deixaria passar.
 11. **Seed roda de novo em banco que já existe.** Por isso `update` é PARCIAL: sobrescrever tudo apagaria os ajustes da Vera (nome de etapa, capacidade real do forno). Mas campo novo, que nasceu nulo na migração, precisa ser preenchido uma vez — senão o recurso fica inerte e ninguém entende por quê. A regra: só preenche o que ainda não tem valor.
-10. **Arrastar cartão no quadro**: Pointer Events com listeners no `document`, nunca no elemento. No toque, `setPointerCapture` entrega o primeiro `pointermove` e o navegador assume o gesto — o que segura é `preventDefault` num `touchmove` não-passivo. Dedo exige pressionar-e-segurar (toque rápido é rolagem); mouse dispara com 8px de folga. Rolagem de borda precisa desligar o `scroll-snap` do trilho, senão cada empurrão volta ao encaixe. Soltar NÃO grava: abre a confirmação preenchida, porque o quadro fica aberto o dia todo em tela de toque e movimento gravado sem querer não se apaga.
-11. **Mobile primeiro**: testar em ~375px. Cabeçalho de página usa `flex flex-col gap-3 sm:flex-row …` — `flex items-center justify-between` puro espreme o título na vertical no celular. Fonte de input não desce de 16px no mobile (o iOS dá zoom e a tela abre ampliada).
+12. **Arrastar cartão no quadro**: Pointer Events com listeners no `document`, nunca no elemento. No toque, `setPointerCapture` entrega o primeiro `pointermove` e o navegador assume o gesto — o que segura é `preventDefault` num `touchmove` não-passivo. Dedo exige pressionar-e-segurar (toque rápido é rolagem); mouse dispara com 8px de folga. Rolagem de borda precisa desligar o `scroll-snap` do trilho, senão cada empurrão volta ao encaixe. Soltar NÃO grava: abre a confirmação preenchida, porque o quadro fica aberto o dia todo em tela de toque e movimento gravado sem querer não se apaga.
+13. **Mobile primeiro**: testar em ~375px. Cabeçalho de página usa `flex flex-col gap-3 sm:flex-row …` — `flex items-center justify-between` puro espreme o título na vertical no celular. Fonte de input não desce de 16px no mobile (o iOS dá zoom e a tela abre ampliada).
 
 ## Detalhe do domínio que a interface precisa respeitar
 

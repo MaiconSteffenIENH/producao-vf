@@ -1,7 +1,18 @@
 import { prisma } from '../lib/prisma'
 import { naoEncontrado } from '../lib/erros'
 import type { Sessao } from '../lib/token'
-import { lerAviso, ordenarAvisos, resumirQuadro, type LeituraDoAviso } from '../lib/avisos'
+import {
+  diaDeCalendario,
+  diasUteisDaSemana,
+  lerAviso,
+  ordenarAvisos,
+  posicaoNoQuadro,
+  resumirQuadro,
+  segundaDaSemana,
+  type LeituraDoAviso,
+  type PosicaoNoQuadro,
+} from '../lib/avisos'
+import { diaDoAtelie } from '../lib/agenda-calculo'
 
 /*
  * O QUADRO DE AVISOS.
@@ -28,10 +39,18 @@ type AvisoCru = {
   concluidoPor: string | null
 }
 
-export type AvisoNaTela = AvisoCru & LeituraDoAviso
+export type AvisoNaTela = AvisoCru &
+  LeituraDoAviso & {
+    /** onde o card aparece no quadro da semana; nulo quando é de outra semana */
+    posicao: PosicaoNoQuadro | null
+  }
 
-function comLeitura(aviso: AvisoCru, agora: Date): AvisoNaTela {
-  return { ...aviso, ...lerAviso(aviso, agora) }
+function comLeitura(aviso: AvisoCru, agora: Date, segunda?: string): AvisoNaTela {
+  return {
+    ...aviso,
+    ...lerAviso(aviso, agora),
+    posicao: segunda ? posicaoNoQuadro(aviso, segunda, agora) : null,
+  }
 }
 
 /**
@@ -42,8 +61,19 @@ function comLeitura(aviso: AvisoCru, agora: Date): AvisoNaTela {
  * devolver dois anos de histórico a cada abertura da tela transformaria a
  * consulta num download, e a tela é aberta no celular em 4G.
  */
-export async function listarAvisos(opcoes: { concluidos?: number } = {}, agora = new Date()) {
+export async function listarAvisos(
+  opcoes: { concluidos?: number; semana?: string } = {},
+  agora = new Date(),
+) {
   const limite = Math.min(Math.max(opcoes.concluidos ?? 30, 0), 200)
+  /*
+   * A semana pedida é normalizada para a segunda-feira dela.
+   *
+   * A tela manda uma data qualquer ao navegar, e aceitar isso sem normalizar
+   * faria o quadro de quarta ter colunas diferentes do quadro de quinta da
+   * mesma semana. Sem parâmetro, é a semana de hoje no fuso do ateliê.
+   */
+  const segunda = segundaDaSemana(opcoes.semana ?? diaDoAtelie(agora))
 
   const [abertosCrus, concluidosCrus] = await Promise.all([
     prisma.aviso.findMany({ where: { concluidoEm: null } }),
@@ -56,7 +86,8 @@ export async function listarAvisos(opcoes: { concluidos?: number } = {}, agora =
 
   const abertos = ordenarAvisos(abertosCrus as AvisoCru[], agora)
   return {
-    abertos: abertos.map((a) => comLeitura(a, agora)),
+    semana: { segunda, dias: diasUteisDaSemana(segunda), hoje: diaDoAtelie(agora) },
+    abertos: abertos.map((a) => comLeitura(a, agora, segunda)),
     concluidos: (concluidosCrus as AvisoCru[]).map((a) => comLeitura(a, agora)),
     resumo: resumirQuadro(abertosCrus as AvisoCru[], agora),
   }

@@ -499,8 +499,14 @@ rotas.get('/avisos/resumo', rota(async (_req, res) => void res.json(await avisos
 rotas.get(
   '/avisos',
   rota(async (req, res) => {
-    const { concluidos } = req.query as Record<string, string | undefined>
-    res.json(await avisos.listarAvisos({ concluidos: concluidos ? Number(concluidos) : undefined }))
+    const { concluidos, semana } = req.query as Record<string, string | undefined>
+    res.json(
+      await avisos.listarAvisos({
+        concluidos: concluidos ? Number(concluidos) : undefined,
+        // qualquer dia da semana serve: o service normaliza para a segunda
+        semana: /^\d{4}-\d{2}-\d{2}$/.test(semana ?? '') ? semana : undefined,
+      }),
+    )
   }),
 )
 rotas.post(

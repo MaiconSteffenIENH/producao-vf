@@ -17,7 +17,7 @@ import {
   Textarea,
   Vazio,
 } from '../components/ui'
-import { dataBr } from '../lib/format'
+import { dataDeCalendarioBr } from '../lib/format'
 
 /*
  * ENCOMENDA COM PRAZO.
@@ -185,7 +185,7 @@ export function Encomendas() {
                 </p>
                 {e.entregarAte && (
                   <p className="text-xs text-tinta-fraca">
-                    Entregar até {dataBr(e.entregarAte)}
+                    Entregar até {dataDeCalendarioBr(e.entregarAte)}
                     {e.prazo && ` · produzir leva ${e.prazo.previsao} · faltam ${e.prazo.diasAteEntrega} dias`}
                   </p>
                 )}

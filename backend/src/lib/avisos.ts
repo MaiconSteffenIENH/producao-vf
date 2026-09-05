@@ -104,13 +104,122 @@ function diasEntre(prazo: Date, agora: Date): number {
 }
 
 /** O dia que a coluna DATE guarda, lido sem fuso nenhum. */
-function diaDeCalendario(data: Date): string {
+export function diaDeCalendario(data: Date): string {
   return data.toISOString().slice(0, 10)
 }
 
 function emUTCdoDia(iso: string): number {
   const [ano, mes, dia] = iso.split('-').map(Number)
   return Date.UTC(ano, mes - 1, dia)
+}
+
+// ── o quadro por dia da semana ───────────────────────────────────────────────
+
+/*
+ * O ATELIÊ TRABALHA DE SEGUNDA A SEXTA, e o quadro segue isso.
+ *
+ * Cinco colunas de dia, mais duas que existem porque a semana não dá conta de
+ * tudo: "atrasado" à esquerda, para o que passou e ainda precisa de resposta, e
+ * "sem data" à direita, para o lembrete que não tem dia marcado. Sem essas
+ * duas, um aviso simplesmente sumiria da tela ao virar a semana — e sumir em
+ * silêncio é o modo de falha que o quadro branco já tinha.
+ */
+export const COLUNAS = ['atrasado', 'seg', 'ter', 'qua', 'qui', 'sex', 'sem_data'] as const
+export type ColunaDoQuadro = (typeof COLUNAS)[number]
+
+const DIA_DA_SEMANA: Record<number, ColunaDoQuadro> = {
+  1: 'seg',
+  2: 'ter',
+  3: 'qua',
+  4: 'qui',
+  5: 'sex',
+}
+
+/**
+ * Segunda-feira da semana que contém `dia`, em AAAA-MM-DD.
+ *
+ * Recebe e devolve texto de calendário, sem instante e sem fuso: quem entra
+ * aqui já é um dia decidido, e reintroduzir Date só criaria a chance de o fuso
+ * puxar a semana para trás na noite de domingo.
+ */
+export function segundaDaSemana(dia: string): string {
+  const [ano, mes, d] = dia.split('-').map(Number)
+  const data = new Date(Date.UTC(ano, mes - 1, d))
+  const diaDaSemana = (data.getUTCDay() + 6) % 7 // 0 = segunda
+  data.setUTCDate(data.getUTCDate() - diaDaSemana)
+  return data.toISOString().slice(0, 10)
+}
+
+/** Os cinco dias úteis da semana que começa nesta segunda. */
+export function diasUteisDaSemana(segunda: string): string[] {
+  const [ano, mes, d] = segunda.split('-').map(Number)
+  return [0, 1, 2, 3, 4].map((n) => {
+    const data = new Date(Date.UTC(ano, mes - 1, d + n))
+    return data.toISOString().slice(0, 10)
+  })
+}
+
+/**
+ * Prazo de sábado ou domingo recua para a sexta.
+ *
+ * O ateliê não trabalha no fim de semana e a agência dos Correios fecha:
+ * combinar "até sábado" quer dizer, na prática, despachar até sexta. Empurrar
+ * para a segunda seguinte seria pior do que não tratar — daria à pessoa dois
+ * dias de prazo que ela não tem.
+ *
+ * A data combinada não se perde: ela continua gravada como o usuário digitou, e
+ * a tela mostra as duas. Aqui só se decide em que coluna o card aparece.
+ */
+export function diaUtilDoPrazo(prazo: string): string {
+  const [ano, mes, d] = prazo.split('-').map(Number)
+  const data = new Date(Date.UTC(ano, mes - 1, d))
+  const semana = data.getUTCDay() // 0 = domingo, 6 = sábado
+  if (semana === 6) data.setUTCDate(data.getUTCDate() - 1)
+  if (semana === 0) data.setUTCDate(data.getUTCDate() - 2)
+  return data.toISOString().slice(0, 10)
+}
+
+export type PosicaoNoQuadro = {
+  coluna: ColunaDoQuadro
+  /** o dia útil em que o card aparece; nulo para atrasado e sem data */
+  dia: string | null
+  /** verdadeiro quando o prazo combinado caiu no fim de semana */
+  recuadoDoFimDeSemana: boolean
+}
+
+/**
+ * Em que coluna este aviso aparece, dada a semana que está sendo olhada.
+ *
+ * A ordem das perguntas importa. Atrasado vence o dia da semana: um aviso de
+ * terça que já passou não pode ficar deitado na coluna de terça como se ainda
+ * houvesse tempo. E "fora da semana olhada" é diferente de "não existe" — ele
+ * volta a aparecer quando a pessoa navega até a semana dele.
+ */
+export function posicaoNoQuadro(
+  aviso: EntradaDeAviso,
+  segunda: string,
+  agora = new Date(),
+): PosicaoNoQuadro | null {
+  const leitura = lerAviso(aviso, agora)
+  if (leitura.situacao === 'concluido') return null
+
+  if (!aviso.prazo) {
+    return { coluna: 'sem_data', dia: null, recuadoDoFimDeSemana: false }
+  }
+  if (leitura.situacao === 'atrasado') {
+    return { coluna: 'atrasado', dia: null, recuadoDoFimDeSemana: false }
+  }
+
+  const combinado = diaDeCalendario(aviso.prazo)
+  const util = diaUtilDoPrazo(combinado)
+  const dias = diasUteisDaSemana(segunda)
+  const posicao = dias.indexOf(util)
+  // fora da semana que está na tela: existe, só não aqui
+  if (posicao === -1) return null
+
+  const [ano, mes, d] = util.split('-').map(Number)
+  const coluna = DIA_DA_SEMANA[new Date(Date.UTC(ano, mes - 1, d)).getUTCDay()]
+  return { coluna, dia: util, recuadoDoFimDeSemana: util !== combinado }
 }
 
 export type ResumoDoQuadro = {
