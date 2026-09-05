@@ -53,7 +53,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 502 casos em 26 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 524 casos em 27 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -68,6 +68,7 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `csv-vendas.ts` | leitura da planilha do marketplace |
 | `ficha-tecnica.ts` | faixa de tolerância da medida e coerência da ficha da peça |
 | `avisos.ts` | situação do aviso pelo prazo, coluna do quadro por dia, e o estado que pinta o menu |
+| `cartao-cnpj.ts` | leitura do comprovante da Receita, coluna a coluna |
 | `plural.ts` | plural do português (gêmeo de `frontend/src/lib/format.ts`) |
 
 **Testes de unidade ficam em `backend/tests/unidade/`** e o vitest pega a pasta inteira. A configuração já listou arquivo por arquivo, e isso deixou um teste novo existir sem nunca rodar — o comando dizia "passou". Teste que não roda é pior que teste que não existe.
