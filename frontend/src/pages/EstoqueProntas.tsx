@@ -21,6 +21,7 @@ import {
 } from '../components/ui'
 import { MOTIVOS_DE_SAIDA, ajudaDaSaida } from '../lib/saida-estoque'
 import { enviarComFila } from '../lib/filaOffline'
+import { useModulosLiberados } from '../store/auth'
 
 /*
  * O FIM DA LINHA — e a distinção que esta tela existe para não deixar sumir.
@@ -255,6 +256,14 @@ export function EstoqueProntas() {
   const [resumo, setResumo] = useState<ResumoProntas>(VAZIO)
   const [carregando, setCarregando] = useState(true)
   const [filtro, setFiltro] = useState<Filtro>('todas')
+  /*
+   * `null` é "o servidor não disse qual módulo está ligado" (API mais antiga
+   * que o app). Nesse caso assume que usa fotos, que é como o sistema sempre
+   * funcionou: sumir com a fila de fotos por causa de um campo que faltou seria
+   * trocar um incômodo por um recurso invisível.
+   */
+  const liberados = useModulosLiberados()
+  const usaFotos = !liberados || liberados.includes('fotos')
 
   const recarregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true)
@@ -287,10 +296,22 @@ export function EstoqueProntas() {
     }))
     .filter((g) => g.linhas.length > 0)
 
+  /*
+   * Com o módulo de Fotos desligado, o backend para de travar venda por foto:
+   * "travadas" é sempre zero e "com foto publicada" viraria um rótulo que
+   * mente. O cartão da foto some e o de vendáveis passa a dizer o que de fato
+   * separa os dois números, que é ter esmalte definido.
+   */
   const cartoes: { chave: Filtro; rotulo: string; valor: number }[] = [
     { chave: 'todas', rotulo: 'peças finalizadas', valor: resumo.prontas },
-    { chave: 'vendaveis', rotulo: 'com foto publicada', valor: resumo.vendaveis },
-    { chave: 'travadas', rotulo: 'travadas por foto', valor: resumo.travadas },
+    {
+      chave: 'vendaveis',
+      rotulo: usaFotos ? 'com foto publicada' : 'com esmalte definido',
+      valor: resumo.vendaveis,
+    },
+    ...(usaFotos
+      ? [{ chave: 'travadas' as Filtro, rotulo: 'travadas por foto', valor: resumo.travadas }]
+      : [{ chave: 'todas' as Filtro, rotulo: 'sem esmalte definido', valor: resumo.semEsmalte }]),
   ]
 
   return (
@@ -299,9 +320,11 @@ export function EstoqueProntas() {
         titulo="Peças prontas"
         descricao="O que já passou por todos os processos, inclusive esmaltação e 2ª queima. Pronto e vendável não são o mesmo número — e nenhum dos dois desconta o que já foi vendido."
         acoes={
-          <LinkDeAcao para="/fotos">
-            Fila de fotos <ArrowRight size={15} />
-          </LinkDeAcao>
+          usaFotos ? (
+            <LinkDeAcao para="/fotos">
+              Fila de fotos <ArrowRight size={15} />
+            </LinkDeAcao>
+          ) : undefined
         }
       />
 
@@ -352,7 +375,11 @@ export function EstoqueProntas() {
               ? 'Toda combinação com peça pronta já está publicada na loja. É o estado que a loja quer.'
               : 'Existe peça pronta, mas nenhuma combinação está publicada. Sem foto na loja, o estoque não vira venda.'
           }
-          acao={filtro === 'vendaveis' ? <LinkDeAcao para="/fotos">Ir para as fotos</LinkDeAcao> : undefined}
+          acao={
+            filtro === 'vendaveis' && usaFotos ? (
+              <LinkDeAcao para="/fotos">Ir para as fotos</LinkDeAcao>
+            ) : undefined
+          }
         />
       ) : (
         <div className="flex flex-col gap-2">

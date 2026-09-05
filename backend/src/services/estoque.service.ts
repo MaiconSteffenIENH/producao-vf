@@ -18,6 +18,7 @@ import {
   rotuloDaSaida,
   type LoteComSaldo,
 } from '../lib/saida-estoque'
+import { chavesDesligadas } from './modulo.service'
 
 /**
  * Fotografia do que existe hoje, montada a partir dos saldos dos lotes.
@@ -291,14 +292,17 @@ type CombinacaoCrua = { pecaId: string; corId: string; fotoStatus: string }
  *    estoque que esconde peça existente é pior do que não ter estoque nenhum.
  */
 export async function estoqueDeProntas() {
-  const [pecas, cores, combinacoes, estoque] = await Promise.all([
+  const [pecas, cores, combinacoes, estoque, desligados] = await Promise.all([
     prisma.peca.findMany({ select: { id: true, nome: true } }),
     prisma.cor.findMany({
       select: { id: true, nome: true, hex: true, malhado: true, amostraUrl: true },
     }),
     prisma.pecaCor.findMany({ select: { pecaId: true, corId: true, fotoStatus: true } }),
     calcularEstoque(),
+    chavesDesligadas(),
   ])
+  // Fotos desligado em Ajustes = o ciclo da foto não segura mais venda nenhuma.
+  const exigeFoto = !desligados.includes('fotos')
 
   const nomeDaPeca = new Map((pecas as PecaComNome[]).map((p) => [p.id, p.nome]))
   const esmalte = new Map((cores as CorCrua[]).map((c) => [c.id, c]))
@@ -343,7 +347,7 @@ export async function estoqueDeProntas() {
     entradas.push({ pecaId, peca, corId: null, cor: null, prontas: semEsmalte })
   }
 
-  return visaoDasProntas(entradas)
+  return visaoDasProntas(entradas, exigeFoto)
 }
 
 // ═══════════════════ Baixa do estoque de peças prontas ═══════════════════
