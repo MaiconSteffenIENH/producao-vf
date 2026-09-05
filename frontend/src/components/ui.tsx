@@ -14,8 +14,22 @@ import { temJanelaAberta, travarRolagem } from '../lib/travaDeRolagem'
  *   CERTO:  <div className="w-56"><Select /></div>
  */
 
+/*
+ * PLACEHOLDER PRECISA PARECER PLACEHOLDER.
+ *
+ * Ele usava `text-tinta-fraca` cheio, a mesma cor do texto secundário do
+ * sistema: 5,67:1 contra o fundo do campo, quando o texto digitado dá 9,68:1.
+ * Perto demais. Num campo de duas linhas, o exemplo passava por conteúdo já
+ * salvo, e a pessoa saía sem preencher achando que já estava preenchido.
+ *
+ * A 70% de opacidade fica em 3,02:1 no claro e 3,53:1 no escuro: separado o
+ * bastante do texto real para ninguém confundir, e ainda acima de 3:1, que é o
+ * piso para texto de apoio. Não desce mais do que isso — placeholder ilegível
+ * troca um problema por outro, e há gente lendo isso numa tela de celular no
+ * meio do ateliê.
+ */
 const baseCampo =
-  'w-full rounded-xl border border-borda bg-superficie px-3.5 py-2.5 text-tinta placeholder:text-tinta-fraca ' +
+  'w-full rounded-xl border border-borda bg-superficie px-3.5 py-2.5 text-tinta placeholder:text-tinta-fraca/70 ' +
   'outline-none transition-[border-color,box-shadow,background-color] duration-200 ' +
   'hover:border-marca-clara focus:border-marca focus:ring-4 focus:ring-marca/12 ' +
   'disabled:cursor-not-allowed disabled:opacity-60'

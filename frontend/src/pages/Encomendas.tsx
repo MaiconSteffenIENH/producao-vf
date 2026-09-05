@@ -222,7 +222,7 @@ export function Encomendas() {
                 caixaAlta
                 value={form.cliente}
                 onChange={(e) => setForm({ ...form, cliente: e.target.value })}
-                placeholder="Restaurante Ateliê"
+                placeholder="ex.: RESTAURANTE ATELIÊ"
               />
             </Campo>
             <Campo rotulo="Contato" dica="Telefone, e-mail, o que for mais fácil.">

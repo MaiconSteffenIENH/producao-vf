@@ -314,7 +314,7 @@ export function Avisos() {
               maxLength={140}
               value={form.titulo}
               onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-              placeholder="Despachar bandeja de tortinha do cliente"
+              placeholder="ex.: despachar bandeja de tortinha"
             />
           </Campo>
 
@@ -329,13 +329,17 @@ export function Avisos() {
             />
           </Campo>
 
+          {/* O exemplo cabe em UMA linha de propósito: em duas ele passava por
+              texto já salvo, e a pessoa fechava o formulário achando que o
+              campo estava preenchido. O prefixo "ex.:" e o placeholder mais
+              fraco (ui.tsx) fecham a dúvida. */}
           <Campo rotulo="Detalhe" dica="Cliente, quantidade, cor, o que ajudar quem for fazer.">
             <Textarea
               rows={3}
               maxLength={1000}
               value={form.detalhe}
               onChange={(e) => setForm({ ...form, detalhe: e.target.value })}
-              placeholder="Duas xícaras coração verde. Cliente avisado que sai na sexta."
+              placeholder="ex.: duas xícaras coração verde, sai sexta"
             />
           </Campo>
 
