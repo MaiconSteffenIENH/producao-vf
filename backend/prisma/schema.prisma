@@ -377,7 +377,18 @@ model MateriaPrima {
   unidade       String   @default("kg")
   estoqueAtual  Decimal  @default(0) @map("estoque_atual") @db.Decimal(10, 3)
   estoqueMinimo Decimal  @default(0) @map("estoque_minimo") @db.Decimal(10, 3)
+  /*
+   * O TEXTO CONTINUA, e não é descuido.
+   *
+   * Ele guarda o que a Vera escreveu antes de existir cadastro — "Vitor Sinos
+   * Tintas", "o rapaz do gás". A migração transformou esses nomes em
+   * fornecedores e preencheu a FK, mas apagar o texto jogaria fora a grafia
+   * original, que é a única prova de qual linha virou qual cadastro se a
+   * conversão tiver errado em alguma.
+   */
   fornecedor    String?
+  fornecedorId  String?  @map("fornecedor_id") @db.Uuid
+  fornecedorRef Fornecedor? @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
   /// dias entre pedir e receber — sem isto a compra "urgente" chega tarde
   prazoEntregaDias Int   @default(7) @map("prazo_entrega_dias")
   ativo         Boolean  @default(true)
@@ -710,7 +721,10 @@ model Venda {
 model Encomenda {
   id          String    @id @default(uuid()) @db.Uuid
   codigo      String    @unique
+  /// mesma escolha do fornecedor: o texto original fica, a FK é quem manda
   cliente     String
+  clienteId   String?   @map("cliente_id") @db.Uuid
+  clienteRef  Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   contato     String?
   /// aberta | em_producao | pronta | entregue | cancelada
   status      String    @default("aberta")
@@ -739,6 +753,87 @@ model EncomendaItem {
 
   @@index([encomendaId])
   @@map("encomenda_itens")
+}
+
+/// QUEM COMPRA E QUEM VENDE — os dois lados do balcão.
+///
+/// Cliente e Fornecedor são tabelas separadas de propósito, e não um "contato"
+/// com um tipo. Eles não têm os mesmos campos nem a mesma vida: cliente tem
+/// encomenda e prazo de entrega; fornecedor tem matéria-prima e prazo de
+/// compra. Unificar obrigaria metade das colunas a ficar nula em cada linha, e
+/// toda consulta a lembrar de filtrar pelo tipo — o dia em que alguém
+/// esquecesse, o fornecedor apareceria na lista de clientes da Gabi.
+///
+/// O QUE VEM DO CARTÃO CNPJ é gravado como veio: `lib/cartao-cnpj.ts` lê o PDF
+/// da Receita e a tela mostra tudo para conferência antes de salvar. Importar
+/// direto para o banco, sem a pessoa olhar, transformaria um erro de leitura
+/// num cadastro errado que ninguém sabe de onde veio.
+model Cliente {
+  id        String  @id @default(uuid()) @db.Uuid
+  nome      String
+  nomeBusca String  @default("") @map("nome_busca")
+  /// CNPJ ou CPF, com pontuação, do jeito que a pessoa lê
+  documento String?
+  /// só dígitos — é por aqui que se descobre o cadastro repetido
+  documentoLimpo String? @map("documento_limpo")
+  /// pj | pf — a Gabi vende para empresa e para pessoa
+  tipo      String  @default("pj")
+
+  email     String?
+  telefone  String?
+  endereco  String?
+  bairro    String?
+  cidade    String?
+  uf        String? @db.VarChar(2)
+  cep       String?
+
+  /// os três que vêm do cartão e ajudam a decidir venda a prazo
+  atividade         String?
+  porte             String?
+  situacaoCadastral String? @map("situacao_cadastral")
+  dataAbertura      DateTime? @map("data_abertura") @db.Date
+
+  observacao String?
+  ativo      Boolean  @default(true)
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  encomendas Encomenda[]
+
+  @@index([nomeBusca])
+  @@index([documentoLimpo])
+  @@map("clientes")
+}
+
+model Fornecedor {
+  id        String  @id @default(uuid()) @db.Uuid
+  nome      String
+  nomeBusca String  @default("") @map("nome_busca")
+  documento String?
+  documentoLimpo String? @map("documento_limpo")
+  tipo      String  @default("pj")
+
+  email     String?
+  telefone  String?
+  endereco  String?
+  bairro    String?
+  cidade    String?
+  uf        String? @db.VarChar(2)
+  cep       String?
+
+  atividade         String?
+  porte             String?
+  situacaoCadastral String? @map("situacao_cadastral")
+  dataAbertura      DateTime? @map("data_abertura") @db.Date
+
+  observacao String?
+  ativo      Boolean  @default(true)
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  materias MateriaPrima[]
+
+  @@index([nomeBusca])
+  @@index([documentoLimpo])
+  @@map("fornecedores")
 }
 
 /// O QUE NÃO PODE SER ESQUECIDO.
