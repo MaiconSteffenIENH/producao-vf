@@ -640,6 +640,9 @@ export function Modal({
     >
       <div
         ref={caixa}
+        role="dialog"
+        aria-modal="true"
+        aria-label={titulo}
         className={`anima-modal max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-superficie shadow-alta sm:rounded-2xl ${largura}`}
       >
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-borda bg-superficie/95 px-5 py-4 backdrop-blur">

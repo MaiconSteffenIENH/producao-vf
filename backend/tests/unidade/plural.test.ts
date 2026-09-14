@@ -104,3 +104,12 @@ describe('-l depois de vogal, com acento no radical', () => {
     expect(formaPlural(2, 'Bowl')).toBe('Bowls')
   })
 })
+
+describe('nome em caixa alta', () => {
+  it('a terminação acompanha a caixa', () => {
+    expect(formaPlural(2, 'XÍCARA')).toBe('XÍCARAS')
+    expect(formaPlural(2, 'BOWL')).toBe('BOWLS')
+    expect(formaPlural(2, 'PAPEL')).toBe('PAPÉIS')
+    expect(pluralNome(20, 'XÍCARA RETA')).toBe('20 XÍCARAS RETA')
+  })
+})

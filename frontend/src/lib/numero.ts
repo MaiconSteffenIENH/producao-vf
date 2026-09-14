@@ -22,7 +22,9 @@ export function interpretarNumero(texto: string): number | null {
 
 /** O caminho de volta: número para o texto do campo. Nulo vira campo vazio. */
 export function textoDoNumero(valor: number | null | undefined): string {
-  return valor === null || valor === undefined ? '' : String(valor)
+  // vírgula, como a pessoa digita: a ficha salva com "10,5" voltava como "10.5"
+  // ao reabrir a peça (pego pelo e2e do BDD-13)
+  return valor === null || valor === undefined ? '' : String(valor).replace('.', ',')
 }
 
 /**

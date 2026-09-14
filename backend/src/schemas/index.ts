@@ -62,7 +62,7 @@ export const responsavelSchema = z.object({
   tipo: z.enum(['pessoa', 'equipe', 'forno']).default('pessoa'),
   cor: hex.default('#BBA58C'),
   capacidadeDiaria: z.coerce.number().int().min(0).max(9999).nullable().optional(),
-  usuarioId: z.string().uuid().nullable().optional(),
+  usuarioId: z.string().uuid().or(z.literal('')).nullable().optional(),
   ativo: z.boolean().default(true),
 })
 
@@ -81,7 +81,9 @@ export const etapaSchema = z.object({
   aguardaCarga: z.boolean().default(false),
   capacidadeCarga: z.coerce.number().int().min(0).max(99999).nullable().optional(),
   horasPorQueima: z.coerce.number().int().min(0).max(999).nullable().optional(),
-  responsavelPadraoId: z.string().uuid().nullable().optional(),
+  // a tela manda '' quando ninguém foi escolhido: sem isto a etapa nova sem
+  // responsável tomava 400 "Invalid uuid" (pego pelo e2e do BDD-6)
+  responsavelPadraoId: z.string().uuid().or(z.literal('')).nullable().optional(),
   ativo: z.boolean().default(true),
 })
 

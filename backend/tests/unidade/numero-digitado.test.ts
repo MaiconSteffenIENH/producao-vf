@@ -103,3 +103,10 @@ describe('podeDigitar', () => {
     expect(podeDigitar('1,5,5', 2)).toBe(false)
   })
 })
+
+describe('textoDoNumero em pt-BR', () => {
+  it('decimal volta com vírgula, como a pessoa digitou', () => {
+    expect(textoDoNumero(10.5)).toBe('10,5')
+    expect(interpretarNumero(textoDoNumero(10.5))).toBe(10.5)
+  })
+})

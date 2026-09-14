@@ -1,0 +1,76 @@
+# Pilha descartável para os testes de ponta a ponta (e2e/).
+#
+#   docker compose -f docker-compose.e2e.yml up -d --wait   # sobe banco, API e web
+#   cd e2e && npm test                                       # roda o Playwright
+#   docker compose -f docker-compose.e2e.yml down -v         # derruba e apaga o banco
+#
+# Ou tudo de uma vez: ./e2e/rodar.sh
+#
+# Nada aqui toca em produção: banco próprio, JWT próprio, portas 55432/3001/5173.
+# O código roda das pastas do repositório montadas nos contêineres, então a
+# mudança que você acabou de fazer é a que está sendo testada.
+name: producao-vf-e2e
+
+services:
+  banco:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: vf
+      POSTGRES_PASSWORD: vf
+      POSTGRES_DB: producao_vf_e2e
+    ports: ['55432:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vf -d producao_vf_e2e']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    image: node:22
+    working_dir: /app
+    depends_on:
+      banco:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://vf:vf@banco:5432/producao_vf_e2e?schema=public
+      DIRECT_URL: postgresql://vf:vf@banco:5432/producao_vf_e2e?schema=public
+      JWT_SECRET: segredo-e2e-nao-usar-em-producao
+      CORS_ORIGIN: http://localhost:5173
+      PORT: 3001
+      NODE_ENV: test
+    volumes:
+      - ./backend:/app
+      - api_node_modules:/app/node_modules
+    # migra, semeia (o seed é idempotente) e sobe; `tsx` compila na hora
+    command: sh -c "npm ci --no-audit --no-fund && npx prisma generate && npx prisma migrate deploy && npm run seed && npx tsx src/server.ts"
+    ports: ['3001:3001']
+    healthcheck:
+      test: ['CMD-SHELL', 'node -e "fetch(\"http://localhost:3001/health\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 40s
+
+  web:
+    image: node:22
+    working_dir: /app
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      VITE_API_URL: http://localhost:3001
+    volumes:
+      - ./frontend:/app
+      - web_node_modules:/app/node_modules
+    command: sh -c "npm ci --no-audit --no-fund && npx vite --host 0.0.0.0 --port 5173 --strictPort"
+    ports: ['5173:5173']
+    healthcheck:
+      test: ['CMD-SHELL', 'node -e "fetch(\"http://localhost:5173/\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"']
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+
+volumes:
+  api_node_modules:
+  web_node_modules:

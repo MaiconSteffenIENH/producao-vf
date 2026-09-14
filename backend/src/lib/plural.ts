@@ -24,6 +24,13 @@ export function formaPlural(n: number, singular: string, pluralForma?: string): 
   if (pluralForma) return pluralForma
   const irregular = IRREGULARES[singular.toLowerCase()]
   if (irregular) return irregular
+  /*
+   * Nome de cadastro é CAIXA ALTA, e a terminação precisa acompanhar: o quadro
+   * mostrava "20 XÍCARAs RETA" com o "s" minúsculo (pego pelo e2e do BDD-9).
+   */
+  if (singular.length > 1 && singular === singular.toUpperCase() && singular !== singular.toLowerCase()) {
+    return formaPlural(n, singular.toLowerCase()).toUpperCase()
+  }
 
   const baixo = singular.toLowerCase()
   const final = baixo.slice(-2)

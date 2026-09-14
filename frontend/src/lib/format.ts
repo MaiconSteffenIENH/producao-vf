@@ -76,6 +76,10 @@ export function formaPlural(n: number, singular: string, pluralForma?: string): 
   if (pluralForma) return pluralForma
   const irregular = PLURAIS_IRREGULARES[singular.toLowerCase()]
   if (irregular) return irregular
+  // nome de cadastro é CAIXA ALTA, e a terminação acompanha ("XÍCARAS", não "XÍCARAs")
+  if (singular.length > 1 && singular === singular.toUpperCase() && singular !== singular.toLowerCase()) {
+    return formaPlural(n, singular.toLowerCase()).toUpperCase()
+  }
 
   const baixo = singular.toLowerCase()
   const final = baixo.slice(-2)

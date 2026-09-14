@@ -208,6 +208,7 @@ function Navegacao({
                     end={item.rota === '/'}
                     onClick={aoNavegar}
                     title={alerta?.titulo}
+                    data-alerta={alerta ? quadro.alerta : undefined}
                     className={({ isActive }) =>
                       `group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all duration-200 ${
                         // sólido, não transparência: areia sobre areia dava

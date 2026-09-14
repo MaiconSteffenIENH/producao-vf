@@ -56,7 +56,7 @@ export function Toaster() {
   if (avisos.length === 0) return null
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex justify-center px-4">
-      <div className="pointer-events-auto flex w-full max-w-sm flex-col gap-2">
+      <div role="status" aria-live="polite" className="pointer-events-auto flex w-full max-w-sm flex-col gap-2">
         {avisos.map((a) => (
           <Item key={a.id} aviso={a} />
         ))}

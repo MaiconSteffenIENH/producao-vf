@@ -82,8 +82,15 @@ está em teste ou planejado vem marcado, para ninguém confundir com produção.
   padrão a seguir.
 
 (46 commits desde 27 de julho, 14 deles depois da primeira entrega. 27
-tabelas, 11 migrações, 24 telas, ~24 mil linhas. 502 testes de unidade da
-regra de negócio rodando sem banco em dois segundos.)
+tabelas, 12 migrações, 24 telas, ~24 mil linhas. 507 testes de unidade da
+regra de negócio rodando sem banco em dois segundos, mais 45 cenários de
+ponta a ponta no navegador.)
+
+**Testes de ponta a ponta.** Os 45 cenários BDD do plano de testes estão
+automatizados em Playwright, rodando no navegador contra a pilha inteira
+(frontend, API e Postgres), a cada push no CI e sob demanda com Docker. Ao
+serem escritos, pegaram três defeitos que os 507 testes de unidade não
+alcançavam, porque estavam na costura entre tela e API.
 
 Se ele perguntar sobre qualidade: a regra de negócio vive separada da
 infraestrutura, o que permite testar a matemática sem subir banco. Dois defeitos
