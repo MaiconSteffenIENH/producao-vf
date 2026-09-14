@@ -52,10 +52,18 @@ foram verificadas por rotina automatizada antes de entrar no documento.)
 **Documentação de engenharia de software.**
 
 > "O sistema nasceu sem documentação e agora tem três: o Documento de Projeto
-> no modelo que o senhor passou, com as quinze seções; o Documento de
-> Arquitetura; e um CLAUDE.md no repositório que registra cada decisão
+> no modelo que o senhor passou, com as quinze seções e mais duas; o Documento
+> de Arquitetura; e um CLAUDE.md no repositório que registra cada decisão
 > estrutural com o motivo, para quem pegar o código depois entender por que ele
 > é assim e não de outro jeito."
+
+(Documento de Projeto, versão 2, 99 páginas: 71 requisitos funcionais com
+situação, 16 não funcionais, 7 processos com diagrama de atividades e 33 regras
+de negócio, 14 casos de uso completos, 4 diagramas de sequência, 12 protótipos
+de tela, 13 funcionalidades BDD com 45 cenários, 4 máquinas de estado, DER com
+29 entidades e dicionário de 278 colunas extraído do banco, matriz de
+rastreabilidade requisito × caso de uso × teste × tela, e referências. O que
+está em teste ou planejado vem marcado, para ninguém confundir com produção.)
 
 ---
 
@@ -133,7 +141,7 @@ Três perguntas, e são as que valem a conversa:
 ## Ponto de atenção antes da conversa
 
 A pasta da turma no Drive tem só a **apresentação** e o **backlog** da primeira
-entrega. O Documento de Projeto no modelo dele (50 páginas) e o Documento de
-Arquitetura (28 páginas) **não estão lá**. Se você entregou por outro caminho,
+entrega. O Documento de Projeto no modelo dele (99 páginas na versão 2) e o
+Documento de Arquitetura (28 páginas) **não estão lá**. Se você entregou por outro caminho,
 tudo bem; se não, anexe na atividade "1ª Entrega" antes de conversar, senão ele
 vai ouvir sobre documentos que não tem em mãos.
