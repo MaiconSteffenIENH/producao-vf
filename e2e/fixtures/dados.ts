@@ -12,6 +12,11 @@ export function diaDoAtelie(dias = 0): string {
   return agora.toISOString().slice(0, 10)
 }
 /** dd/mm a partir de AAAA-MM-DD */
+/** AAAA-MM de hoje no fuso do ateliê: é a competência que a baixa por venda usa */
+export function competenciaDeHoje(): string {
+  return diaDoAtelie(0).slice(0, 7)
+}
+
 export function ddmm(iso: string): string {
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 }

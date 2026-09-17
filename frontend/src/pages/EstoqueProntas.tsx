@@ -19,7 +19,7 @@ import {
   Textarea,
   Vazio,
 } from '../components/ui'
-import { MOTIVOS_DE_SAIDA, ajudaDaSaida } from '../lib/saida-estoque'
+import { MOTIVOS_DA_TELA_DE_BAIXA, ajudaDaSaida } from '../lib/saida-estoque'
 import { enviarComFila } from '../lib/filaOffline'
 
 /*
@@ -119,26 +119,40 @@ function LinkDeAcao({ para, children }: { para: string; children: React.ReactNod
  * sabe que saiu um BOWL PISTACHE, não que ele veio do L-0031 — as peças estão
  * todas na mesma prateleira. O servidor reparte pelos lotes mais antigos.
  */
+type Canal = { id: string; nome: string; ativo: boolean }
+
+/*
+ * A BAIXA POR VENDA É A VENDA.
+ *
+ * Quem embala o pedido da Shopee dá a baixa com a peça na mão. Até 17/09 isso
+ * só tirava do estoque; a venda ficava para "depois lançar em Vendas", e o
+ * depois quase nunca chegava. Agora pede o canal e o servidor soma na linha
+ * do mês, de onde sai a cobertura e o alvo de estoque.
+ */
 function ModalBaixa({
   linha,
   peca,
+  canais,
   aoFechar,
   aoConcluir,
 }: {
   linha: LinhaPronta
   peca: string
+  canais: Canal[]
   aoFechar: () => void
   aoConcluir: () => void
 }) {
   const [quantidade, setQuantidade] = useState('1')
   const [motivoTipo, setMotivoTipo] = useState('venda')
+  const [canalId, setCanalId] = useState(canais[0]?.id ?? '')
   const [observacao, setObservacao] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  const motivo = MOTIVOS_DE_SAIDA.find((m) => m.valor === motivoTipo)
+  const motivo = MOTIVOS_DA_TELA_DE_BAIXA.find((m) => m.valor === motivoTipo)
   const eDevolucao = motivo?.sentido === 'entrada'
+  const eVenda = motivoTipo === 'venda'
   const n = Number(quantidade)
-  const invalida = !Number.isInteger(n) || n < 1
+  const invalida = !Number.isInteger(n) || n < 1 || (eVenda && !canalId)
   // devolução não é limitada pelo saldo: ela devolve o que SAIU
   const passaDoEstoque = !eDevolucao && n > linha.prontas
 
@@ -156,7 +170,7 @@ function ModalBaixa({
       const enviado = await enviarComFila(
         'post',
         '/estoque/prontas/baixa',
-        { pecaId: linha.pecaId, corId: linha.corId, quantidade: n, motivoTipo, observacao },
+        { pecaId: linha.pecaId, corId: linha.corId, quantidade: n, motivoTipo, canalId: eVenda ? canalId : null, observacao },
         `Baixa de ${n} ${peca}${linha.cor ? ` ${linha.cor}` : ''}`,
       )
       if (enviado.enfileirado) {
@@ -168,12 +182,16 @@ function ModalBaixa({
         baixado: number
         aviso: string | null
         fatias?: { codigo: string; quantidade: number }[]
+        venda?: { canal: string; competencia: string; quantidadeNoMes: number } | null
       }
       const onde = data.fatias?.length
         ? ` (${data.fatias.map((f: { codigo: string; quantidade: number }) => `${f.codigo}: ${f.quantidade}`).join(', ')})`
         : ''
       if (data.baixado > 0) {
         avisar.ok(`${eDevolucao ? 'Devolvidas' : 'Baixadas'} ${data.baixado} de ${peca}${onde}.`)
+      }
+      if (data.venda) {
+        avisar.info(`Venda registrada em ${data.venda.canal}: ${plural(data.venda.quantidadeNoMes, 'peça')} no mês.`)
       }
       if (data.aviso) avisar.info(data.aviso)
       aoConcluir()
@@ -196,13 +214,29 @@ function ModalBaixa({
       <div className="flex flex-col gap-4">
         <Campo rotulo="Motivo" dica={ajudaDaSaida(motivoTipo)}>
           <Select value={motivoTipo} onChange={(e) => setMotivoTipo(e.target.value)}>
-            {MOTIVOS_DE_SAIDA.map((m) => (
+            {MOTIVOS_DA_TELA_DE_BAIXA.map((m) => (
               <option key={m.valor} value={m.valor}>
                 {m.rotulo}
               </option>
             ))}
           </Select>
         </Campo>
+
+        {eVenda && (
+          <Campo
+            rotulo="Canal"
+            dica="Por onde saiu. A venda entra em Vendas neste canal, no mês de hoje."
+            erro={canais.length === 0 ? 'Nenhum canal de venda ligado. Cadastre em Preços.' : undefined}
+          >
+            <Select value={canalId} onChange={(e) => setCanalId(e.target.value)}>
+              {canais.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </Select>
+          </Campo>
+        )}
 
         <Campo
           rotulo="Quantas"
@@ -229,10 +263,9 @@ function ModalBaixa({
           />
         </Campo>
 
-        {motivoTipo === 'venda' && (
+        {eVenda && (
           <p className="rounded-lg bg-superficie-2 p-3 text-xs leading-relaxed text-tinta-fraca">
-            Se esta venda também for lançada em Vendas, o registro de lá já dá a baixa sozinho — não
-            precisa fazer as duas coisas.
+            Isto já é a venda: não precisa lançar de novo em Vendas. Para desfazer ou corrigir, é lá.
           </p>
         )}
 
@@ -251,6 +284,7 @@ function ModalBaixa({
 
 export function EstoqueProntas() {
   const [baixa, setBaixa] = useState<{ linha: LinhaPronta; peca: string } | null>(null)
+  const [canais, setCanais] = useState<Canal[]>([])
   const [grupos, setGrupos] = useState<GrupoPronta[]>([])
   const [resumo, setResumo] = useState<ResumoProntas>(VAZIO)
   const [carregando, setCarregando] = useState(true)
@@ -259,7 +293,11 @@ export function EstoqueProntas() {
   const recarregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true)
     try {
-      const { data } = await api.get('/estoque/prontas')
+      const [{ data }, canaisResp] = await Promise.all([
+        api.get('/estoque/prontas'),
+        api.get<Canal[]>('/canais').catch(() => ({ data: [] as Canal[] })),
+      ])
+      setCanais(canaisResp.data.filter((c) => c.ativo))
       setGrupos(data.grupos)
       setResumo(data.resumo)
     } catch (erro) {
@@ -442,6 +480,7 @@ export function EstoqueProntas() {
 
       {baixa && (
         <ModalBaixa
+          canais={canais}
           linha={baixa.linha}
           peca={baixa.peca}
           aoFechar={() => setBaixa(null)}
@@ -456,9 +495,9 @@ export function EstoqueProntas() {
         Vendável é a peça cuja combinação de peça e esmalte tem foto publicada — o ciclo mora em peça+cor,
         não no lote, porque um Bowl Pistache fotografado uma vez serve toda fornada futura.{' '}
         <strong className="text-tinta">Este número já desconta o que saiu.</strong> A baixa sai do lote
-        mais antigo primeiro, e registrar uma venda em Vendas já dá baixa sozinha — fazer as duas coisas
-        tiraria a peça em dobro. Peça que saiu por venda, feira, brinde ou uso do ateliê NÃO entra na taxa
-        de perda; só a que quebrou depois de pronta entra, porque essa quebrou mesmo.
+        mais antigo primeiro. Baixa por venda pede o canal (Shopee ou Mercado Livre) e já entra em Vendas no
+        mês de hoje: é um fato só, contado uma vez. Peça que saiu por venda, brinde ou uso do ateliê NÃO
+        entra na taxa de perda; só a que quebrou depois de pronta entra, porque essa quebrou mesmo.
       </p>
     </>
   )

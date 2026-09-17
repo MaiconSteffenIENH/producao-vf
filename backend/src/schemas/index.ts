@@ -425,6 +425,8 @@ export const baixaDeProntasSchema = z.object({
   corId: z.string().uuid().or(z.literal('')).optional().nullable(),
   quantidade: z.coerce.number().int().min(1, 'quantidade mínima 1').max(99999),
   motivoTipo: z.string().trim().min(1, 'diga o motivo'),
+  /** obrigatório quando o motivo é venda; o service é quem cobra, para a mensagem dizer o porquê */
+  canalId: z.string().uuid().or(z.literal('')).optional().nullable(),
   observacao: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
   chaveIdempotencia: z.string().trim().min(8).max(80).optional().nullable(),
 })

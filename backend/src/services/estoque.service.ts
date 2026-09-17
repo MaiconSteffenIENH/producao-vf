@@ -371,6 +371,8 @@ export type PedidoDeBaixa = {
   observacao?: string | null
   /** para o reenvio da fila offline não gravar duas vezes */
   chaveIdempotencia?: string | null
+  /** só a venda usa (venda.service), aqui é ignorado */
+  canalId?: string | null
 }
 
 export type ResultadoDaBaixa = {

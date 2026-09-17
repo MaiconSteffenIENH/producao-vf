@@ -405,7 +405,13 @@ rotas.post(
 rotas.post(
   '/estoque/prontas/baixa',
   rota(async (req, res) => {
-    res.json(await estoque.darBaixaDeProntas(baixaDeProntasSchema.parse(req.body), req.sessao!))
+    const pedido = baixaDeProntasSchema.parse(req.body)
+    // venda é o mesmo fato de Vendas, contado uma vez: soma no mês e dá a baixa por lá
+    res.json(
+      pedido.motivoTipo === 'venda'
+        ? await vendas.venderDaPrateleira(pedido, req.sessao!)
+        : await estoque.darBaixaDeProntas(pedido, req.sessao!),
+    )
   }),
 )
 

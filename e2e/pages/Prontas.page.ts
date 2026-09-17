@@ -22,9 +22,11 @@ export class PaginaProntas extends PaginaBase {
     await this.linha(peca, cor).getByRole('button', { name: /Dar baixa|Baixa/ }).click()
     await expect(this.janela(/^Baixa de /)).toBeVisible()
   }
-  async preencherBaixa(o: { motivo: string; quantas: number; observacao?: string }) {
+  async preencherBaixa(o: { motivo: string; quantas: number; canal?: string; observacao?: string }) {
     const j = this.janela(/^Baixa de /)
     await j.getByLabel('Motivo').selectOption({ label: o.motivo })
+    // o rótulo do Campo inclui a dica, e a dica de Motivo fala em "canal": ancora no começo
+    if (o.canal) await j.getByLabel(/^Canal/).selectOption({ label: o.canal })
     await j.getByLabel('Quantas').fill(String(o.quantas))
     if (o.observacao) await j.getByLabel('Observação').fill(o.observacao)
   }

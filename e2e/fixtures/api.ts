@@ -206,11 +206,26 @@ export class Api {
   }
 
   // ── estoque, vendas e preços ───────────────────────────────────────────────
-  async darBaixa(pecaId: string, corId: string | null, quantidade: number, motivoTipo = 'venda') {
-    return this.post<{ baixado: number }>('/estoque/prontas/baixa', { pecaId, corId, quantidade, motivoTipo })
+  /** baixa por venda pede o canal: sem nome, vai pela Shopee */
+  async darBaixa(pecaId: string, corId: string | null, quantidade: number, motivoTipo = 'venda', canal = 'Shopee') {
+    const canalId = motivoTipo === 'venda' ? (await this.canal(canal)).id : null
+    return this.post<{ baixado: number }>('/estoque/prontas/baixa', { pecaId, corId, quantidade, motivoTipo, canalId })
+  }
+  async canais() {
+    return this.get<{ id: string; nome: string; ativo: boolean }[]>('/canais')
+  }
+  async canal(nome: string) {
+    const c = (await this.canais()).find((x) => x.nome === nome)
+    if (!c) throw new Error(`canal ${nome} não existe no seed`)
+    return c
+  }
+  async vendas(competencia: string) {
+    return this.get<{ id: string; pecaId: string; corId: string | null; canalId: string | null; competencia: string; quantidade: number }[]>(
+      `/vendas?competencia=${competencia}`,
+    )
   }
   async prontas() {
-    return this.get<{ grupos: { peca: { id: string; nome: string }; linhas: { corId: string | null; cor: string | null; prontas: number; situacao: string }[] }[] }>('/estoque/prontas')
+    return this.get<{ grupos: { pecaId: string; peca: string; linhas: { corId: string | null; cor: string | null; prontas: number; situacao: string }[] }[] }>('/estoque/prontas')
   }
   async registrarVenda(pecaId: string, corId: string | null, competencia: string, quantidade: number) {
     return this.post<{ id: string }>('/vendas', { pecaId, corId, competencia, quantidade, darBaixa: true })

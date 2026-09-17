@@ -47,6 +47,14 @@ export type MotivoDeSaida = {
    * não achava nada e devolvia zero dizendo que tinha devolvido.
    */
   reverteDe?: string
+  /**
+   * Só o sistema usa: a tela de baixa não oferece.
+   *
+   * Desfazer uma venda pela prateleira deixaria a linha de Vendas inflada, e a
+   * cobertura continuaria contando peça que voltou. A correção nasce em Vendas,
+   * e é de lá que o estorno chega ao livro-razão.
+   */
+  viaVendas?: boolean
   ajuda: string
 }
 
@@ -60,27 +68,15 @@ export const MOTIVOS_DE_SAIDA: readonly MotivoDeSaida[] = [
     valor: 'venda',
     rotulo: 'Venda',
     sentido: 'saida',
-    ajuda: 'Loja própria, Mercado Livre, Shopee — peça que saiu vendida.',
-  },
-  {
-    valor: 'feira',
-    rotulo: 'Foi para feira',
-    sentido: 'saida',
-    ajuda: 'Saiu da prateleira para vender presencialmente. O que não vender volta por "Voltou da feira".',
-  },
-  {
-    valor: 'devolucao_feira',
-    rotulo: 'Voltou da feira',
-    sentido: 'entrada',
-    reverteDe: 'feira',
-    ajuda: 'Devolve ao estoque o que foi para a feira e não vendeu.',
+    ajuda: 'Shopee ou Mercado Livre. Pede o canal e já entra em Vendas, no mês de hoje.',
   },
   {
     valor: 'estorno_venda',
     rotulo: 'Desfazer uma venda',
     sentido: 'entrada',
     reverteDe: 'venda',
-    ajuda: 'Venda cancelada, devolução do cliente, ou correção de uma venda lançada a mais.',
+    viaVendas: true,
+    ajuda: 'Venda cancelada, devolução do cliente, ou correção de uma venda lançada a mais. Corrija em Vendas.',
   },
   {
     valor: 'brinde',
@@ -103,6 +99,19 @@ export const MOTIVOS_DE_SAIDA: readonly MotivoDeSaida[] = [
   },
 ] as const
 
+/** o que a tela de baixa oferece: o estorno de venda entra por Vendas */
+export const MOTIVOS_DA_TELA_DE_BAIXA: readonly MotivoDeSaida[] = MOTIVOS_DE_SAIDA.filter((m) => !m.viaVendas)
+
+/*
+ * Feira e lojista saíram em 17/09/2026: o ateliê vende só por marketplace
+ * (Shopee e Mercado Livre). O que já foi gravado com esses motivos continua
+ * legível no histórico; só não se grava mais.
+ */
+const ROTULOS_ANTIGOS: Record<string, string> = {
+  feira: 'Foi para feira',
+  devolucao_feira: 'Voltou da feira',
+}
+
 const PORVALOR = new Map(MOTIVOS_DE_SAIDA.map((m) => [m.valor, m]))
 
 export function motivoDeSaida(valor: unknown): MotivoDeSaida | null {
@@ -111,7 +120,7 @@ export function motivoDeSaida(valor: unknown): MotivoDeSaida | null {
 
 export function rotuloDaSaida(valor: string | null | undefined): string {
   if (!valor) return 'Não informado'
-  return PORVALOR.get(valor)?.rotulo ?? valor
+  return PORVALOR.get(valor)?.rotulo ?? ROTULOS_ANTIGOS[valor] ?? valor
 }
 
 export function mensagemDeMotivoDeSaidaInvalido(valor: string): string {

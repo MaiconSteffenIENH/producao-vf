@@ -80,7 +80,7 @@ const ROTULO_TIPO: Record<string, string> = {
   retorno: 'retorno',
   perda: 'perda',
   divisao_saida: 'saiu por divisão',
-  // a peça saiu da prateleira: venda, feira, brinde ou uso do ateliê
+  // a peça saiu da prateleira: venda, brinde ou uso do ateliê
   saida: 'saída do estoque',
   devolucao: 'voltou ao estoque',
   divisao_entrada: 'entrou por divisão',

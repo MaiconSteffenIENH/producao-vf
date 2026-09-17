@@ -5,6 +5,7 @@ import {
   distribuirBaixa,
   distribuirDevolucao,
   frasePaciente,
+  MOTIVOS_DA_TELA_DE_BAIXA,
   MOTIVOS_DE_SAIDA,
   mensagemDeMotivoDeSaidaInvalido,
   motivoDeSaida,
@@ -21,14 +22,20 @@ const lote = (codigo: string, saldo: number, dia: string, etapaId = 'pronto'): L
 })
 
 describe('MOTIVOS_DE_SAIDA', () => {
-  it('cobre os quatro caminhos que o ateliê tem, mais a volta da feira', () => {
+  it('cobre os quatro caminhos que o ateliê tem, mais o estorno de venda', () => {
     const valores = MOTIVOS_DE_SAIDA.map((m) => m.valor)
-    expect(valores).toContain('venda')
-    expect(valores).toContain('feira')
-    expect(valores).toContain('devolucao_feira')
-    expect(valores).toContain('brinde')
-    expect(valores).toContain('uso_proprio')
-    expect(valores).toContain('quebra_pronta')
+    expect(valores).toEqual(['venda', 'estorno_venda', 'brinde', 'uso_proprio', 'quebra_pronta'])
+  })
+
+  it('feira e lojista saíram (só marketplace desde 17/09), mas o histórico antigo continua legível', () => {
+    expect(motivoDeSaida('feira')).toBeNull()
+    expect(motivoDeSaida('devolucao_feira')).toBeNull()
+    expect(rotuloDaSaida('feira')).toBe('Foi para feira')
+    expect(rotuloDaSaida('devolucao_feira')).toBe('Voltou da feira')
+  })
+
+  it('a tela de baixa não oferece o estorno: correção de venda nasce em Vendas', () => {
+    expect(MOTIVOS_DA_TELA_DE_BAIXA.map((m) => m.valor)).toEqual(['venda', 'brinde', 'uso_proprio', 'quebra_pronta'])
   })
 
   /*
@@ -43,7 +50,7 @@ describe('MOTIVOS_DE_SAIDA', () => {
 
   it('todo motivo de entrada diz qual saída ele desfaz', () => {
     const entradas = MOTIVOS_DE_SAIDA.filter((m) => m.sentido === 'entrada')
-    expect(entradas.map((m) => m.valor)).toEqual(['devolucao_feira', 'estorno_venda'])
+    expect(entradas.map((m) => m.valor)).toEqual(['estorno_venda'])
     for (const e of entradas) {
       // `reverteDe` cravado em 'feira' no serviço fazia a correção de uma venda
       // procurar devolução entre as idas à feira, não achar nada, e responder

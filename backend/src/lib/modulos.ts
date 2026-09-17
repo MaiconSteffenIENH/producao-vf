@@ -109,7 +109,8 @@ export const MODULOS_POR_ROTA: Readonly<Record<string, readonly string[]>> = {
   fotos: ['fotos'],
   vendas: ['vendas'],
   precos: ['precos'],
-  canais: ['canais'],
+  // a baixa por venda pede o canal: quem só dá baixa precisa ler a lista
+  canais: ['canais', 'estoque-prontas'],
 
   // rotas COMPARTILHADAS: quem lê /cores não é só a tela de Esmaltes — é o
   // quadro (chip do lote), o cadastro de peças (esmaltes possíveis), a fila de

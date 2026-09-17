@@ -1,5 +1,5 @@
 import { expect, test } from '../fixtures/teste'
-import { nomeUnico } from '../fixtures/dados'
+import { competenciaDeHoje, nomeUnico } from '../fixtures/dados'
 import { PaginaProntas } from '../pages/Prontas.page'
 import { PaginaPrecos } from '../pages/Precos.page'
 import { PaginaVendas } from '../pages/Vendas.page'
@@ -25,11 +25,11 @@ test.describe('BDD-7 Dar baixa em peça pronta', () => {
     const antigo = await prontoEm(api, peca, 5, 'Pistache', '2026-06-10')
     const novo = await prontoEm(api, peca, 8, 'Pistache', '2026-08-10')
 
-    // Quando eu dou baixa de 7 por venda
+    // Quando eu dou baixa de 7 por venda na Shopee
     const prontas = new PaginaProntas(page)
     await prontas.abrir()
     await prontas.abrirBaixa(peca.nome, 'Pistache')
-    await prontas.preencherBaixa({ motivo: 'Venda', quantas: 7 })
+    await prontas.preencherBaixa({ motivo: 'Venda', canal: 'Shopee', quantas: 7 })
     await prontas.confirmarBaixa()
     await prontas.esperarMensagem(/Baixadas 7/)
 
@@ -37,6 +37,12 @@ test.describe('BDD-7 Dar baixa em peça pronta', () => {
     expect(await api.saldoEm(antigo.id, 'Pronto')).toBe(0)
     expect(await api.saldoEm(novo.id, 'Pronto')).toBe(6)
     await expect(prontas.linha(peca.nome, 'Pistache')).toContainText('6 peças prontas')
+
+    // E a venda de 7 já está em Vendas, na Shopee, no mês de hoje (é um fato só, contado uma vez)
+    await prontas.esperarMensagem(/Venda registrada em Shopee: 7 peças no mês/)
+    const shopee = await api.canal('Shopee')
+    const venda = (await api.vendas(competenciaDeHoje())).find((v) => v.pecaId === peca.id && v.canalId === shopee.id)
+    expect(venda?.quantidade).toBe(7)
   })
 
   test('Venda não é perda', async ({ page, api }) => {
@@ -60,7 +66,7 @@ test.describe('BDD-7 Dar baixa em peça pronta', () => {
     const prontas = new PaginaProntas(page)
     await prontas.abrir()
     await prontas.abrirBaixa(peca.nome, 'Pistache')
-    await prontas.preencherBaixa({ motivo: 'Venda', quantas: 7 })
+    await prontas.preencherBaixa({ motivo: 'Venda', canal: 'Mercado Livre', quantas: 7 })
     await prontas.confirmarBaixa()
     await prontas.esperarMensagem(/Baixadas 7/)
 

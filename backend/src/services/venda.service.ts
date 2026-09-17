@@ -62,6 +62,8 @@ export async function salvarVenda(
     quantidade: number
     valorTotal?: number | null
     darBaixa?: boolean
+    /** a chave da fila offline, quando a venda nasce na tela de baixa */
+    chaveIdempotencia?: string | null
   },
   sessao?: Sessao,
 ) {
@@ -114,11 +116,84 @@ export async function salvarVenda(
        * Com o par (de, para), repetir a MESMA correção é inócuo — que é o que a
        * idempotência precisa garantir — e uma correção diferente sempre passa.
        */
-      chaveIdempotencia: `venda:${id}:de:${antes}:para:${dados.quantidade}`,
+      chaveIdempotencia: dados.chaveIdempotencia ?? `venda:${id}:de:${antes}:para:${dados.quantidade}`,
     },
     sessao,
   )
   return { venda, baixa }
+}
+
+/*
+ * VENDA REGISTRADA NA PRATELEIRA.
+ *
+ * Quem embala o pedido da Shopee dá a baixa com a peça na mão. Até 17/09 isso
+ * tirava do estoque e parava aí: a venda ficava para alguém lançar depois em
+ * Vendas, e "depois" quase nunca chegava, então a cobertura (e agora o alvo de
+ * estoque, que vem dela) via menos venda do que houve.
+ *
+ * Agora a baixa por venda É a venda: soma na linha peça+cor+canal do mês do
+ * ateliê e a baixa sai de `salvarVenda`, o mesmo caminho da tela de Vendas. A
+ * pessoa conta o fato uma vez.
+ *
+ * O canal é obrigatório porque é ele que separa a taxa de devolução e a
+ * comissão que a precificação usa: "venda" sem canal é número que não aponta
+ * para lugar nenhum.
+ */
+export async function venderDaPrateleira(
+  pedido: {
+    pecaId: string
+    corId?: string | null
+    canalId?: string | null
+    quantidade: number
+    observacao?: string | null
+    chaveIdempotencia?: string | null
+  },
+  sessao: Sessao,
+  agora = new Date(),
+) {
+  const canalId = pedido.canalId || null
+  if (!canalId) throw invalido('Diga por qual canal a peça saiu: Shopee ou Mercado Livre.')
+  const canal = (await prisma.canalVenda.findUnique({ where: { id: canalId } })) as { nome: string; ativo: boolean } | null
+  if (!canal || !canal.ativo) throw invalido('Este canal de venda não existe ou está desligado.')
+
+  // reenvio da fila: a venda já foi somada e a baixa já saiu; devolve o que foi gravado
+  if (pedido.chaveIdempotencia) {
+    const jaFeito = await prisma.movimentoLote.findUnique({ where: { chaveIdempotencia: pedido.chaveIdempotencia } })
+    if (jaFeito) {
+      const baixa = await darBaixaDeProntas(
+        { ...pedido, corId: pedido.corId || null, motivoTipo: 'venda', canalId },
+        sessao,
+        agora,
+      )
+      return { ...baixa, venda: null }
+    }
+  }
+
+  const competencia = competenciaDe(agora)
+  const corId = pedido.corId || null
+  const existente = (await prisma.venda.findFirst({ where: { pecaId: pedido.pecaId, corId, canalId, competencia } })) as
+    | { quantidade: number; valorTotal: { toNumber(): number } | null }
+    | null
+
+  const { venda, baixa } = await salvarVenda(
+    {
+      pecaId: pedido.pecaId,
+      corId,
+      canalId,
+      competencia,
+      quantidade: (existente?.quantidade ?? 0) + pedido.quantidade,
+      // a prateleira não sabe o valor; o que a planilha importou fica como está
+      valorTotal: existente?.valorTotal ? existente.valorTotal.toNumber() : null,
+      darBaixa: true,
+      chaveIdempotencia: pedido.chaveIdempotencia ?? null,
+    },
+    sessao,
+  )
+  const v = venda as { id: string; quantidade: number }
+  return {
+    ...(baixa ?? { pedido: pedido.quantidade, baixado: 0, faltou: pedido.quantidade, fatias: [], aviso: null }),
+    venda: { id: v.id, canal: canal.nome, competencia, quantidadeNoMes: v.quantidade },
+  }
 }
 
 /*
