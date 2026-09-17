@@ -12,6 +12,10 @@ export default async function setup() {
     throw new Error(`Recusando rodar testes contra um banco que não parece de teste: ${url}`)
   }
 
+  // ambiente sem o CLI do Prisma (sandbox sem binaries.prisma.sh): quem chamou
+  // já aplicou migrações e seed por fora, e diz isso na variável
+  if (process.env.BANCO_DE_TESTE_PRONTO === '1') return
+
   const env = { ...process.env, DATABASE_URL: url, DIRECT_URL: url, JWT_SECRET: 'segredo-de-teste' }
   try {
     execSync('npx prisma db push --force-reset --skip-generate', { stdio: 'inherit', env })

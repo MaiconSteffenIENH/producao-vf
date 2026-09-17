@@ -37,20 +37,58 @@ import {
 
 export type { MovimentoBruto }
 
-export async function saldosPorLote(loteIds?: string[]): Promise<Map<string, Map<string, number>>> {
-  const movimentos: MovimentoBruto[] = await prisma.movimentoLote.findMany({
+type Db = Prisma.TransactionClient | typeof prisma
+
+export async function saldosPorLote(loteIds?: string[], db: Db = prisma): Promise<Map<string, Map<string, number>>> {
+  const movimentos: MovimentoBruto[] = await db.movimentoLote.findMany({
     where: loteIds ? { loteId: { in: loteIds } } : undefined,
     select: { loteId: true, etapaOrigemId: true, etapaDestinoId: true, quantidade: true },
   })
   return calcularSaldos(movimentos)
 }
 
-async function saldoNaEtapa(loteId: string, etapaId: string): Promise<number> {
-  return saldoNaEtapaPuro(await saldosPorLote([loteId]), loteId, etapaId)
+async function saldoNaEtapa(loteId: string, etapaId: string, db: Db = prisma): Promise<number> {
+  return saldoNaEtapaPuro(await saldosPorLote([loteId], db), loteId, etapaId)
 }
 
-async function saldoTotal(loteId: string): Promise<number> {
-  return saldoTotalPuro(await saldosPorLote([loteId]), loteId)
+async function saldoTotal(loteId: string, db: Db = prisma): Promise<number> {
+  return saldoTotalPuro(await saldosPorLote([loteId], db), loteId)
+}
+
+/*
+ * A TRAVA POR LOTE, e por que a conferência de saldo acontece DUAS vezes.
+ *
+ * A primeira conferência é fora da transação e existe para a mensagem: "só há
+ * 8 peças em Secagem" precisa do nome da etapa, e vale a pena responder isso
+ * antes de abrir transação. Mas duas gravações do mesmo lote ao mesmo tempo
+ * (dois celulares reenviando a fila quando o sinal volta) liam "10
+ * disponíveis" as duas e gravavam 10 + 10 de um saldo de 10. Num livro-razão
+ * append-only isso não se apaga; se corrige com estorno, à mão.
+ *
+ * `pg_advisory_xact_lock` segura a segunda transação até a primeira terminar.
+ * Aí a segunda reconfere o saldo, já debitado, e falha limpa. A trava morre
+ * com a transação: não há o que esquecer de soltar.
+ */
+export async function travarLote(tx: Prisma.TransactionClient, loteId: string) {
+  // embrulhado num FROM porque a função devolve `void`, tipo que o adaptador
+  // de driver do Prisma não sabe ler; a coluna que volta é o 1
+  await tx.$queryRaw`SELECT 1 AS travado FROM (SELECT pg_advisory_xact_lock(hashtext(${loteId}))) AS trava`
+}
+
+/** dentro da transação, com o lote travado: recusa se o saldo já não cobre */
+export async function exigirSaldo(
+  tx: Prisma.TransactionClient,
+  loteId: string,
+  etapaId: string,
+  quantidade: number,
+): Promise<number> {
+  const disponivel = await saldoNaEtapa(loteId, etapaId, tx)
+  if (quantidade > disponivel) {
+    throw conflito(
+      `Só há ${plural(disponivel, 'peça')} nesta etapa: outra gravação chegou antes. Recarregue o quadro.`,
+    )
+  }
+  return disponivel
 }
 
 /**
@@ -715,9 +753,9 @@ export async function editarLote(
  * A chave é gerada pelo CLIENTE antes de mandar, exatamente para sobreviver ao
  * caso em que a resposta nunca chega.
  */
-async function movimentoJaGravado(chave: string | null | undefined) {
+async function movimentoJaGravado(chave: string | null | undefined, db: Db = prisma) {
   if (!chave) return null
-  return prisma.movimentoLote.findUnique({ where: { chaveIdempotencia: chave } })
+  return db.movimentoLote.findUnique({ where: { chaveIdempotencia: chave } })
 }
 
 export async function avancarLote(
@@ -778,10 +816,16 @@ export async function avancarLote(
     throw conflito('A cor informada não é a cor deste lote.')
   }
 
-  const totalDoLote = await saldoTotal(dados.loteId)
-  const precisaDividir = destino.etapa.defineCor && !lote.corId && dados.quantidade < totalDoLote
-
   const resultado = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await travarLote(tx, lote.id)
+    // o mesmo reenvio pode ter entrado em paralelo: com a trava, o segundo vê o primeiro
+    const jaGravado = await movimentoJaGravado(dados.chaveIdempotencia, tx)
+    if (jaGravado) return { movimento: jaGravado, loteCriado: null, repetido: true }
+    await exigirSaldo(tx, dados.loteId, dados.etapaOrigemId, dados.quantidade)
+
+    const totalDoLote = await saldoTotal(dados.loteId, tx)
+    const precisaDividir = destino.etapa.defineCor && !lote.corId && dados.quantidade < totalDoLote
+
     if (precisaDividir) {
       // parte do biscoito vai virar esta cor e o resto continua neutro:
       // nasce um lote-filho já com a cor, e o pai segue sem cor
@@ -843,12 +887,13 @@ export async function avancarLote(
       },
     })
 
-    return { movimento, loteCriado }
+    return { movimento, loteCriado, repetido: false }
   })
 
+  if (resultado.repetido) return { movimento: resultado.movimento, loteCriado: null }
   await atualizarConclusao(lote.id)
   if (resultado.loteCriado) await atualizarConclusao(resultado.loteCriado.id)
-  return resultado
+  return { movimento: resultado.movimento, loteCriado: resultado.loteCriado }
 }
 
 /*
@@ -896,20 +941,26 @@ export async function registrarPerda(
     throw conflito(`Só há ${plural(disponivel, 'peça')} nesta etapa.`)
   }
 
-  const movimento = await prisma.movimentoLote.create({
-    data: {
-      loteId: dados.loteId,
-      etapaOrigemId: dados.etapaId,
-      etapaDestinoId: null,
-      quantidade: dados.quantidade,
-      tipo: 'perda',
-      corId: lote.corId,
-      motivo: dados.motivo,
-      motivoTipo,
-      usuarioId: sessao.id,
-      usuarioNome: sessao.nome,
-      chaveIdempotencia: dados.chaveIdempotencia ?? null,
-    },
+  const movimento = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await travarLote(tx, dados.loteId)
+    const jaGravado = await movimentoJaGravado(dados.chaveIdempotencia, tx)
+    if (jaGravado) return jaGravado
+    await exigirSaldo(tx, dados.loteId, dados.etapaId, dados.quantidade)
+    return tx.movimentoLote.create({
+      data: {
+        loteId: dados.loteId,
+        etapaOrigemId: dados.etapaId,
+        etapaDestinoId: null,
+        quantidade: dados.quantidade,
+        tipo: 'perda',
+        corId: lote.corId,
+        motivo: dados.motivo,
+        motivoTipo,
+        usuarioId: sessao.id,
+        usuarioNome: sessao.nome,
+        chaveIdempotencia: dados.chaveIdempotencia ?? null,
+      },
+    })
   })
   await atualizarConclusao(dados.loteId)
   return movimento
@@ -955,19 +1006,25 @@ export async function registrarSegunda(
     throw conflito(`Só há ${plural(disponivel, 'peça')} nesta etapa.`)
   }
 
-  const movimento = await prisma.movimentoLote.create({
-    data: {
-      loteId: dados.loteId,
-      etapaOrigemId: dados.etapaId,
-      etapaDestinoId: destino.id,
-      quantidade: dados.quantidade,
-      tipo: 'segunda',
-      corId: lote.corId,
-      motivo: dados.motivo,
-      usuarioId: sessao.id,
-      usuarioNome: sessao.nome,
-      chaveIdempotencia: dados.chaveIdempotencia ?? null,
-    },
+  const movimento = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await travarLote(tx, dados.loteId)
+    const jaGravado = await movimentoJaGravado(dados.chaveIdempotencia, tx)
+    if (jaGravado) return jaGravado
+    await exigirSaldo(tx, dados.loteId, dados.etapaId, dados.quantidade)
+    return tx.movimentoLote.create({
+      data: {
+        loteId: dados.loteId,
+        etapaOrigemId: dados.etapaId,
+        etapaDestinoId: destino.id,
+        quantidade: dados.quantidade,
+        tipo: 'segunda',
+        corId: lote.corId,
+        motivo: dados.motivo,
+        usuarioId: sessao.id,
+        usuarioNome: sessao.nome,
+        chaveIdempotencia: dados.chaveIdempotencia ?? null,
+      },
+    })
   })
   await atualizarConclusao(dados.loteId)
   return movimento
@@ -986,6 +1043,11 @@ export async function dividirLote(
   }
 
   const filho = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await travarLote(tx, lote.id)
+    const disponivelAgora = await exigirSaldo(tx, dados.loteId, dados.etapaId, dados.quantidade)
+    if (dados.quantidade >= disponivelAgora) {
+      throw conflito(`Divida menos que o saldo da etapa (${disponivelAgora}). Dividir tudo só renomearia o lote.`)
+    }
     const novo = await tx.lote.create({
       data: {
         codigo: await proximoCodigo(tx),

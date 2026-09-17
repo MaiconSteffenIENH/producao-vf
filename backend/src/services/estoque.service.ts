@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { conflito, invalido, regraDeNegocio } from '../lib/erros'
 import type { Sessao } from '../lib/token'
-import { atualizarConclusaoDoLote, saldosPorLote } from './lote.service'
+import { atualizarConclusaoDoLote, exigirSaldo, saldosPorLote, travarLote } from './lote.service'
 import {
   visaoDasProntas,
   visaoDoBiscoito,
@@ -569,6 +569,16 @@ export async function darBaixaDeProntas(
   if (distribuicao.fatias.length > 0) {
     try {
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // trava os lotes em ordem fixa (duas baixas cruzadas não se esperam em
+        // círculo) e reconfere cada pilha: o quadro pode ter movido a peça no meio
+        for (const loteId of [...new Set(distribuicao.fatias.map((f) => f.loteId))].sort()) {
+          await travarLote(tx, loteId)
+        }
+        if (!eDevolucao) {
+          for (const fatia of distribuicao.fatias) {
+            await exigirSaldo(tx, fatia.loteId, fatia.etapaId, fatia.quantidade)
+          }
+        }
         for (const [i, fatia] of distribuicao.fatias.entries()) {
           await tx.movimentoLote.create({
             data: {

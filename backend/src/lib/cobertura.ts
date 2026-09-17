@@ -13,6 +13,8 @@
  * Puro de propósito — sem banco.
  */
 
+import { diaDoAtelie } from './agenda-calculo'
+
 /** uma casa, com vírgula: é como aparece na tela */
 const arred = (n: number) => n.toFixed(1).replace('.', ',')
 
@@ -193,7 +195,13 @@ export function alvoDeEstoque(
   }
 }
 
-/** `2026-07` a partir de uma data. */
+/**
+ * `2026-07` a partir de um instante, no DIA DO ATELIÊ (UTC-3).
+ *
+ * Era em UTC: venda lançada às 22h do dia 31 caía no mês seguinte, porque o
+ * servidor já estava no dia 1º. Mesma regra dos avisos: o instante vira dia
+ * no fuso de Novo Hamburgo antes de virar mês.
+ */
 export function competenciaDe(data: Date): string {
-  return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, '0')}`
+  return diaDoAtelie(data).slice(0, 7)
 }

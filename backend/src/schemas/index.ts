@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import { caixaAlta } from '../lib/nomes'
+import { mensagensEmPortugues } from '../lib/zod-pt-br'
+
+// toda validação da API fala português; o schema ainda pode escrever a própria mensagem
+z.setErrorMap(mensagensEmPortugues)
 
 const texto = (max = 120) => z.string().trim().min(1, 'obrigatório').max(max)
 

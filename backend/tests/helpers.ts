@@ -18,7 +18,18 @@ export async function tokenAdmin(): Promise<string> {
   return cache
 }
 
-export async function comAuth(metodo: 'get' | 'post' | 'put' | 'delete', caminho: string) {
+/**
+ * O corpo vai AQUI, não num `.send()` depois: a função é async, e `await` numa
+ * requisição do supertest (que é thenable) já a dispara. `(await comAuth(...)).send`
+ * mandava a requisição sem corpo e quebrava com "send is not a function" —
+ * a bateria de produção ficou vermelha assim desde a fase 1.
+ */
+export async function comAuth(
+  metodo: 'get' | 'post' | 'put' | 'delete',
+  caminho: string,
+  corpo?: unknown,
+) {
   const token = await tokenAdmin()
-  return request(app)[metodo](caminho).set('Authorization', `Bearer ${token}`)
+  const requisicao = request(app)[metodo](caminho).set('Authorization', `Bearer ${token}`)
+  return corpo === undefined ? requisicao : requisicao.send(corpo as object)
 }

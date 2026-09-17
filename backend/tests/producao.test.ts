@@ -29,7 +29,7 @@ describe('produção — do torno ao pronto', () => {
   })
 
   it('abre um lote na primeira etapa do roteiro, sem cor', async () => {
-    const r = await (await comAuth('post', '/lotes')).send({ pecaId, quantidade: 40 })
+    const r = await comAuth('post', '/lotes', { pecaId, quantidade: 40 })
     expect(r.status).toBe(201)
     expect(r.body.corId).toBeNull()
     loteId = r.body.id
@@ -39,7 +39,7 @@ describe('produção — do torno ao pronto', () => {
   })
 
   it('recusa avançar mais peças do que existem na etapa', async () => {
-    const r = await (await comAuth('post', `/lotes/${loteId}/avancar`)).send({
+    const r = await comAuth('post', `/lotes/${loteId}/avancar`, {
       etapaOrigemId: id('Equipe Vera'),
       etapaDestinoId: id('Secagem'),
       quantidade: 999,
@@ -54,7 +54,7 @@ describe('produção — do torno ao pronto', () => {
       ['Secagem', '1ª Queima'],
       ['1ª Queima', 'Biscoito'],
     ]) {
-      const r = await (await comAuth('post', `/lotes/${loteId}/avancar`)).send({
+      const r = await comAuth('post', `/lotes/${loteId}/avancar`, {
         etapaOrigemId: id(de),
         etapaDestinoId: id(para),
         quantidade: 40,
@@ -67,7 +67,7 @@ describe('produção — do torno ao pronto', () => {
   })
 
   it('exige escolher o esmalte na etapa que define a cor', async () => {
-    const r = await (await comAuth('post', `/lotes/${loteId}/avancar`)).send({
+    const r = await comAuth('post', `/lotes/${loteId}/avancar`, {
       etapaOrigemId: id('Biscoito'),
       etapaDestinoId: id('Esmaltação'),
       quantidade: 20,
@@ -79,7 +79,7 @@ describe('produção — do torno ao pronto', () => {
   let filhoId = ''
 
   it('esmaltar só parte do lote divide sozinho e deixa o resto neutro', async () => {
-    const r = await (await comAuth('post', `/lotes/${loteId}/avancar`)).send({
+    const r = await comAuth('post', `/lotes/${loteId}/avancar`, {
       etapaOrigemId: id('Biscoito'),
       etapaDestinoId: id('Esmaltação'),
       quantidade: 20,
@@ -99,21 +99,21 @@ describe('produção — do torno ao pronto', () => {
   })
 
   it('registra perda e conclui o lote com o que sobrou', async () => {
-    await (await comAuth('post', `/lotes/${filhoId}/avancar`)).send({
+    await comAuth('post', `/lotes/${filhoId}/avancar`, {
       etapaOrigemId: id('Esmaltação'),
       etapaDestinoId: id('2ª Queima'),
       quantidade: 20,
       corId,
     })
 
-    const perda = await (await comAuth('post', `/lotes/${filhoId}/perda`)).send({
+    const perda = await comAuth('post', `/lotes/${filhoId}/perda`, {
       etapaId: id('2ª Queima'),
       quantidade: 3,
       motivo: 'Trincaram na queima alta',
     })
     expect(perda.status).toBe(200)
 
-    const fim = await (await comAuth('post', `/lotes/${filhoId}/avancar`)).send({
+    const fim = await comAuth('post', `/lotes/${filhoId}/avancar`, {
       etapaOrigemId: id('2ª Queima'),
       etapaDestinoId: id('Pronto'),
       quantidade: 17,
@@ -134,7 +134,7 @@ describe('produção — do torno ao pronto', () => {
   })
 
   it('recusa dividir o lote inteiro', async () => {
-    const r = await (await comAuth('post', `/lotes/${loteId}/dividir`)).send({
+    const r = await comAuth('post', `/lotes/${loteId}/dividir`, {
       etapaId: id('Biscoito'),
       quantidade: 20,
     })

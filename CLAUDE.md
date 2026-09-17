@@ -37,7 +37,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 3. **Biscoito é estoque neutro** (`estoqueIntermediario = true`). Peça parada ali pode virar qualquer cor — é o pulmão que atende uma cor que saiu bem sem começar tudo do zero. Por isso `Peca.qtdMinimaBiscoito` existe separado de `qtdMinimaDesejada` — e é editado na tela de **Estoque de biscoito**, não no cadastro de peça: quanto pulmão manter é decisão de estoque, tomada olhando o saldo ao lado do mínimo, e o cadastro é a única tela que não mostra nenhum dos dois.
 4. **Cada peça tem roteiro próprio.** Xícara Bojudinha passa por alças e colagem; Tortinha vai direto da equipe pra secagem. O roteiro é substituído inteiro no update — é a única forma de reordenar sem colidir com `@@unique([pecaId, ordem])`.
 5. **Conclusão é estado derivado, nunca um campo marcado à mão.** Não iniciada = sugestão sem lote; em andamento = quantidade antes de "Pronto"; parcial = parte pronta, parte não; concluída = pronto ≥ planejado. Checkbox manual apodrece com o uso.
-6. **O saldo do lote NÃO é um campo — é a soma do livro-razão.** `MovimentoLote` é append-only: entrada = `etapaDestinoId`, saída = `etapaOrigemId`. Movimentação parcial, perda e divisão saem de graça disso, e o saldo nunca discorda do histórico porque ele *é* o histórico. Erro se corrige com movimento novo, nunca editando ou apagando.
+6. **O saldo do lote NÃO é um campo — é a soma do livro-razão.** `MovimentoLote` é append-only: entrada = `etapaDestinoId`, saída = `etapaOrigemId`. Movimentação parcial, perda e divisão saem de graça disso, e o saldo nunca discorda do histórico porque ele *é* o histórico. Erro se corrige com movimento novo, nunca editando ou apagando. **A conferência de saldo que vale é a de DENTRO da transação, com o lote travado** (`travarLote` + `exigirSaldo`, `pg_advisory_xact_lock` por lote): a de fora só existe para a mensagem. Dois celulares reenviando a fila ao mesmo tempo liam "10 disponíveis" os dois e gravavam 20 saídas de um saldo de 10; `tests/concorrencia.test.ts` dispara as duas requisições de verdade.
 7. **Esmaltar parte de um lote divide o lote sozinho.** Se 20 de 40 vão para Pistache, nasce um lote-filho com a cor e o pai continua neutro em biscoito. Sem isso o sistema teria que escolher entre mentir a cor do resto ou proibir a operação mais comum do ateliê.
 8. **Perda medida ganha da perda estimada na precificação** — mas só com amostra mínima (30 peças). Um lote azarado de 6 viraria "50% de perda" e envenenaria o preço.
 9. **Meta diária tem saldo rolante semanal, e zera na segunda.** Dívida acumulada de mês inteiro vira número que ninguém olha. **Dia de folga não é cobrado**: sem isso, faltar na quarta tornava a meta de quinta impossível por uma dívida que não era da pessoa — o mesmo modo de falha do reset semanal, em escala menor.
@@ -55,7 +55,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 512 casos em 26 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 518 casos em 27 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -63,7 +63,8 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `saldos.ts` | agregação do livro-razão em saldo por etapa |
 | `planejamento-calculo.ts` | alocação do biscoito e inflação pela perda |
 | `queima.ts` | ocupação do forno, "faltam N para fechar", montagem da carga |
-| `cobertura.ts` | velocidade de venda (3 meses fechados), cobertura em semanas e o alvo de estoque que o planejamento usa |
+| `cobertura.ts` | velocidade de venda (3 meses fechados), cobertura em semanas e o alvo de estoque que o planejamento usa; a competência da venda é o mês do DIA DO ATELIÊ, não do UTC |
+| `zod-pt-br.ts` | toda mensagem de validação da API em português (o schema ainda pode escrever a própria) |
 | `previsao.ts` | faixa de dias até ficar pronto, e se cabe no prazo da encomenda |
 | `insumos.ts` | consumo do plano e o que comprar |
 | `agenda-calculo.ts` | meta diária com saldo rolante e folga |
@@ -74,7 +75,7 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 
 **Os cenários BDD do plano de testes vivem em `e2e/tests/`**, um arquivo por funcionalidade (`bdd-01…13`) e um `test` por cenário, com o mesmo título do Documento de Projeto. O "Dado que" é montado pela API (`e2e/fixtures/api.ts`); o "Quando" e o "Então" acontecem no navegador, por Page Object (`e2e/pages/`). Seletor é por papel e rótulo (`getByRole`, `getByLabel`); três ganchos existem na aplicação só para isso e não podem sair: `role="dialog"` no `Modal`, `role="status"` no `Toaster` e `data-alerta` no item Avisos do menu. Um worker e banco compartilhado: cada cenário cria as próprias peças com nome único e limpa o que é global (fila do forno, avisos abertos) antes de usar. Cenário de código que ainda está em branch fica `test.skip` com o motivo, ligado por `E2E_INCLUIR_EM_TESTE=1`.
 
-**Testes de unidade ficam em `backend/tests/unidade/`** e o vitest pega a pasta inteira. A configuração já listou arquivo por arquivo, e isso deixou um teste novo existir sem nunca rodar — o comando dizia "passou". Teste que não roda é pior que teste que não existe.
+**Testes de unidade ficam em `backend/tests/unidade/`** e o vitest pega a pasta inteira. Os de integração (`backend/tests/*.test.ts`) usam `comAuth(metodo, caminho, corpo)`: o corpo vai no terceiro argumento, porque `await` numa requisição do supertest já a dispara, e `(await comAuth()).send()` deixou a bateria de produção vermelha da fase 1 até 17/09 sem ninguém notar. Sem o CLI do Prisma, `BANCO_DE_TESTE_PRONTO=1` pula o `db push` e usa o banco que o chamador já preparou. A configuração já listou arquivo por arquivo, e isso deixou um teste novo existir sem nunca rodar — o comando dizia "passou". Teste que não roda é pior que teste que não existe.
 
 ## Regras de código
 

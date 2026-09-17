@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express'
 import { ZodError } from 'zod'
 import { HttpError } from '../lib/erros'
+import { caminhoLegivel } from '../lib/zod-pt-br'
 
 export function tratarErros(erro: unknown, _req: Request, res: Response, _next: NextFunction) {
   if (erro instanceof HttpError) {
@@ -9,7 +10,9 @@ export function tratarErros(erro: unknown, _req: Request, res: Response, _next: 
   if (erro instanceof ZodError) {
     const primeiro = erro.issues[0]
     return res.status(400).json({
-      mensagem: primeiro ? `${primeiro.path.join('.')}: ${primeiro.message}` : 'Dados inválidos.',
+      mensagem: primeiro
+        ? primeiro.path.length ? `${caminhoLegivel(primeiro.path)}: ${primeiro.message}` : primeiro.message
+        : 'Dados inválidos.',
       detalhes: erro.issues,
     })
   }

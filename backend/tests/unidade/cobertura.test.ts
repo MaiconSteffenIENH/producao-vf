@@ -100,6 +100,12 @@ describe('minimoSugerido', () => {
 })
 
 describe('competenciaDe', () => {
+  it('venda às 22h do dia 31 fica no mês do ateliê, não no mês seguinte do UTC', () => {
+    // 22h em Novo Hamburgo = 01h UTC do dia 1º
+    expect(competenciaDe(new Date('2026-08-01T01:00:00Z'))).toBe('2026-07')
+    expect(competenciaDe(new Date('2026-08-01T03:00:00Z'))).toBe('2026-08')
+  })
+
   it('formata AAAA-MM com mês de dois dígitos', () => {
     expect(competenciaDe(new Date('2026-07-27T12:00:00Z'))).toBe('2026-07')
     expect(competenciaDe(new Date('2026-01-05T12:00:00Z'))).toBe('2026-01')
