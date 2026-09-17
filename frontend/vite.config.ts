@@ -20,6 +20,48 @@ export default defineConfig({
         // woff2 não entra no padrão do workbox. Sem isto, o app abre offline
         // no ateliê com Georgia no lugar da Unna e muda de cara.
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        /*
+         * O QUADRO CONSULTÁVEL SEM SINAL.
+         *
+         * O app abria offline, mas abria vazio: o quadro é o que a equipe mais
+         * olha, e olhar é a metade que não precisa de rede. As leituras que o
+         * quadro faz ficam guardadas; sem sinal (ou com sinal que não responde
+         * em 8 s), o service worker devolve a última cópia e marca a hora em
+         * `x-vf-guardado-em`, que a tela lê para dizer "quadro de 14:32".
+         *
+         * Só GET e só a API (outra origem): a navegação do próprio app tem o
+         * seu fallback. Escrita nunca passa por aqui, é da fila offline.
+         */
+        runtimeCaching: [
+          {
+            urlPattern: ({ url, request, sameOrigin }) =>
+              request.method === 'GET' &&
+              !sameOrigin &&
+              /^\/(lotes\/kanban|etapas|cores|pecas|responsaveis|auth\/me)(\?|$)/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'vf-leituras',
+              networkTimeoutSeconds: 8,
+              expiration: { maxEntries: 40, maxAgeSeconds: 7 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [200] },
+              plugins: [
+                {
+                  // a cópia guardada leva a hora em que foi vista; a resposta da rede, não
+                  cacheWillUpdate: async ({ response }) => {
+                    if (!response || response.status !== 200) return null
+                    const cabecalhos = new Headers(response.headers)
+                    cabecalhos.set('x-vf-guardado-em', new Date().toISOString())
+                    return new Response(await response.clone().arrayBuffer(), {
+                      status: 200,
+                      statusText: response.statusText,
+                      headers: cabecalhos,
+                    })
+                  },
+                },
+              ],
+            },
+          },
+        ],
       },
       manifest: {
         name: 'Produção Vera Flesch',

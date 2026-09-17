@@ -28,7 +28,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 - Backend: `npm run dev --prefix backend` (porta 3001) · testes: `npm test --prefix backend`
 - Frontend: `npm run dev --prefix frontend` (porta 5173) · build: `npm run build --prefix frontend`
 - Semear o banco: `npm run seed --prefix backend`
-- Ponta a ponta (Playwright, 46 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
+- Ponta a ponta (Playwright, 48 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
 
 ## Decisões estruturais (mudar aqui quebra o planejamento)
 
@@ -53,10 +53,12 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 19. **Escrita de produção passa pela fila offline.** O ateliê tem sinal ruim. `enviarComFila()` gera a chave de idempotência no CLIENTE antes de sair; o backend reconhece a chave e devolve o que já gravou em vez de gravar de novo. Num livro-razão append-only isso é decisivo: duplicata não se apaga, se corrige com estorno.
 20. **O alvo de estoque vem da venda dos últimos três meses fechados, não do cadastro.** Alinhamento com o professor em 17/09: a estimativa de quanto manter tem de partir do que a loja vende. `alvoDeEstoque()` (lib/cobertura.ts) faz velocidade semanal × (semanas para repor + 2 de folga), por peça e por cor; o planejamento usa isso como alvo. `qtdMinimaDesejada` (peça e cor) só vale para quem ainda não tem venda em mês fechado. A regra vale para os dois lados: peça que parou de vender tem o alvo reduzido junto, que é o que o mínimo digitado nunca fazia. Estoque acima da venda de propósito (feira, Natal) é encomenda, que passa na frente e tem nome e data.
 21. **A baixa por venda É a venda, e o ateliê só vende por marketplace.** Desde 17/09 (Maicon, com a Gabi): não há mais feira, lojista nem venda particular, só Shopee e Mercado Livre. A baixa em Peças prontas com motivo venda pede o canal e `venderDaPrateleira()` soma na linha `Venda` peça+cor+canal do mês do ateliê, e a baixa sai por `salvarVenda`, o mesmo caminho da tela de Vendas: um fato, contado uma vez. Antes a baixa tirava do estoque e a venda ficava para "depois lançar", e a cobertura (e o alvo de estoque, que vem dela) via menos venda do que houve. Desfazer ou corrigir é em Vendas, nunca pela prateleira: `estorno_venda` é `viaVendas` e a tela de baixa não oferece. `feira` e `devolucao_feira` saíram da lista e ficam só como rótulo do histórico antigo.
+22. **O cartão do quadro conta os dias na etapa contra o previsto do roteiro, e o Início lista o que passou.** `RoteiroEtapa.diasEstimados` só servia à previsão de conclusão; o João marcava de cabeça quando a bandeja podia sair da secagem. `permanenciaNaEtapa()` (lib/atraso-etapa.ts) conta DIAS DE ATELIÊ desde o último movimento que trouxe peça para a etapa (lote que voltou recomeça a contar): no 5º dia de uma etapa de 5 "vence hoje", no 6º "1 dia além do previsto". Etapa final e segunda não contam, peça pronta parada é estoque. A encomenda segue o mesmo princípio da conclusão do lote: vira `pronta` sozinha quando todos os lotes dela concluíram e o pronto cobre o pedido, e volta a `em_producao` se um lote reabrir; `entregue` continua sendo gesto da pessoa.
+23. **O quadro é consultável sem sinal.** O service worker guarda as leituras do quadro (`/lotes/kanban`, `/etapas`, `/cores`, `/pecas`, `/responsaveis`, `/auth/me`) em `NetworkFirst` com 8 s de espera e devolve a última cópia marcada com `x-vf-guardado-em`; a tela lê o cabeçalho e diz "quadro de 14:32". Só GET, só a API; escrita é da fila offline (decisão 19). Configurado em `frontend/vite.config.ts`.
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 518 casos em 27 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 527 casos em 28 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -65,6 +67,7 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `planejamento-calculo.ts` | alocação do biscoito e inflação pela perda |
 | `queima.ts` | ocupação do forno, "faltam N para fechar", montagem da carga |
 | `cobertura.ts` | velocidade de venda (3 meses fechados), cobertura em semanas e o alvo de estoque que o planejamento usa; a competência da venda é o mês do DIA DO ATELIÊ, não do UTC |
+| `atraso-etapa.ts` | dias na etapa contra o previsto do roteiro, e a frase do cartão |
 | `zod-pt-br.ts` | toda mensagem de validação da API em português (o schema ainda pode escrever a própria) |
 | `previsao.ts` | faixa de dias até ficar pronto, e se cabe no prazo da encomenda |
 | `insumos.ts` | consumo do plano e o que comprar |

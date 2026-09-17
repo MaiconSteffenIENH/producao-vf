@@ -25,6 +25,17 @@ type Resumo = {
     etapaQueDefineCor: string | null
   }
   porCategoria: { id: string; nome: string; pecas: number }[]
+  /** peça em etapa não final há mais dias do que o roteiro previu */
+  lotesParados: {
+    loteId: string
+    codigo: string
+    peca: string
+    cor: string | null
+    etapa: string
+    quantidade: number
+    atrasoDias: number
+    frase: string
+  }[]
   producao: {
     disponivel: boolean
     lotesAbertos: number
@@ -124,7 +135,7 @@ export function Dashboard() {
 
   if (carregando || !resumo) return <Carregando />
 
-  const { cadastros, pendencias, porCategoria, producao } = resumo
+  const { cadastros, pendencias, porCategoria, producao, lotesParados } = resumo
   const totalPendencias =
     pendencias.semRoteiro.length + pendencias.semEsmalte.length + pendencias.semEtapaDeCor.length
 
@@ -234,6 +245,46 @@ export function Dashboard() {
           </ul>
         </Card>
       </div>
+
+      {/*
+        O QUE O ROTEIRO PREVIU E NÃO ACONTECEU.
+
+        O João marcava de cabeça quando cada bandeja podia sair da secagem.
+        Aqui aparece o lote que passou do previsto, antes de abrir o quadro:
+        ou a peça já foi movida e ninguém registrou, ou ela está parada mesmo.
+        Os dois casos merecem olhar.
+      */}
+      {lotesParados.length > 0 && (
+        <Card className="mt-4 border-perigo/30">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-titulo text-xl text-tinta">
+              <AlertTriangle size={18} className="text-perigo" />
+              Parados além do previsto ({lotesParados.length})
+            </h2>
+            <Link to="/producao" className="text-sm text-tinta-fraca underline hover:text-tinta">
+              abrir o quadro
+            </Link>
+          </div>
+          <p className="mt-1 text-xs text-tinta-fraca">
+            Ou a peça já andou e ninguém moveu o cartão, ou ela está parada mesmo. Os dois merecem olhar.
+          </p>
+          <ul className="mt-3 divide-y divide-borda text-sm" data-lotes-parados>
+            {lotesParados.slice(0, 8).map((l) => (
+              <li key={`${l.loteId}:${l.etapa}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2">
+                <span className="font-medium text-tinta">{l.codigo}</span>
+                <span className="min-w-0 flex-1 truncate text-tinta">
+                  {l.peca}
+                  {l.cor ? ` ${l.cor}` : ''} · {plural(l.quantidade, 'peça')} em {l.etapa}
+                </span>
+                <span className="shrink-0 text-perigo">{l.frase}</span>
+              </li>
+            ))}
+            {lotesParados.length > 8 && (
+              <li className="py-2 text-xs text-tinta-fraca">e mais {lotesParados.length - 8} no quadro</li>
+            )}
+          </ul>
+        </Card>
+      )}
 
       <Card className="mt-4">
         <div className="flex flex-wrap items-center justify-between gap-2">

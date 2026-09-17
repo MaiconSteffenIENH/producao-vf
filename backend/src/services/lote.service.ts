@@ -4,6 +4,7 @@ import { conflito, invalido, naoEncontrado } from '../lib/erros'
 import type { Sessao } from '../lib/token'
 import { plural } from '../lib/plural'
 import { avaliarExclusao } from '../lib/exclusao-lote'
+import { fraseDaPermanencia, permanenciaNaEtapa, ultimaEntrada, type PermanenciaNaEtapa } from '../lib/atraso-etapa'
 import {
   avaliarQuantidadeDeAbertura,
   corrigirAbertura,
@@ -449,7 +450,7 @@ export async function obterLote(id: string) {
 }
 
 /** Colunas do Kanban: as etapas ativas, cada uma com os lotes que têm saldo nela. */
-export async function kanban(filtros: { pecaId?: string; corId?: string; responsavelId?: string }) {
+export async function kanban(filtros: { pecaId?: string; corId?: string; responsavelId?: string }, agora = new Date()) {
   const etapas = await prisma.etapa.findMany({
     where: { ativo: true },
     orderBy: { ordemPadrao: 'asc' },
@@ -465,21 +466,31 @@ export async function kanban(filtros: { pecaId?: string; corId?: string; respons
     include: incluirLote,
   })
 
-  const saldos = await saldosPorLote(lotes.map((l: { id: string }) => l.id))
+  const loteIds = lotes.map((l: { id: string }) => l.id)
+  const saldos = await saldosPorLote(loteIds)
   const roteiros = await prisma.roteiroEtapa.findMany({
     where: { pecaId: { in: [...new Set(lotes.map((l: { pecaId: string }) => l.pecaId))] } },
     orderBy: { ordem: 'asc' },
     include: { etapa: { select: { id: true, nome: true, defineCor: true } } },
   })
 
-  type Roteiro = { pecaId: string; etapaId: string; ordem: number; responsavelId: string | null }
+  type Roteiro = { pecaId: string; etapaId: string; ordem: number; responsavelId: string | null; diasEstimados: number }
   const porPeca = new Map<string, Roteiro[]>()
   for (const r of roteiros as Roteiro[]) porPeca.set(r.pecaId, [...(porPeca.get(r.pecaId) ?? []), r])
 
-  const colunas = etapas.map((etapa: { id: string; nome: string }) => {
+  // quando cada lote ENTROU em cada etapa: é daí que sai "3 dias aqui, previsto 5"
+  const entradas = (await prisma.movimentoLote.findMany({
+    where: { loteId: { in: loteIds }, etapaDestinoId: { not: null } },
+    select: { loteId: true, etapaDestinoId: true, criadoEm: true },
+  })) as { loteId: string; etapaDestinoId: string | null; criadoEm: Date }[]
+  const entradasPorLote = new Map<string, { etapaDestinoId: string | null; criadoEm: Date }[]>()
+  for (const e of entradas) entradasPorLote.set(e.loteId, [...(entradasPorLote.get(e.loteId) ?? []), e])
+
+  type LoteDoQuadro = { id: string; pecaId: string; codigo: string; peca: { nome: string }; cor: { nome: string } | null }
+  const colunas = etapas.map((etapa: { id: string; nome: string; tipo: string }) => {
     const cartoes = lotes
       .filter((lote: { id: string }) => (saldos.get(lote.id)?.get(etapa.id) ?? 0) > 0)
-      .map((lote: { id: string; pecaId: string }) => {
+      .map((lote: LoteDoQuadro) => {
         const roteiro = porPeca.get(lote.pecaId) ?? []
         const atual = roteiro.find((r) => r.etapaId === etapa.id)
         const proxima = atual ? roteiro.find((r) => r.ordem === atual.ordem + 1) : undefined
@@ -503,6 +514,7 @@ export async function kanban(filtros: { pecaId?: string; corId?: string; respons
           quantidade: saldos.get(lote.id)?.get(etapa.id) ?? 0,
           responsavelSugeridoId: atual?.responsavelId ?? null,
           proximaEtapaId: proxima?.etapaId ?? null,
+          permanencia: permanenciaDoCartao(entradasPorLote.get(lote.id) ?? [], etapa.id, atual?.diasEstimados, agora),
           /*
            * Para onde ESTE cartão pode ir. Sai daqui e não da tela porque quem
            * conhece o roteiro da peça é o backend — `avancarLote` recusa etapa
@@ -526,6 +538,67 @@ export async function kanban(filtros: { pecaId?: string; corId?: string; respons
   return colunas.filter(
     (c: { etapa: { id: string }; cartoes: unknown[] }) => c.cartoes.length > 0 || etapasEmUso.has(c.etapa.id),
   )
+}
+
+/**
+ * Há quanto tempo o cartão está nesta coluna, contra o previsto do roteiro.
+ * Etapa final não conta: peça pronta parada é estoque, não atraso.
+ */
+function permanenciaDoCartao(
+  entradas: readonly { etapaDestinoId: string | null; criadoEm: Date }[],
+  etapaId: string,
+  diasEstimados: number | undefined,
+  agora: Date,
+): (PermanenciaNaEtapa & { frase: string }) | null {
+  const entrouEm = ultimaEntrada(entradas, etapaId)
+  if (!entrouEm || diasEstimados === undefined) return null
+  const p = permanenciaNaEtapa(entrouEm, agora, diasEstimados)
+  return { ...p, frase: fraseDaPermanencia(p) }
+}
+
+export type LoteParado = {
+  loteId: string
+  codigo: string
+  peca: string
+  cor: string | null
+  etapaId: string
+  etapa: string
+  quantidade: number
+  diasNaEtapa: number
+  diasEstimados: number
+  atrasoDias: number
+  frase: string
+}
+
+/**
+ * Lotes com peça em etapa não final há mais dias do que o roteiro previu,
+ * do mais atrasado para o menos. É o que o Início mostra para o João olhar
+ * antes de abrir o quadro.
+ */
+export async function lotesParadosAlemDoPrevisto(agora = new Date()): Promise<LoteParado[]> {
+  const colunas = await kanban({}, agora)
+  const parados: LoteParado[] = []
+  for (const coluna of colunas) {
+    if (coluna.etapa.tipo === 'final' || coluna.etapa.tipo === 'segunda') continue
+    for (const cartao of coluna.cartoes) {
+      const p = cartao.permanencia
+      if (!p || p.situacao !== 'atrasado') continue
+      parados.push({
+        loteId: cartao.id,
+        codigo: cartao.codigo,
+        peca: cartao.peca.nome,
+        cor: cartao.cor?.nome ?? null,
+        etapaId: coluna.etapa.id,
+        etapa: coluna.etapa.nome,
+        quantidade: cartao.quantidade,
+        diasNaEtapa: p.diasNaEtapa,
+        diasEstimados: p.diasEstimados,
+        atrasoDias: p.atrasoDias,
+        frase: p.frase,
+      })
+    }
+  }
+  return parados.sort((a, b) => b.atrasoDias - a.atrasoDias || a.codigo.localeCompare(b.codigo, 'pt-BR'))
 }
 
 // ─────────────────────────── Comandos ───────────────────────────
@@ -1164,6 +1237,46 @@ async function atualizarConclusao(loteId: string) {
   } else if (temAberto && lote.concluidoEm) {
     // um retorno de etapa reabre o lote
     await prisma.lote.update({ where: { id: loteId }, data: { concluidoEm: null } })
+  }
+  await atualizarEncomendaDoLote(loteId, finais)
+}
+
+/*
+ * A ENCOMENDA FICA PRONTA SOZINHA, pelo mesmo motivo que o lote conclui sozinho
+ * (decisão 5): checkbox manual apodrece. Ela é "pronta" quando todos os lotes
+ * dela concluíram e o que está nas etapas finais cobre o que foi pedido; e
+ * volta a "em produção" se um lote reabrir. "Entregue" continua sendo gesto da
+ * pessoa, porque entregar acontece fora do sistema.
+ */
+async function atualizarEncomendaDoLote(loteId: string, finais: Set<string>) {
+  const lote = (await prisma.lote.findUnique({ where: { id: loteId }, select: { encomendaId: true } })) as
+    | { encomendaId: string | null }
+    | null
+  if (!lote?.encomendaId) return
+
+  const encomenda = (await prisma.encomenda.findUnique({
+    where: { id: lote.encomendaId },
+    select: {
+      id: true,
+      status: true,
+      itens: { select: { quantidade: true } },
+      lotes: { where: { canceladoEm: null }, select: { id: true, concluidoEm: true } },
+    },
+  })) as { id: string; status: string; itens: { quantidade: number }[]; lotes: { id: string; concluidoEm: Date | null }[] } | null
+  if (!encomenda || !['em_producao', 'pronta'].includes(encomenda.status)) return
+  if (encomenda.lotes.length === 0) return
+
+  const todosConcluidos = encomenda.lotes.every((l) => l.concluidoEm)
+  const saldos = await saldosPorLote(encomenda.lotes.map((l) => l.id))
+  let prontas = 0
+  for (const mapa of saldos.values()) for (const [etapaId, qtd] of mapa) if (finais.has(etapaId)) prontas += qtd
+  const pedido = encomenda.itens.reduce((n, i) => n + i.quantidade, 0)
+
+  const pronta = todosConcluidos && prontas >= pedido && pedido > 0
+  if (pronta && encomenda.status === 'em_producao') {
+    await prisma.encomenda.update({ where: { id: encomenda.id }, data: { status: 'pronta' } })
+  } else if (!todosConcluidos && encomenda.status === 'pronta') {
+    await prisma.encomenda.update({ where: { id: encomenda.id }, data: { status: 'em_producao' } })
   }
 }
 

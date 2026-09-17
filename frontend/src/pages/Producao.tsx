@@ -39,6 +39,14 @@ type Cartao = {
   loteOrigem: { id: string; codigo: string } | null
   /** etapas do roteiro desta peça, tirando a atual — para onde o arrasto pode ir */
   destinosPermitidos: string[]
+  /** há quanto tempo está nesta coluna, contra o previsto do roteiro; nulo em etapa fora do roteiro */
+  permanencia: {
+    diasNaEtapa: number
+    diasEstimados: number
+    atrasoDias: number
+    situacao: 'no_prazo' | 'vence_hoje' | 'atrasado'
+    frase: string
+  } | null
 }
 type Coluna = {
   etapa: { id: string; nome: string; tipo: string; defineCor: boolean; estoqueIntermediario: boolean }
@@ -212,6 +220,9 @@ export function Producao() {
   })
   const [enviando, setEnviando] = useState(false)
 
+  /** hora da cópia guardada quando o quadro veio do service worker, sem sinal; nulo = veio da rede */
+  const [quadroDe, setQuadroDe] = useState<Date | null>(null)
+
   const recarregar = useCallback(
     async (silencioso = false) => {
       if (!silencioso) setCarregando(true)
@@ -219,8 +230,11 @@ export function Producao() {
         const params = new URLSearchParams()
         if (filtroPeca) params.set('pecaId', filtroPeca)
         if (filtroCor) params.set('corId', filtroCor)
-        const { data } = await api.get(`/lotes/kanban?${params.toString()}`)
-        setColunas(data)
+        const resposta = await api.get(`/lotes/kanban?${params.toString()}`)
+        setColunas(resposta.data)
+        // o service worker marca a cópia guardada; da rede, o cabeçalho não vem
+        const guardadoEm = resposta.headers['x-vf-guardado-em'] as string | undefined
+        setQuadroDe(guardadoEm ? new Date(guardadoEm) : null)
       } catch (erro) {
         avisar.erro(mensagemDoErro(erro, 'Não deu para carregar o quadro.'))
       } finally {
@@ -476,6 +490,18 @@ export function Producao() {
         }
       />
 
+      {quadroDe && (
+        <p
+          role="status"
+          className="mb-3 rounded-lg border border-alerta/30 bg-alerta/5 px-3 py-2 text-sm text-tinta"
+        >
+          Sem sinal: este é o quadro de{' '}
+          {quadroDe.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          {quadroDe.toDateString() !== new Date().toDateString() ? ` de ${dataBr(quadroDe)}` : ''}. O que você
+          mover fica na fila e sobe quando a rede voltar.
+        </p>
+      )}
+
       {vazio ? (
         <Vazio
           icone={<Boxes size={22} />}
@@ -642,6 +668,29 @@ export function Producao() {
                       <p className="mt-1 text-[11px] text-tinta-fraca">
                         aberto em {dataBr(cartao.iniciadoEm)}
                       </p>
+
+                      {/*
+                        O TEMPO NA COLUNA, contra o que o roteiro previu.
+
+                        O João marcava de cabeça quando a bandeja podia sair da
+                        secagem. Agora o cartão diz "3 dias aqui, previsto 5", e
+                        fica âmbar no dia do vencimento e vermelho depois. Etapa
+                        final não recebe isso: peça pronta parada é estoque.
+                      */}
+                      {cartao.permanencia && coluna.etapa.tipo !== 'final' && coluna.etapa.tipo !== 'segunda' && (
+                        <p
+                          data-situacao={cartao.permanencia.situacao}
+                          className={`mt-1 text-[11px] ${
+                            cartao.permanencia.situacao === 'atrasado'
+                              ? 'font-medium text-perigo'
+                              : cartao.permanencia.situacao === 'vence_hoje'
+                                ? 'font-medium text-alerta'
+                                : 'text-tinta-fraca'
+                          }`}
+                        >
+                          {cartao.permanencia.frase}
+                        </p>
+                      )}
 
                       {/*
                         A OBSERVAÇÃO, ONDE ELA SERVE PARA ALGUMA COISA.

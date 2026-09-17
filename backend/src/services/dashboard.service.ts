@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma'
 import { calcularEstoque } from './estoque.service'
+import { lotesParadosAlemDoPrevisto } from './lote.service'
 
 /** Resumo do que está cadastrado, do que falta configurar e do que está na linha. */
 export async function resumo() {
@@ -59,6 +60,8 @@ export async function resumo() {
       pecas: c._count.pecas,
     })),
     producao: await resumoProducao(),
+    // o que o roteiro previu e não aconteceu: para olhar antes de abrir o quadro
+    lotesParados: await lotesParadosAlemDoPrevisto(),
   }
 }
 
