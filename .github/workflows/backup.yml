@@ -1,0 +1,93 @@
+# Backup diário do banco de produção, de graça.
+#
+# O Neon gratuito guarda só algumas horas de histórico: um DROP errado numa
+# quarta à noite não tem para onde voltar na quinta. Este job roda todo dia de
+# madrugada, faz um pg_dump em formato custom (o único que o pg_restore lê
+# tabela a tabela), cifra com uma senha que só existe nos segredos do
+# repositório e guarda como artefato por 90 dias. Custa zero: o Actions dá
+# 2.000 minutos por mês e isto leva menos de um.
+#
+# Dois segredos, cadastrados em Settings → Secrets and variables → Actions:
+#   DATABASE_URL_BACKUP  a URL DIRETA do Neon (sem -pooler no host)
+#   BACKUP_SENHA         uma frase longa; sem ela o arquivo não abre
+# Nenhum dos dois passa por chat, ticket ou commit. Como restaurar: docs/BACKUP.md.
+name: Backup do banco
+
+on:
+  schedule:
+    # 03:15 UTC = 00:15 em Novo Hamburgo; o ateliê já dormiu e o Neon acorda o banco
+    - cron: '15 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: pg_dump cifrado
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Os dois segredos existem?
+        env:
+          URL: ${{ secrets.DATABASE_URL_BACKUP }}
+          SENHA: ${{ secrets.BACKUP_SENHA }}
+        run: |
+          faltou=0
+          [ -n "$URL" ] || { echo "::error::Falta o segredo DATABASE_URL_BACKUP (a URL direta do Neon)."; faltou=1; }
+          [ -n "$SENHA" ] || { echo "::error::Falta o segredo BACKUP_SENHA (a senha que cifra o arquivo)."; faltou=1; }
+          [ ${#SENHA} -ge 16 ] || { echo "::error::BACKUP_SENHA precisa ter ao menos 16 caracteres."; faltou=1; }
+          case "$URL" in *-pooler*) echo "::warning::A URL tem -pooler: o pg_dump prefere a conexão direta." ;; esac
+          exit $faltou
+
+      # O pg_dump precisa ser da mesma versão do servidor ou mais novo. O Ubuntu
+      # do runner traz o 16; o Neon já entrega 17 em projeto novo.
+      - name: Cliente do Postgres 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          pg_dump --version
+
+      - name: pg_dump
+        env:
+          URL: ${{ secrets.DATABASE_URL_BACKUP }}
+        run: |
+          echo "DATA=$(TZ=America/Sao_Paulo date +%F)" >> "$GITHUB_ENV"
+          pg_dump "$URL" --format=custom --no-owner --no-privileges --file=banco.dump
+          ls -l banco.dump
+
+      # Dump vazio também "dá certo". Conferir que tem as tabelas do sistema
+      # é o que separa um backup de um arquivo com o nome de backup.
+      - name: O dump tem o banco inteiro?
+        run: |
+          tabelas=$(pg_restore --list banco.dump | grep -c 'TABLE DATA' || true)
+          echo "tabelas com dados: $tabelas"
+          [ "$tabelas" -ge 20 ] || { echo "::error::O dump tem só $tabelas tabelas; o sistema tem mais de 20. Não vou guardar isto como backup."; exit 1; }
+          pg_restore --list banco.dump | grep -q 'movimentos_lote' || { echo "::error::O livro-razão (movimentos_lote) não está no dump."; exit 1; }
+
+      - name: Cifrar
+        env:
+          BACKUP_SENHA: ${{ secrets.BACKUP_SENHA }}
+        run: |
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in banco.dump -out "producao-vf-${DATA}.dump.enc" -pass env:BACKUP_SENHA
+          rm banco.dump
+          # confere que abre com a mesma senha antes de guardar
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in "producao-vf-${DATA}.dump.enc" -pass env:BACKUP_SENHA | head -c 5 | grep -q 'PGDMP' \
+            || { echo "::error::O arquivo cifrado não decifra de volta."; exit 1; }
+          ls -l "producao-vf-${DATA}.dump.enc"
+
+      - name: Guardar por 90 dias
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-producao-vf-${{ env.DATA }}
+          path: producao-vf-${{ env.DATA }}.dump.enc
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 0

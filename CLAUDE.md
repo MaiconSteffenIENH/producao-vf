@@ -28,6 +28,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 - Backend: `npm run dev --prefix backend` (porta 3001) · testes: `npm test --prefix backend`
 - Frontend: `npm run dev --prefix frontend` (porta 5173) · build: `npm run build --prefix frontend`
 - Semear o banco: `npm run seed --prefix backend`
+- Backup do banco: todo dia às 00:15 pelo GitHub Actions (`.github/workflows/backup.yml`, 90 dias, cifrado); restaurar com `scripts/restaurar-backup.sh`, roteiro em `docs/BACKUP.md`. Os segredos `DATABASE_URL_BACKUP` e `BACKUP_SENHA` são cadastrados no painel do GitHub, nunca por chat.
 - Ponta a ponta (Playwright, 48 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
 
 ## Decisões estruturais (mudar aqui quebra o planejamento)

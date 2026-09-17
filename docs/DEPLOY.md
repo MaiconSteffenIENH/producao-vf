@@ -1,6 +1,6 @@
 # Publicar o Produção VF
 
-Três serviços gratuitos: **Neon** (banco), **Render** (API), **Vercel** (aplicação).
+Três serviços gratuitos: **Neon** (banco), **Render** (API), **Vercel** (aplicação). O backup diário do banco é o quarto: GitHub Actions, roteiro em [BACKUP.md](BACKUP.md).
 
 A ordem importa e há uma dependência circular no meio — o Render precisa saber a URL da Vercel e a Vercel precisa saber a URL do Render. Por isso o passo 4 volta no Render.
 
