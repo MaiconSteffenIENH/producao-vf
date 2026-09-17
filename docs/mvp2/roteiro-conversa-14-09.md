@@ -57,10 +57,10 @@ foram verificadas por rotina automatizada antes de entrar no documento.)
 > estrutural com o motivo, para quem pegar o código depois entender por que ele
 > é assim e não de outro jeito."
 
-(Documento de Projeto, versão 2, 99 páginas: 71 requisitos funcionais com
+(Documento de Projeto, versão 2.1, 101 páginas: 72 requisitos funcionais com
 situação, 16 não funcionais, 7 processos com diagrama de atividades e 33 regras
 de negócio, 14 casos de uso completos, 4 diagramas de sequência, 12 protótipos
-de tela, 13 funcionalidades BDD com 45 cenários, 4 máquinas de estado, DER com
+de tela, 13 funcionalidades BDD com 46 cenários, 4 máquinas de estado, DER com
 29 entidades e dicionário de 278 colunas extraído do banco, matriz de
 rastreabilidade requisito × caso de uso × teste × tela, e referências. O que
 está em teste ou planejado vem marcado, para ninguém confundir com produção.)
@@ -82,14 +82,14 @@ está em teste ou planejado vem marcado, para ninguém confundir com produção.
   padrão a seguir.
 
 (46 commits desde 27 de julho, 14 deles depois da primeira entrega. 27
-tabelas, 12 migrações, 24 telas, ~24 mil linhas. 507 testes de unidade da
-regra de negócio rodando sem banco em dois segundos, mais 45 cenários de
+tabelas, 12 migrações, 24 telas, ~24 mil linhas. 512 testes de unidade da
+regra de negócio rodando sem banco em dois segundos, mais 46 cenários de
 ponta a ponta no navegador.)
 
-**Testes de ponta a ponta.** Os 45 cenários BDD do plano de testes estão
+**Testes de ponta a ponta.** Os 46 cenários BDD do plano de testes estão
 automatizados em Playwright, rodando no navegador contra a pilha inteira
 (frontend, API e Postgres), a cada push no CI e sob demanda com Docker. Ao
-serem escritos, pegaram três defeitos que os 507 testes de unidade não
+serem escritos, pegaram três defeitos que os 512 testes de unidade não
 alcançavam, porque estavam na costura entre tela e API.
 
 Se ele perguntar sobre qualidade: a regra de negócio vive separada da
@@ -148,7 +148,7 @@ Três perguntas, e são as que valem a conversa:
 ## Ponto de atenção antes da conversa
 
 A pasta da turma no Drive tem só a **apresentação** e o **backlog** da primeira
-entrega. O Documento de Projeto no modelo dele (99 páginas na versão 2) e o
+entrega. O Documento de Projeto no modelo dele (101 páginas na versão 2.1) e o
 Documento de Arquitetura (28 páginas) **não estão lá**. Se você entregou por outro caminho,
 tudo bem; se não, anexe na atividade "1ª Entrega" antes de conversar, senão ele
 vai ouvir sobre documentos que não tem em mãos.

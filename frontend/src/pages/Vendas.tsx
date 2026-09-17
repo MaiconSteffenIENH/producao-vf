@@ -345,12 +345,19 @@ export function Vendas() {
                 </p>
               </div>
 
+              {/*
+                O ALVO QUE O PLANEJAMENTO USA é o da venda (últimos três meses
+                fechados). O mínimo do cadastro só vale enquanto a peça não tem
+                histórico, então é ele que aparece como "hoje" nesse caso.
+              */}
               <div className="shrink-0 rounded-xl bg-superficie-2 px-3.5 py-2.5 text-center">
-                <p className="font-titulo text-xl leading-none text-tinta">{l.minimoAtual}</p>
-                <p className="mt-1 text-[11px] text-tinta-fraca">mínimo hoje</p>
+                <p className="font-titulo text-xl leading-none text-tinta">{l.minimoSugerido ?? l.minimoAtual}</p>
+                <p className="mt-1 text-[11px] text-tinta-fraca">
+                  {l.minimoSugerido !== null ? 'manter, pela venda' : 'mínimo do cadastro'}
+                </p>
                 {l.minimoSugerido !== null && l.minimoSugerido !== l.minimoAtual && (
-                  <p className="mt-1.5 border-t border-borda pt-1.5 text-[11px] text-marca">
-                    a venda sugere {l.minimoSugerido}
+                  <p className="mt-1.5 border-t border-borda pt-1.5 text-[11px] text-tinta-fraca">
+                    cadastro diz {l.minimoAtual}
                   </p>
                 )}
               </div>
@@ -376,10 +383,12 @@ export function Vendas() {
       </div>
 
       <p className="mt-6 text-xs leading-relaxed text-tinta-fraca">
-        A média ignora o mês corrente de propósito: no dia 3 ele tem 3 dias de venda e 27 de nada, e
-        incluí-lo faria o sistema achar que a peça parou de vender. O mínimo sugerido cobre o tempo de
-        reposição mais duas semanas de folga — sem folga, a peça chega a zero exatamente quando a
-        reposição chega, e qualquer atraso vira prateleira vazia.
+        O quanto manter de cada peça vem da venda, não do cadastro: a média dos últimos três meses
+        fechados vira peças por semana, e o alvo cobre o tempo de reposição mais duas semanas de folga —
+        sem folga, a peça chega a zero exatamente quando a reposição chega. A média ignora o mês corrente
+        de propósito: no dia 3 ele tem 3 dias de venda e 27 de nada. O mínimo do cadastro só vale para
+        peça que ainda não tem venda registrada. Para produzir acima da venda de propósito (feira,
+        Natal), registre uma encomenda: ela passa na frente e tem nome e data.
       </p>
 
       <Modal

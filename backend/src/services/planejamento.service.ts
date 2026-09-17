@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma'
 import { calcularEstoque } from './estoque.service'
 import { plural, pluralNome } from '../lib/plural'
 import { alocarBiscoito, perdaDaPeca, quantidadeComPerda } from '../lib/planejamento-calculo'
-import { calcularCobertura, competenciaDe, type VendaMensal } from '../lib/cobertura'
+import { alvoDeEstoque, calcularCobertura, competenciaDe, type VendaMensal } from '../lib/cobertura'
 import { preverConclusao, semanasParaRepor, type EtapaDoRoteiro } from '../lib/previsao'
 import { necessidadeDeInsumos, type ConsumoDeInsumo, type EstoqueDeInsumo } from '../lib/insumos'
 import { consumoDeArgila } from '../lib/ficha-tecnica'
@@ -110,6 +110,8 @@ type PedidoDeCorLocal = {
   prontas: number
   aCaminho: number
   minimoDaCor: number
+  /** de onde o mínimo da cor veio: da venda (histórico) ou do cadastro (peça nova) */
+  origemDoMinimo: 'venda' | 'cadastro'
   fotoStatus: string
 }
 
@@ -271,8 +273,12 @@ export async function sugerir(
     }
 
     // ── 1. falta peça pronta? ────────────────────────────
+    //
+    // O alvo vem da VENDA dos últimos três meses fechados; o mínimo do cadastro
+    // só vale enquanto a peça não tem histórico (lib/cobertura.ts, alvoDeEstoque).
+    const alvoDaPeca = alvoDeEstoque(peca.qtdMinimaDesejada, vendasDaPeca.get(peca.id) ?? [], competencia, semanas)
     const cobertura = atual.prontos + atual.emProducao + atual.biscoito
-    const faltamProntas = peca.qtdMinimaDesejada - cobertura
+    const faltamProntas = alvoDaPeca.alvo - cobertura
     const coberturaVenda = calcularCobertura(
       atual.prontos,
       vendasDaPeca.get(peca.id) ?? [],
@@ -281,21 +287,25 @@ export async function sugerir(
       atual.emProducao,
     )
 
-    if (peca.qtdMinimaDesejada > 0 && faltamProntas > 0) {
+    if (alvoDaPeca.alvo > 0 && faltamProntas > 0) {
       const ajuste = comPerda(faltamProntas)
       sugestoes.push({
         tipo: 'produzir',
         titulo: `Produzir ${pluralNome(ajuste.quantidade, peca.nome)}`,
         detalhe:
-          `Mínimo desejado ${peca.qtdMinimaDesejada}. Hoje: ${plural(atual.prontos, 'pronta')}, ` +
-          `${atual.emProducao} em produção, ${atual.biscoito} em biscoito.` +
+          (alvoDaPeca.origem === 'venda'
+            ? `Manter ${alvoDaPeca.alvo} pela venda. `
+            : `Mínimo desejado ${alvoDaPeca.alvo}. `) +
+          `Hoje: ${plural(atual.prontos, 'pronta')}, ` +
+          `${atual.emProducao} em produção, ${atual.biscoito} em biscoito. ` +
+          alvoDaPeca.explicacao +
           (coberturaVenda.semanas !== null ? ` ${coberturaVenda.explicacao}` : ''),
         prioridade: atual.prontos === 0 || coberturaVenda.vaiFaltar ? 1 : 2,
         pecaId: peca.id,
         pecaNome: peca.nome,
         previsao: faixaDe(previsaoDoZero.diasMinimo, previsaoDoZero.diasMaximo),
         ...ajuste,
-        ...situacaoDe(faltamProntas, peca.qtdMinimaDesejada, emAndamento),
+        ...situacaoDe(faltamProntas, alvoDaPeca.alvo, emAndamento),
       })
       planoParaInsumos.push({ pecaId: peca.id, corId: null, quantidade: ajuste.quantidade })
     } else if (peca.qtdMinimaDesejada === 0 && coberturaVenda.vaiFaltar) {
@@ -348,14 +358,22 @@ export async function sugerir(
       .map((pc) => {
         const prontas = estoque.prontosPorCor.get(`${peca.id}:${pc.corId}`) ?? 0
         const aCaminho = estoque.emProducaoPorCor.get(`${peca.id}:${pc.corId}`) ?? 0
+        // mesma regra da peça, por cor: a venda de Bowl Pistache decide quanto Pistache manter
+        const alvoDaCor = alvoDeEstoque(
+          pc.qtdMinimaDesejada,
+          vendasDaPecaCor.get(`${peca.id}:${pc.corId}`) ?? [],
+          competencia,
+          semanas,
+        )
         return {
           corId: pc.corId,
           corNome: pc.cor.nome,
           corHex: pc.cor.hex,
-          faltam: pc.qtdMinimaDesejada - prontas - aCaminho,
+          faltam: alvoDaCor.alvo - prontas - aCaminho,
           prontas,
           aCaminho,
-          minimoDaCor: pc.qtdMinimaDesejada,
+          minimoDaCor: alvoDaCor.alvo,
+          origemDoMinimo: alvoDaCor.origem,
           fotoStatus: pc.fotoStatus,
         }
       })
@@ -377,7 +395,7 @@ export async function sugerir(
           tipo: 'esmaltar',
           titulo: `Esmaltar ${pluralNome(a.alocado, peca.nome)} em ${a.corNome}`,
           detalhe:
-            `Mínimo na cor ${info.minimoDaCor}, hoje ${plural(info.prontas, 'pronta')} e ${info.aCaminho} a caminho. ` +
+            `${info.origemDoMinimo === 'venda' ? 'Manter' : 'Mínimo'} na cor ${info.minimoDaCor}${info.origemDoMinimo === 'venda' ? ' pela venda' : ''}, hoje ${plural(info.prontas, 'pronta')} e ${info.aCaminho} a caminho. ` +
             `Reservadas ${a.alocado} das ${atual.biscoito} em biscoito.` +
             (a.semBiscoito > 0 ? ` Faltam ${a.semBiscoito} que o biscoito não cobre.` : '') +
             (vendaDaCor.semanas !== null ? ` ${vendaDaCor.explicacao}` : ''),

@@ -13,6 +13,9 @@
  * Puro de propósito — sem banco.
  */
 
+/** uma casa, com vírgula: é como aparece na tela */
+const arred = (n: number) => n.toFixed(1).replace('.', ',')
+
 export type VendaMensal = {
   /** AAAA-MM */
   competencia: string
@@ -99,7 +102,6 @@ export function calcularCobertura(
   const semanasComACaminho = (prontas + aCaminho) / porSemana
   const vaiFaltar = semanas < semanasParaRepor && semanasComACaminho < semanasParaRepor
 
-  const arred = (n: number) => n.toFixed(1).replace('.', ',')
   return {
     semanas,
     porSemana,
@@ -129,6 +131,66 @@ export function minimoSugerido(
   const { porSemana } = velocidadeSemanal(vendas, competenciaAtual)
   if (porSemana <= 0) return null
   return Math.ceil(porSemana * (semanasParaRepor + folgaSemanas))
+}
+
+export type AlvoDeEstoque = {
+  /** quantas peças (ou peças desta cor) manter prontas */
+  alvo: number
+  /** de onde o número veio */
+  origem: 'venda' | 'cadastro'
+  porSemana: number
+  mesesConsiderados: number
+  /** frase pronta, do jeito que aparece na sugestão */
+  explicacao: string
+}
+
+/**
+ * O ALVO DE ESTOQUE VEM DA VENDA, não do chute.
+ *
+ * Alinhamento com o professor (17/09/2026): a estimativa do quanto manter em
+ * estoque tem de partir do que a loja vende, medido num período de três
+ * meses, e não de um número digitado uma vez no cadastro. `qtdMinimaDesejada`
+ * continua existindo, mas só vale para a peça que ainda não tem venda em mês
+ * fechado — peça nova, ou recém-cadastrada no sistema. Assim que existe
+ * histórico, ele manda, para cima e para baixo: é o "para baixo" que resolve
+ * a superprodução, porque o mínimo digitado nunca era revisado quando a peça
+ * parava de vender.
+ *
+ * A conta é a mesma de `minimoSugerido`: velocidade semanal dos últimos três
+ * meses fechados × (semanas para repor + folga). A folga existe porque, sem
+ * ela, a peça chega a zero exatamente quando a reposição chega.
+ *
+ * Quem quer estoque acima da venda (feira, Natal) registra uma encomenda, que
+ * passa na frente da reposição — é o mecanismo para produzir de propósito,
+ * com nome e data, em vez de inflar um mínimo que ninguém lembra de baixar.
+ */
+export function alvoDeEstoque(
+  minimoCadastrado: number,
+  vendas: VendaMensal[],
+  competenciaAtual: string,
+  semanasParaRepor: number,
+  folgaSemanas = 2,
+): AlvoDeEstoque {
+  const { porSemana, mesesConsiderados } = velocidadeSemanal(vendas, competenciaAtual)
+  if (mesesConsiderados === 0) {
+    return {
+      alvo: minimoCadastrado,
+      origem: 'cadastro',
+      porSemana: 0,
+      mesesConsiderados: 0,
+      explicacao: 'Sem venda em mês fechado: vale o mínimo do cadastro até a peça ter histórico.',
+    }
+  }
+  const alvo = Math.ceil(porSemana * (semanasParaRepor + folgaSemanas))
+  return {
+    alvo,
+    origem: 'venda',
+    porSemana,
+    mesesConsiderados,
+    explicacao:
+      `Alvo pela venda: sai ${arred(porSemana)} por semana (média de ${mesesConsiderados} ${mesesConsiderados === 1 ? 'mês fechado' : 'meses fechados'}); ` +
+      `repor leva ${semanasParaRepor} ${semanasParaRepor === 1 ? 'semana' : 'semanas'}, mais ${folgaSemanas} de folga: manter ${alvo}.`,
+  }
 }
 
 /** `2026-07` a partir de uma data. */

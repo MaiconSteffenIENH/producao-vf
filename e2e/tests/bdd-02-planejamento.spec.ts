@@ -11,7 +11,7 @@ import { PaginaInicio } from '../pages/Inicio.page'
  */
 test.describe('BDD-2 Consultar o plano e abrir lote de produção', () => {
   test('Sugestão com perda embutida', async ({ page, api }) => {
-    // Dado que a peça tem mínimo de 60 e saldo de 10 peças prontas
+    // Dado que a peça tem mínimo de 60 no cadastro (sem venda em mês fechado) e saldo de 10 peças prontas
     // E que a perda medida dessa peça é de 12% (amostra de 50: 6 perdidas, 44 prontas)
     const peca = await api.criarPeca(nomeUnico('BOWL'), { qtdMinimaDesejada: 60, qtdMinimaBiscoito: 0 })
     const lote = await api.criarLote(peca.id, 50)
@@ -36,6 +36,34 @@ test.describe('BDD-2 Consultar o plano e abrir lote de produção', () => {
     // E o motivo apresentado é a reposição do mínimo, com a perda medida
     await expect(sugestao).toContainText('Mínimo desejado 60')
     await expect(sugestao).toContainText(/perda medida desta peça é 12%/)
+  })
+
+  test('Alvo de estoque pela venda dos últimos 3 meses', async ({ page, api }) => {
+    // Dado que a peça vendeu 52, 48 e 56 nos três últimos meses fechados (cerca de 12 por semana)
+    // E que o cadastro diz mínimo 12, e não há nenhuma pronta
+    const peca = await api.criarPeca(nomeUnico('BOWL'), { qtdMinimaDesejada: 12, qtdMinimaBiscoito: 0 })
+    const pistache = await api.cor('Pistache')
+    const mes = (atras: number) => {
+      const d = new Date(Date.now() - 3 * 3600 * 1000)
+      d.setUTCDate(1)
+      d.setUTCMonth(d.getUTCMonth() - atras)
+      return d.toISOString().slice(0, 7)
+    }
+    for (const [atras, quantidade] of [[3, 52], [2, 48], [1, 56]] as const) {
+      await api.post('/vendas', { pecaId: peca.id, corId: pistache.id, competencia: mes(atras), quantidade, darBaixa: false })
+    }
+
+    // Quando eu abrir o planejamento
+    const plano = new PaginaPlanejamento(page)
+    await plano.abrir()
+
+    // Então o alvo vem da venda, não do cadastro: 11,96/semana × (6 semanas de reposição + 2 de folga) = 96
+    // E a sugestão já vem inflada pela perda estimada de 10%: começar 107
+    const sugestao = plano.sugestao(new RegExp(`^Produzir 107 ${nomeNoPlural(peca.nome)}$`))
+    await expect(sugestao).toBeVisible()
+    await expect(sugestao).toContainText('Manter 96 pela venda')
+    await expect(sugestao).toContainText('média de 3 meses fechados')
+    await expect(sugestao).not.toContainText('Mínimo desejado 12')
   })
 
   test('Biscoito alocado sem duplicidade', async ({ page, api }) => {

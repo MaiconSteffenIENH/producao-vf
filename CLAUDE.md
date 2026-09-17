@@ -28,7 +28,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 - Backend: `npm run dev --prefix backend` (porta 3001) · testes: `npm test --prefix backend`
 - Frontend: `npm run dev --prefix frontend` (porta 5173) · build: `npm run build --prefix frontend`
 - Semear o banco: `npm run seed --prefix backend`
-- Ponta a ponta (Playwright, 45 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
+- Ponta a ponta (Playwright, 46 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
 
 ## Decisões estruturais (mudar aqui quebra o planejamento)
 
@@ -51,10 +51,11 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 17. **Campo novo no cadastro de peça nasce `optional()` SEM default.** O app é PWA e fica em cache: depois do deploy, um celular com a tela antiga continua salvando peça sem mandar o campo que acabou de nascer. Com default, essa edição vira ordem de apagar o que outra pessoa cadastrou. Ausente é "não mexa" (o Prisma não toca na coluna); nulo explícito é "limpei na tela". Já mordeu no `precoBase`, no `qtdMinimaBiscoito` e nos insumos — `tests/unidade/peca-campos-ausentes.test.ts` trava os três.
 18. **O aviso do quadro é TEXTO LIVRE, e concluir não apaga.** Amarrá-lo a uma encomenda cobriria a bandeja de tortinha que ficou para trás e deixaria de fora "o caminhão de argila chega quinta" — e aviso que não cabe no formulário volta para o quadro branco, que é o problema que o quadro veio resolver. Concluído sai da lista de abertos e continua consultável, porque poder olhar depois o que foi combinado é justamente o que o quadro branco apagado não permitia. **A comparação de prazo é de DIA, nunca de instante**: o combinado é "até sexta", e sexta às 23h59 ainda é sexta. Os dois lados são lidos de formas diferentes de propósito — `agora` é instante e vira dia no fuso do ateliê; `prazo` é coluna `DATE` e se lê sem fuso nenhum, senão a meia-noite UTC gravada recuaria três horas e o card apareceria atrasado no próprio dia combinado. **E a conta é contra o DIA ÚTIL do prazo, não contra a data crua**: "até sábado" quer dizer despachar até sexta, então no sábado aquele aviso já atrasou. Uma coisa só decide o dia que vale (`diaUtilDoPrazo`), e a situação e a coluna do quadro leem dela — quando eram duas contas, o card ficava na coluna de sexta dizendo "é hoje" no sábado.
 19. **Escrita de produção passa pela fila offline.** O ateliê tem sinal ruim. `enviarComFila()` gera a chave de idempotência no CLIENTE antes de sair; o backend reconhece a chave e devolve o que já gravou em vez de gravar de novo. Num livro-razão append-only isso é decisivo: duplicata não se apaga, se corrige com estorno.
+20. **O alvo de estoque vem da venda dos últimos três meses fechados, não do cadastro.** Alinhamento com o professor em 17/09: a estimativa de quanto manter tem de partir do que a loja vende. `alvoDeEstoque()` (lib/cobertura.ts) faz velocidade semanal × (semanas para repor + 2 de folga), por peça e por cor; o planejamento usa isso como alvo. `qtdMinimaDesejada` (peça e cor) só vale para quem ainda não tem venda em mês fechado. A regra vale para os dois lados: peça que parou de vender tem o alvo reduzido junto, que é o que o mínimo digitado nunca fazia. Estoque acima da venda de propósito (feira, Natal) é encomenda, que passa na frente e tem nome e data.
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 507 casos em 26 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 512 casos em 26 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -62,7 +63,7 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `saldos.ts` | agregação do livro-razão em saldo por etapa |
 | `planejamento-calculo.ts` | alocação do biscoito e inflação pela perda |
 | `queima.ts` | ocupação do forno, "faltam N para fechar", montagem da carga |
-| `cobertura.ts` | velocidade de venda, cobertura em semanas, mínimo sugerido |
+| `cobertura.ts` | velocidade de venda (3 meses fechados), cobertura em semanas e o alvo de estoque que o planejamento usa |
 | `previsao.ts` | faixa de dias até ficar pronto, e se cabe no prazo da encomenda |
 | `insumos.ts` | consumo do plano e o que comprar |
 | `agenda-calculo.ts` | meta diária com saldo rolante e folga |

@@ -1,6 +1,6 @@
 # Testes de ponta a ponta (E2E)
 
-Os 45 cenários BDD do plano de testes (seção 11 do Documento de Projeto),
+Os 46 cenários BDD do plano de testes (seção 11 do Documento de Projeto),
 rodando no navegador contra a pilha inteira: frontend, API e Postgres. Um
 spec por funcionalidade (`tests/bdd-01…13`), um `test` por cenário, com o
 mesmo título do documento.

@@ -606,7 +606,10 @@ export function Pecas() {
                 aoMudar={(n) => setForm({ ...form, tempoMedioDias: n ?? 0 })}
               />
             </Campo>
-            <Campo rotulo="Mínimo desejado pronto">
+            <Campo
+              rotulo="Mínimo desejado pronto"
+              dica="Vale só enquanto a peça não tem venda registrada. Depois, o alvo vem da venda dos últimos 3 meses."
+            >
               <InputNumero
                 min={0}
                 valor={form.qtdMinimaDesejada}
