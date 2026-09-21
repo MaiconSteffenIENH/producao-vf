@@ -46,6 +46,17 @@ O plano gratuito hiberna o banco depois de alguns minutos parado. A primeira con
 
 ## 2. API — Render
 
+> **Cuidado com o Blueprint e a branch.** O `render.yaml` diz `name: producao-vf-api`.
+> Se você criar um segundo Blueprint a partir de outra branch (a `teste`, por
+> exemplo), o Render **não cria um serviço novo: ele reaponta o serviço de
+> produção para essa branch**. Foi o que aconteceu em 06/09/2026: a API de
+> produção ficou duas semanas presa na `teste` enquanto a Vercel publicava a
+> `master`, até a tela de Início quebrar por esperar um campo que a API velha
+> não mandava. Ambiente de teste é serviço criado à mão, com outro nome, nunca
+> Blueprint. Se acontecer de novo: **Settings → Build & Deploy → Branch →
+> `master` → Manual Deploy**.
+
+
 1. Em [dashboard.render.com](https://dashboard.render.com), **New → Blueprint**.
 2. Conecte o repositório `producao-vf`. O Render lê o `render.yaml` da raiz e já monta o serviço `producao-vf-api`.
 3. Preencha em **Environment** o que está marcado como `sync: false`:

@@ -25,8 +25,8 @@ type Resumo = {
     etapaQueDefineCor: string | null
   }
   porCategoria: { id: string; nome: string; pecas: number }[]
-  /** peça em etapa não final há mais dias do que o roteiro previu */
-  lotesParados: {
+  /** peça em etapa não final há mais dias do que o roteiro previu; ausente numa API mais antiga que a tela */
+  lotesParados?: {
     loteId: string
     codigo: string
     peca: string
@@ -135,7 +135,17 @@ export function Dashboard() {
 
   if (carregando || !resumo) return <Carregando />
 
-  const { cadastros, pendencias, porCategoria, producao, lotesParados } = resumo
+  const { cadastros, pendencias, porCategoria, producao } = resumo
+  /*
+   * TELA NOVA, API VELHA.
+   *
+   * A Vercel publica o front no mesmo push em que o Render publica a API, mas
+   * não no mesmo minuto, e em 20/09 a API estava presa em outra branch. O
+   * campo que a tela espera e a API ainda não manda não pode derrubar o
+   * Início inteiro: campo novo vindo do servidor é tratado como opcional aqui,
+   * pelo mesmo motivo da decisão 17 no sentido contrário.
+   */
+  const lotesParados = resumo.lotesParados ?? []
   const totalPendencias =
     pendencias.semRoteiro.length + pendencias.semEsmalte.length + pendencias.semEtapaDeCor.length
 
