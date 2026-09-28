@@ -297,7 +297,8 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-fundo lg:flex">
       {/* Sidebar — desktop */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-borda bg-lateral lg:flex">
+      {/* sticky + h-screen: a página rola e o menu fica à vista; antes ele ficava preso no topo de uma página de 5 mil pixels */}
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-borda bg-lateral lg:sticky lg:top-0 lg:flex lg:h-screen">
         <div className="px-5 py-5">
           <Marca />
         </div>

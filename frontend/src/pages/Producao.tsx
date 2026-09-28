@@ -163,6 +163,17 @@ export function Producao() {
    * fariam a pessoa mover um lote de etapa quando só queria escolhê-lo.
    */
   const [modoOrdem, setModoOrdem] = useState(false)
+  /*
+   * A COLUNA MOSTRA CINCO E DIZ QUANTOS FALTAM.
+   *
+   * Pronto tem 690 peças em dezenas de lotes; cinco cartões dizem o que
+   * importa e o resto vira uma rolagem que ninguém termina. Quem precisa do
+   * lote lá do fim abre a coluna inteira. Etapa aberta continua aberta até
+   * a página recarregar, para o auto-refresh não fechar o que a pessoa abriu.
+   */
+  const LIMITE_DA_COLUNA = 5
+  const [colunasAbertas, setColunasAbertas] = useState<Set<string>>(() => new Set())
+  const abrirColuna = (etapaId: string) => setColunasAbertas((v) => new Set(v).add(etapaId))
   const [selecionados, setSelecionados] = useState<string[]>([])
 
   const alternarSelecao = (id: string) =>
@@ -602,7 +613,7 @@ export function Producao() {
                     </div>
                   )}
 
-                  {coluna.cartoes.map((cartao) => (
+                  {(colunasAbertas.has(coluna.etapa.id) || modoOrdem ? coluna.cartoes : coluna.cartoes.slice(0, LIMITE_DA_COLUNA)).map((cartao) => (
                     <article
                       key={cartao.id}
                       /*
@@ -782,6 +793,15 @@ export function Producao() {
                       </div>
                     </article>
                   ))}
+                  {!modoOrdem && !colunasAbertas.has(coluna.etapa.id) && coluna.cartoes.length > LIMITE_DA_COLUNA && (
+                    <button
+                      type="button"
+                      onClick={() => abrirColuna(coluna.etapa.id)}
+                      className="w-full rounded-xl border border-dashed border-borda px-3 py-2.5 text-xs font-medium text-tinta-fraca transition-colors hover:border-marca-clara hover:text-tinta"
+                    >
+                      Mostrar mais {coluna.cartoes.length - LIMITE_DA_COLUNA} {coluna.cartoes.length - LIMITE_DA_COLUNA === 1 ? 'lote' : 'lotes'}
+                    </button>
+                  )}
                   {coluna.cartoes.length === 0 && !(arrasto.alvo === coluna.etapa.id) && (
                     <p className="rounded-xl border border-dashed border-borda px-3 py-6 text-center text-xs text-tinta-fraca">
                       vazio

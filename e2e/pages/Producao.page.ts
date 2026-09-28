@@ -9,6 +9,12 @@ export class PaginaProducao extends PaginaBase {
   async abrir() {
     await this.page.goto('/producao')
     await expect(this.page.getByRole('heading', { name: 'Produção' })).toBeVisible()
+    await this.abrirColunasInteiras()
+  }
+  /** a coluna mostra cinco cartões; o banco compartilhado acumula lotes, então o teste abre tudo */
+  async abrirColunasInteiras() {
+    const botoes = this.page.getByRole('button', { name: /^Mostrar mais/ })
+    while ((await botoes.count()) > 0) await botoes.first().click()
   }
   coluna(nomeDaEtapa: string): Locator {
     // a coluna é a <section data-etapa> cujo cabeçalho traz o nome da etapa
