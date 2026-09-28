@@ -5,7 +5,7 @@ import { aDevolverAoApagar, avaliarDevolucaoDeVenda } from '../lib/saida-estoque
 import { darBaixaDeProntas } from './estoque.service'
 import { normalizarBusca } from '../lib/busca'
 import { agruparVendas, lerCsvDeVendas, type LinhaVenda } from '../lib/csv-vendas'
-import { calcularCobertura, competenciaDe, minimoSugerido, type VendaMensal } from '../lib/cobertura'
+import { alvoDeEstoque, calcularCobertura, competenciaDe, minimoSugerido, type VendaMensal } from '../lib/cobertura'
 import { preverConclusao, semanasParaRepor, type EtapaDoRoteiro } from '../lib/previsao'
 import { calcularEstoque } from './estoque.service'
 
@@ -574,4 +574,77 @@ export async function compararProducaoComVendas(agora = new Date()) {
       return (a.cobertura.semanas ?? 999) - (b.cobertura.semanas ?? 999)
     }),
   }
+}
+
+/*
+ * APLICAR OS ALVOS AO CADASTRO.
+ *
+ * O planejamento já usa o alvo pela venda (decisão 20) e o mínimo digitado só
+ * vale para peça sem histórico. Mas a tela de Vendas mostra "manter 2, cadastro
+ * diz 10" em quarenta peças, e ninguém vai abrir quarenta cadastros para
+ * acertar à mão. Pedido do Maicon em 28/09, depois de importar as planilhas
+ * de junho a agosto da Gabi.
+ *
+ * Só toca em quem tem venda em mês fechado: peça sem histórico continua com o
+ * número da pessoa. E grava o que a conta dá HOJE; no mês que vem a venda
+ * mudou e o botão pode ser apertado de novo.
+ */
+export async function aplicarAlvosAoCadastro(agora = new Date()) {
+  const competencia = competenciaDe(agora)
+  const [pecas, vendas] = await Promise.all([
+    prisma.peca.findMany({
+      where: { ativo: true },
+      include: {
+        roteiro: { include: { etapa: { select: { id: true, nome: true, aguardaCarga: true, estoqueIntermediario: true } } } },
+        cores: { select: { corId: true, qtdMinimaDesejada: true, cor: { select: { nome: true } } } },
+      },
+    }),
+    prisma.venda.findMany({ select: { pecaId: true, corId: true, competencia: true, quantidade: true, devolvidas: true } }),
+  ])
+
+  type Linha = { competencia: string; quantidade: number; corId: string | null }
+  const porPeca = new Map<string, Linha[]>()
+  for (const v of vendas as { pecaId: string; corId: string | null; competencia: string; quantidade: number; devolvidas: number }[]) {
+    const lista = porPeca.get(v.pecaId) ?? []
+    lista.push({ competencia: v.competencia, quantidade: Math.max(0, v.quantidade - v.devolvidas), corId: v.corId })
+    porPeca.set(v.pecaId, lista)
+  }
+
+  const pecasAjustadas: { peca: string; de: number; para: number }[] = []
+  const coresAjustadas: { peca: string; cor: string; de: number; para: number }[] = []
+  let semVenda = 0
+
+  for (const peca of pecas as {
+    id: string
+    nome: string
+    qtdMinimaDesejada: number
+    roteiro: { ordem: number; diasEstimados: number; etapa: { id: string; nome: string; aguardaCarga: boolean; estoqueIntermediario: boolean } }[]
+    cores: { corId: string; qtdMinimaDesejada: number; cor: { nome: string } }[]
+  }[]) {
+    const roteiro: EtapaDoRoteiro[] = peca.roteiro.map((r) => ({
+      etapaId: r.etapa.id, nome: r.etapa.nome, ordem: r.ordem, diasEstimados: r.diasEstimados,
+      aguardaCarga: r.etapa.aguardaCarga, estoqueIntermediario: r.etapa.estoqueIntermediario,
+    }))
+    const semanas = semanasParaRepor(preverConclusao(roteiro, 0))
+    const minhas = porPeca.get(peca.id) ?? []
+    const alvo = alvoDeEstoque(peca.qtdMinimaDesejada, minhas, competencia, semanas)
+    if (alvo.origem !== 'venda') { semVenda++; continue }
+
+    if (alvo.alvo !== peca.qtdMinimaDesejada) {
+      await prisma.peca.update({ where: { id: peca.id }, data: { qtdMinimaDesejada: alvo.alvo } })
+      pecasAjustadas.push({ peca: peca.nome, de: peca.qtdMinimaDesejada, para: alvo.alvo })
+    }
+    for (const c of peca.cores) {
+      const daCor = minhas.filter((v) => v.corId === c.corId)
+      const alvoCor = alvoDeEstoque(c.qtdMinimaDesejada, daCor, competencia, semanas)
+      if (alvoCor.origem !== 'venda' || alvoCor.alvo === c.qtdMinimaDesejada) continue
+      await prisma.pecaCor.update({
+        where: { pecaId_corId: { pecaId: peca.id, corId: c.corId } },
+        data: { qtdMinimaDesejada: alvoCor.alvo },
+      })
+      coresAjustadas.push({ peca: peca.nome, cor: c.cor.nome, de: c.qtdMinimaDesejada, para: alvoCor.alvo })
+    }
+  }
+
+  return { competencia, pecas: pecasAjustadas, cores: coresAjustadas, semVenda }
 }

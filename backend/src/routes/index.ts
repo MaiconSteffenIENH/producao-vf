@@ -434,6 +434,11 @@ rotas.post(
       void res.status(201).json(await vendas.salvarVenda(vendaSchema.parse(req.body), req.sessao!)),
   ),
 )
+// grava no cadastro o alvo que a venda dos três meses fechados dá hoje
+rotas.post(
+  '/vendas/aplicar-alvos',
+  rota(async (_req, res) => void res.json(await vendas.aplicarAlvosAoCadastro())),
+)
 rotas.post(
   '/vendas/importar',
   rota(async (req, res) => {

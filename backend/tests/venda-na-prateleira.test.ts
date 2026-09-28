@@ -127,3 +127,30 @@ describe('baixa por venda na prateleira', () => {
     expect(r.body.mensagem).toContain('não é um motivo de saída conhecido')
   })
 })
+
+describe('aplicar alvos ao cadastro', () => {
+  it('peça com venda em mês fechado recebe o alvo; peça sem venda fica como estava', async () => {
+    const [ps, cs] = await Promise.all([comAuth('get', '/pecas?ativo=true'), comAuth('get', '/cores')])
+    const tortinha = ps.body.find((p: { nome: string }) => p.nome === 'Tortinha')
+    const pistache = cs.body.find((c: { nome: string }) => c.nome === 'Pistache').id
+    const hoje = new Date()
+    for (const [k, q] of [[1, 52], [2, 48], [3, 56]] as const) {
+      const d = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - k, 15))
+      const r = await comAuth('post', '/vendas', { pecaId: tortinha.id, corId: pistache, competencia: d.toISOString().slice(0, 7), quantidade: q, darBaixa: false })
+      expect(r.status).toBe(201)
+    }
+    const r = await comAuth('post', '/vendas/aplicar-alvos')
+    expect(r.status).toBe(200)
+    const ajuste = r.body.pecas.find((p: { peca: string }) => p.peca === 'Tortinha')
+    expect(ajuste).toBeDefined()
+    expect(ajuste.para).toBeGreaterThan(0)
+    expect(r.body.semVenda).toBeGreaterThan(0)
+
+    const depois = await comAuth('get', `/pecas/${tortinha.id}`)
+    expect(depois.body.qtdMinimaDesejada).toBe(ajuste.para)
+
+    // apertar de novo não muda nada: o alvo já é o cadastro
+    const r2 = await comAuth('post', '/vendas/aplicar-alvos')
+    expect(r2.body.pecas.find((p: { peca: string }) => p.peca === 'Tortinha')).toBeUndefined()
+  })
+})

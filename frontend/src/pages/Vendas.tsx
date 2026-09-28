@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, RotateCcw, Trash2, Upload, TrendingDown } from 'lucide-react'
+import { AlertTriangle, RotateCcw, Target, Trash2, Upload, TrendingDown } from 'lucide-react'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { plural } from '../lib/format'
 import { api, mensagemDoErro } from '../services/api'
 import { avisar } from '../components/Toaster'
 import {
@@ -156,6 +158,8 @@ export function Vendas() {
   const [importarAberto, setImportarAberto] = useState(false)
   const [conteudo, setConteudo] = useState('')
   const [canalId, setCanalId] = useState('')
+  const [aplicarAberto, setAplicarAberto] = useState(false)
+  const [aplicando, setAplicando] = useState(false)
   const [canais, setCanais] = useState<{ id: string; nome: string }[]>([])
   const [enviando, setEnviando] = useState(false)
   const [vendas, setVendas] = useState<VendaLancada[]>([])
@@ -290,10 +294,42 @@ export function Vendas() {
         titulo="Vendas e cobertura"
         descricao="Quanto cada peça sai por semana, quanto tempo o estoque aguenta e se a reposição chega a tempo."
         acoes={
-          <Botao onClick={() => setImportarAberto(true)} className="col-span-2 justify-center sm:col-span-1">
-            <Upload size={16} /> Importar planilha
-          </Botao>
+          <>
+            <Botao variante="secundario" onClick={() => setAplicarAberto(true)} className="justify-center">
+              <Target size={16} /> Aplicar alvos ao cadastro
+            </Botao>
+            <Botao onClick={() => setImportarAberto(true)} className="justify-center">
+              <Upload size={16} /> Importar planilha
+            </Botao>
+          </>
         }
+      />
+
+      {/*
+        O planejamento já usa o alvo pela venda; o mínimo do cadastro só vale
+        para peça sem histórico. Mas "manter 2, cadastro diz 10" em quarenta
+        peças pede um botão, não quarenta cadastros abertos à mão.
+      */}
+      <ConfirmDialog
+        aberto={aplicarAberto}
+        titulo="Aplicar os alvos ao cadastro"
+        mensagem="Toda peça (e cada cor dela) com venda em mês fechado passa a ter como mínimo desejado o alvo que a venda dos últimos três meses dá hoje. Peça sem histórico não muda. Dá para apertar de novo quando o mês virar."
+        textoConfirmar="Aplicar"
+        ocupado={aplicando}
+        aoCancelar={() => setAplicarAberto(false)}
+        aoConfirmar={async () => {
+          setAplicando(true)
+          try {
+            const { data } = await api.post<{ pecas: { peca: string; de: number; para: number }[]; cores: unknown[]; semVenda: number }>('/vendas/aplicar-alvos')
+            avisar.ok(`${plural(data.pecas.length, 'peça ajustada', 'peças ajustadas')} e ${plural(data.cores.length, 'cor ajustada', 'cores ajustadas')}. ${data.semVenda} sem venda ficaram como estavam.`)
+            setAplicarAberto(false)
+            await recarregar()
+          } catch (erro) {
+            avisar.erro(mensagemDoErro(erro, 'Não deu para aplicar os alvos.'))
+          } finally {
+            setAplicando(false)
+          }
+        }}
       />
 
       {emRisco.length > 0 && (
@@ -393,9 +429,12 @@ export function Vendas() {
 
       <Modal
         aberto={importarAberto}
+        // fechar limpa tudo: reabrir com a planilha anterior colada convidava a importar de novo sem querer
         aoFechar={() => {
           setImportarAberto(false)
           setResultado(null)
+          setConteudo('')
+          setCanalId('')
         }}
         titulo="Importar planilha de vendas"
         descricao="Mercado Livre e Shopee exportam CSV. Serve qualquer planilha com uma coluna de peça, uma de quantidade e uma de mês."
@@ -415,6 +454,7 @@ export function Vendas() {
 
           <Campo rotulo="Arquivo CSV">
             <input
+              key={importarAberto ? 'aberto' : 'fechado'}
               type="file"
               accept=".csv,text/csv,text/plain"
               onChange={lerArquivo}
@@ -494,7 +534,15 @@ export function Vendas() {
           )}
 
           <div className="flex justify-end gap-2">
-            <Botao variante="secundario" onClick={() => setImportarAberto(false)}>
+            <Botao
+              variante="secundario"
+              onClick={() => {
+                setImportarAberto(false)
+                setResultado(null)
+                setConteudo('')
+                setCanalId('')
+              }}
+            >
               Fechar
             </Botao>
             <Botao onClick={importar} disabled={enviando || !conteudo.trim()}>
