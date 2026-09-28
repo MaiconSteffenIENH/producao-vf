@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Printer, Scissors, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeMinus, Boxes, Plus, Printer, Scissors, Trash2, ChevronDown } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { avisar } from '../components/Toaster'
@@ -797,8 +797,10 @@ export function Producao() {
                     <button
                       type="button"
                       onClick={() => abrirColuna(coluna.etapa.id)}
-                      className="w-full rounded-xl border border-dashed border-borda px-3 py-2.5 text-xs font-medium text-tinta-fraca transition-colors hover:border-marca-clara hover:text-tinta"
+                      // mesmo peso dos botões do cartão: tracejado cinza sobre o fundo cinza da coluna sumia
+                      className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-borda bg-superficie px-3 py-2.5 text-sm font-medium text-tinta shadow-baixa transition-all hover:-translate-y-0.5 hover:border-marca-clara hover:shadow-media"
                     >
+                      <ChevronDown size={15} className="text-marca" />
                       Mostrar mais {coluna.cartoes.length - LIMITE_DA_COLUNA} {coluna.cartoes.length - LIMITE_DA_COLUNA === 1 ? 'lote' : 'lotes'}
                     </button>
                   )}
