@@ -15,7 +15,7 @@ export class PaginaAvisos extends PaginaBase {
     await j.getByLabel('O que precisa ser feito').fill(o.titulo)
     if (o.prazo) await j.getByLabel('Até quando').fill(o.prazo)
     if (o.detalhe) await j.getByLabel('Detalhe').fill(o.detalhe)
-    await j.getByRole('button', { name: /Registrar|Salvar/ }).click()
+    await j.getByRole('button', { name: /Colocar no quadro|Registrar|Salvar/ }).click()
   }
   coluna(nome: string): Locator {
     return this.page.locator('section').filter({ has: this.page.getByRole('heading', { name: nome, level: 2 }) })
