@@ -6,7 +6,7 @@ import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { plural } from '../lib/format'
 import { avisar } from '../components/Toaster'
 import { CabecalhoPagina, Card, Carregando } from '../components/ui'
-import { useAuth } from '../store/auth'
+import { useAuth, useModulosLiberados } from '../store/auth'
 
 type Resumo = {
   cadastros: {
@@ -112,6 +112,9 @@ function ListaPendencia({
 
 export function Dashboard() {
   const nome = useAuth((e) => e.perfil?.nome ?? '')
+  // atalho para módulo que a pessoa não vê levava a um redirecionamento de volta ao Início: parecia um reload
+  const liberados = useModulosLiberados()
+  const podeVer = (chave: string) => !liberados || liberados.includes(chave)
   const [resumo, setResumo] = useState<Resumo | null>(null)
   const [carregando, setCarregando] = useState(true)
 
@@ -191,10 +194,14 @@ export function Dashboard() {
               {/* card sem pendência vira atalho em vez de meia tela em branco */}
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 {[
-                  ['/planejamento', 'Ver o que produzir', 'sugestões calculadas agora'],
-                  ['/producao', 'Abrir o quadro', 'onde cada lote está'],
-                  ['/meu-dia', 'Metas do dia', 'quanto falta para cada um'],
-                ].map(([para, titulo, sub]) => (
+                  ['/planejamento', 'Ver o que produzir', 'sugestões calculadas agora', 'planejamento'],
+                  ['/producao', 'Abrir o quadro', 'onde cada lote está', 'producao'],
+                  ['/meu-dia', 'Metas do dia', 'quanto falta para cada um', 'meu-dia'],
+                  ['/estoque/prontas', 'Peças prontas', 'o que está na prateleira', 'estoque-prontas'],
+                ]
+                  .filter(([, , , chave]) => podeVer(chave))
+                  .slice(0, 3)
+                  .map(([para, titulo, sub]) => (
                   <Link
                     key={para}
                     to={para}
