@@ -76,6 +76,8 @@ export const MODULOS: readonly Modulo[] = [
     oQuePerde: 'O cadastro de quem executa cada etapa, e dos fornos.' },
   { chave: 'etapas', rotulo: 'Etapas', rota: '/etapas', grupo: 'cadastros',
     oQuePerde: 'O cadastro das paradas do caminho. Os roteiros já montados continuam valendo.' },
+  { chave: 'clientes', rotulo: 'Clientes e fornecedores', rota: '/clientes', grupo: 'cadastros',
+    oQuePerde: 'O cadastro de clientes e fornecedores. Encomendas e matérias-primas guardam o nome digitado.' },
   { chave: 'materias-primas', rotulo: 'Matérias-primas', rota: '/materias-primas', grupo: 'cadastros',
     oQuePerde: 'O estoque de argila, esmalte e embalagem, e os avisos de compra.' },
   { chave: 'usuarios', rotulo: 'Usuários', rota: '/usuarios', grupo: 'sistema', somenteAdmin: true,
@@ -131,6 +133,8 @@ export const MODULOS_POR_ROTA: Readonly<Record<string, readonly string[]>> = {
   responsaveis: ['responsaveis', 'pecas', 'producao', 'meu-dia', 'forno'],
   categorias: ['categorias', 'pecas', 'inicio'],
   'materias-primas': ['materias-primas', 'planejamento'],
+  clientes: ['clientes', 'encomendas'],
+  fornecedores: ['clientes', 'materias-primas'],
 
   // administração dos próprios módulos: nunca pode ficar de fora do mapa,
   // senão a rota que liga e desliga tudo é a única sem tranca

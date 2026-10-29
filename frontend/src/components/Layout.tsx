@@ -27,6 +27,7 @@ import {
   TrendingUp,
   Layers,
   PackageCheck,
+  Building2,
 } from 'lucide-react'
 import { useAuth, useModulosLiberados } from '../store/auth'
 import { MODULOS, type GrupoDeModulo } from '../lib/modulos'
@@ -71,6 +72,7 @@ const ICONES: Record<string, typeof Package> = {
   responsaveis: Users,
   etapas: Wrench,
   'materias-primas': Package,
+  clientes: Building2,
   usuarios: Users,
   ajustes: Settings,
 }

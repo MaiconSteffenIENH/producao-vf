@@ -32,6 +32,7 @@ const Categorias = lazy(() => import('./pages/Categorias').then((m) => ({ defaul
 const Responsaveis = lazy(() => import('./pages/Responsaveis').then((m) => ({ default: m.Responsaveis })))
 const Etapas = lazy(() => import('./pages/Etapas').then((m) => ({ default: m.Etapas })))
 const MateriasPrimas = lazy(() => import('./pages/MateriasPrimas').then((m) => ({ default: m.MateriasPrimas })))
+const Clientes = lazy(() => import('./pages/Clientes').then((m) => ({ default: m.Clientes })))
 const Usuarios = lazy(() => import('./pages/Usuarios').then((m) => ({ default: m.Usuarios })))
 const Ajustes = lazy(() => import('./pages/Ajustes').then((m) => ({ default: m.Ajustes })))
 const OrdemProducao = lazy(() =>
@@ -138,6 +139,7 @@ export function App() {
               <Route path="/responsaveis" element={<Responsaveis />} />
               <Route path="/etapas" element={<Etapas />} />
               <Route path="/materias-primas" element={<MateriasPrimas />} />
+              <Route path="/clientes" element={<Clientes />} />
               <Route
                 path="/usuarios"
                 element={

@@ -17,7 +17,7 @@
 # Uso: bash rodar-no-sandbox.sh [args do playwright]
 #      ex.: bash rodar-no-sandbox.sh avisos --grep "sábado"
 set -uo pipefail
-REPO=/sessions/festive-sweet-shannon/mnt/producao-vf
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 E2E=$REPO/e2e
 BE=/tmp/be
 FE=/tmp/fe

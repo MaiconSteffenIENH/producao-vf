@@ -3,20 +3,17 @@ import { join } from 'node:path'
 import { expect, test } from '../fixtures/teste'
 
 /*
- * BDD-12 · UC-12 · Cadastrar cliente a partir do cartão CNPJ (EM TESTE)
+ * BDD-12 · UC-12 · Cadastrar cliente a partir do cartão CNPJ
  * SENDO a auxiliar administrativa
  * POSSO cadastrar uma empresa a partir do cartão CNPJ
  * PARA não digitar o que a Receita já imprimiu
  *
- * O módulo vive na branch cadastros/clientes-fornecedores. No master a rota
- * não existe, então os cenários só rodam com E2E_INCLUIR_EM_TESTE=1.
- * Contrato esperado: POST /clientes/ler-cartao { texto } → { cadastro }.
+ * Em produção desde 29/10/2026 (tela Clientes e fornecedores).
+ * Contrato: POST /clientes/ler-cartao { texto } → { cadastro }, sem gravar.
  */
 const cartao = (nome: string) => readFileSync(join(__dirname, '..', 'test-data', nome), 'utf8')
 
 test.describe('BDD-12 Cadastrar cliente a partir do cartão CNPJ', () => {
-  test.skip(!process.env.E2E_INCLUIR_EM_TESTE, 'módulo em teste: branch cadastros/clientes-fornecedores')
-
   test('Cartão lido inteiro', async ({ api }) => {
     // Dado que enviei o cartão da Cerâmica Vera Flesch Quando o sistema ler o PDF
     const { cadastro } = await api.post<{ cadastro: Record<string, string | null> }>('/clientes/ler-cartao', { texto: cartao('cartao-ceramica.txt') })
@@ -50,5 +47,21 @@ test.describe('BDD-12 Cadastrar cliente a partir do cartão CNPJ', () => {
     const r = await api.raw().post('/clientes/ler-cartao', { data: { texto: 'DANFE\nNOTA FISCAL ELETRÔNICA\nNúmero 000.123' } })
     expect(r.status()).toBe(422)
     expect(await r.text()).toMatch(/não é um cartão CNPJ/i)
+  })
+
+  test('Cadastro pela tela, colando o cartão', async ({ page }) => {
+    // Dado que estou em Clientes e fornecedores Quando colo o cartão e salvo
+    await page.goto('/clientes')
+    await page.getByRole('button', { name: /Novo cliente/ }).click()
+    await page.getByRole('button', { name: /Preencher pelo cartão CNPJ/ }).click()
+    await page.getByRole('dialog', { name: 'Colar cartão CNPJ' }).getByLabel('Texto do cartão').fill(cartao('cartao-nexa.txt'))
+    await page.getByRole('button', { name: 'Ler cartão' }).click()
+    // Então o formulário vem preenchido E salvar cria o cadastro na lista
+    const form = page.getByRole('dialog', { name: 'Novo cliente' })
+    await expect(form.getByLabel('Cidade')).toHaveValue('NOVO HAMBURGO')
+    const nome = await form.getByLabel(/^Nome/).inputValue()
+    await form.getByRole('button', { name: 'Salvar' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'salvo' })).toBeVisible()
+    await expect(page.getByText(nome, { exact: true }).first()).toBeVisible()
   })
 })

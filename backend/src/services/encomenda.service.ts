@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma'
 import { naoEncontrado } from '../lib/erros'
 import { proximoCodigo } from './contador.service'
 import { cabeNoPrazo, faixaEmTexto, preverConclusao, type EtapaDoRoteiro } from '../lib/previsao'
+import { clientePeloNome } from './parceiro.service'
 
 /*
  * ENCOMENDA COM PRAZO.
@@ -125,6 +126,7 @@ export async function criarEncomenda(dados: {
     data: {
       codigo,
       cliente: dados.cliente,
+      clienteId: await clientePeloNome(dados.cliente),
       contato: dados.contato ?? null,
       entregarAte: dados.entregarAte ? new Date(dados.entregarAte) : null,
       observacao: dados.observacao ?? null,
@@ -172,7 +174,7 @@ export async function atualizarEncomenda(
     return tx.encomenda.update({
       where: { id },
       data: {
-        ...(dados.cliente !== undefined ? { cliente: dados.cliente } : {}),
+        ...(dados.cliente !== undefined ? { cliente: dados.cliente, clienteId: await clientePeloNome(dados.cliente) } : {}),
         ...(dados.contato !== undefined ? { contato: dados.contato } : {}),
         ...(dados.status !== undefined ? { status: dados.status } : {}),
         ...(dados.observacao !== undefined ? { observacao: dados.observacao } : {}),

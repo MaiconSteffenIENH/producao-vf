@@ -502,3 +502,29 @@ export const avisoSchema = z.object({
   detalhe: z.string().trim().max(1000).or(z.literal('')).optional().nullable(),
   prazo: dataIso.or(z.literal('')).optional().nullable(),
 })
+
+/*
+ * Cliente e fornecedor: mesmo formulário. Tudo opcional menos o nome, porque
+ * cliente de encomenda pequena muitas vezes é só um nome e um telefone.
+ */
+export const parceiroSchema = z.object({
+  nome: nomeDeCadastro(120),
+  documento: z.string().trim().max(30).or(z.literal('')).optional().nullable(),
+  email: z.string().trim().max(120).or(z.literal('')).optional().nullable(),
+  telefone: z.string().trim().max(60).or(z.literal('')).optional().nullable(),
+  endereco: z.string().trim().max(200).or(z.literal('')).optional().nullable(),
+  bairro: z.string().trim().max(80).or(z.literal('')).optional().nullable(),
+  cidade: z.string().trim().max(80).or(z.literal('')).optional().nullable(),
+  uf: z.string().trim().max(2).or(z.literal('')).optional().nullable(),
+  cep: z.string().trim().max(12).or(z.literal('')).optional().nullable(),
+  atividade: z.string().trim().max(300).or(z.literal('')).optional().nullable(),
+  porte: z.string().trim().max(60).or(z.literal('')).optional().nullable(),
+  situacao: z.string().trim().max(60).or(z.literal('')).optional().nullable(),
+  dataAbertura: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'data no formato AAAA-MM-DD').or(z.literal('')).optional().nullable(),
+  observacao: z.string().trim().max(2000).or(z.literal('')).optional().nullable(),
+  ativo: z.boolean().optional(),
+})
+
+export const cartaoCnpjSchema = z.object({
+  texto: z.string().min(20, 'cole o texto do cartão CNPJ').max(50_000),
+})

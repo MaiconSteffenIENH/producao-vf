@@ -32,6 +32,8 @@ const GETS = [
   // o menu chama esta a cada minuto, em toda tela: quebrar aqui quebra o
   // sistema inteiro, não uma tela só
   '/avisos/resumo',
+    '/clientes',
+    '/fornecedores',
 ]
 
 describe('smoke — todos os GET respondem', () => {
@@ -60,8 +62,9 @@ describe('GET com :id — não cabem na lista de caminhos fixos', () => {
   })
 
   it('/lotes/ordem-producao monta a folha da bancada', async () => {
-    const lotes = await comAuth('get', '/lotes')
-    const lote = lotes.body[0] as { id: string; codigo: string }
+    // não depende de outro arquivo ter criado lote antes: a ordem dos arquivos não é contrato
+    const pecas = await comAuth('get', '/pecas?ativo=true')
+    const lote = (await comAuth('post', '/lotes', { pecaId: pecas.body[0].id, quantidade: 3 })).body as { id: string; codigo: string }
     const r = await comAuth('get', `/lotes/ordem-producao?ids=${lote.id}`)
     expect(r.status, JSON.stringify(r.body)).toBe(200)
     expect(r.body.itens).toHaveLength(1)

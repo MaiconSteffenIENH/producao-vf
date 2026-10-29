@@ -14,6 +14,7 @@ import * as agenda from '../services/agenda.service'
 import * as precos from '../services/preco.service'
 import * as queimas from '../services/queima.service'
 import * as vendas from '../services/venda.service'
+import * as parceiros from '../services/parceiro.service'
 import * as encomendas from '../services/encomenda.service'
 import * as avisos from '../services/aviso.service'
 import * as fotos from '../services/foto.service'
@@ -51,6 +52,8 @@ import {
   encomendaSchema,
   avisoSchema,
   fotoSchema,
+  parceiroSchema,
+  cartaoCnpjSchema,
 } from '../schemas'
 
 /** Embrulha handler async para que qualquer throw caia no middleware de erro. */
@@ -221,6 +224,16 @@ const cruds: Crud[] = [
     schema: materiaPrimaSchema,
   },
 ]
+
+// ── clientes e fornecedores ──────────────────────────────────────────────────
+// ler-cartao vem antes de `/:id`, senão "ler-cartao" seria lido como um id
+for (const tipo of ['clientes', 'fornecedores'] as const) {
+  rotas.post(`/${tipo}/ler-cartao`, rota(async (req, res) => void res.json(parceiros.lerCartao(cartaoCnpjSchema.parse(req.body).texto))))
+  rotas.get(`/${tipo}`, rota(async (req, res) => void res.json(await parceiros.listar(tipo, typeof req.query.busca === 'string' ? req.query.busca : undefined))))
+  rotas.post(`/${tipo}`, rota(async (req, res) => void res.status(201).json(await parceiros.criar(tipo, parceiroSchema.parse(req.body)))))
+  rotas.put(`/${tipo}/:id`, rota(async (req, res) => void res.json(await parceiros.atualizar(tipo, req.params.id, parceiroSchema.parse(req.body)))))
+  rotas.delete(`/${tipo}/:id`, rota(async (req, res) => void res.json(await parceiros.excluir(tipo, req.params.id))))
+}
 
 /*
  * A ordem das listas, definida arrastando a linha na tela.

@@ -29,7 +29,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 - Frontend: `npm run dev --prefix frontend` (porta 5173) · build: `npm run build --prefix frontend`
 - Semear o banco: `npm run seed --prefix backend`
 - Backup do banco: todo dia às 00:15 pelo GitHub Actions (`.github/workflows/backup.yml`, 90 dias, cifrado); restaurar com `scripts/restaurar-backup.sh`, roteiro em `docs/BACKUP.md`. Os segredos `DATABASE_URL_BACKUP` e `BACKUP_SENHA` são cadastrados no painel do GitHub, nunca por chat.
-- Ponta a ponta (Playwright, 48 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
+- Ponta a ponta (Playwright, 49 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
 
 ## Decisões estruturais (mudar aqui quebra o planejamento)
 
@@ -57,9 +57,11 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 22. **O cartão do quadro conta os dias na etapa contra o previsto do roteiro, e o Início lista o que passou.** `RoteiroEtapa.diasEstimados` só servia à previsão de conclusão; o João marcava de cabeça quando a bandeja podia sair da secagem. `permanenciaNaEtapa()` (lib/atraso-etapa.ts) conta DIAS DE ATELIÊ desde o último movimento que trouxe peça para a etapa (lote que voltou recomeça a contar): no 5º dia de uma etapa de 5 "vence hoje", no 6º "1 dia além do previsto". Etapa final e segunda não contam, peça pronta parada é estoque. A encomenda segue o mesmo princípio da conclusão do lote: vira `pronta` sozinha quando todos os lotes dela concluíram e o pronto cobre o pedido, e volta a `em_producao` se um lote reabrir; `entregue` continua sendo gesto da pessoa.
 23. **O quadro é consultável sem sinal.** O service worker guarda as leituras do quadro (`/lotes/kanban`, `/etapas`, `/cores`, `/pecas`, `/responsaveis`, `/auth/me`) em `NetworkFirst` com 8 s de espera e devolve a última cópia marcada com `x-vf-guardado-em`; a tela lê o cabeçalho e diz "quadro de 14:32". Só GET, só a API; escrita é da fila offline (decisão 19). Configurado em `frontend/vite.config.ts`.
 
+24. **Cliente e fornecedor são cadastro, mas a encomenda continua aceitando texto livre.** Cliente de uma vez só não precisa de cadastro; quando o nome digitado bate (sem acento, sem caixa) com um cliente ativo, `clientePeloNome()` liga a encomenda a ele. Documento é único só quando existe. Quem tem histórico não se apaga, se desativa. A migração de 06/09 já tinha rodado em produção (a API ficou duas semanas na branch `teste`); o arquivo voltou à master idêntico, então o deploy não aplica nada.
+
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 527 casos em 28 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 549 casos em 29 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -76,6 +78,7 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `csv-vendas.ts` | leitura da planilha do marketplace |
 | `ficha-tecnica.ts` | faixa de tolerância da medida e coerência da ficha da peça |
 | `avisos.ts` | situação do aviso pelo prazo, coluna do quadro por dia, e o estado que pinta o menu |
+| `cartao-cnpj.ts` | leitura do cartão CNPJ da Receita por coluna, e o que vira campo do cadastro |
 | `plural.ts` | plural do português (gêmeo de `frontend/src/lib/format.ts`) |
 
 **Os cenários BDD do plano de testes vivem em `e2e/tests/`**, um arquivo por funcionalidade (`bdd-01…13`) e um `test` por cenário, com o mesmo título do Documento de Projeto. O "Dado que" é montado pela API (`e2e/fixtures/api.ts`); o "Quando" e o "Então" acontecem no navegador, por Page Object (`e2e/pages/`). Seletor é por papel e rótulo (`getByRole`, `getByLabel`); três ganchos existem na aplicação só para isso e não podem sair: `role="dialog"` no `Modal`, `role="status"` no `Toaster` e `data-alerta` no item Avisos do menu. Um worker e banco compartilhado: cada cenário cria as próprias peças com nome único e limpa o que é global (fila do forno, avisos abertos) antes de usar. Cenário de código que ainda está em branch fica `test.skip` com o motivo, ligado por `E2E_INCLUIR_EM_TESTE=1`.
