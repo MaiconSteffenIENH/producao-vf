@@ -117,6 +117,10 @@ export function Dashboard() {
   const podeVer = (chave: string) => !liberados || liberados.includes(chave)
   const [resumo, setResumo] = useState<Resumo | null>(null)
   const [carregando, setCarregando] = useState(true)
+  const [versaoApi, setVersaoApi] = useState<string | null>(null)
+  useEffect(() => {
+    api.get<{ versao?: string }>('/health').then((r) => setVersaoApi(r.data.versao ?? '?')).catch(() => setVersaoApi(null))
+  }, [])
 
   const recarregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true)
@@ -325,6 +329,16 @@ export function Dashboard() {
           </ul>
         </Card>
       </div>
+      {/*
+        Tela e API publicadas da mesma versão? Em 20/09 a API ficou duas semanas
+        noutra branch e ninguém viu. Os dois commits lado a lado, discretos.
+      */}
+      <p className="mt-6 text-center text-[11px] text-tinta-fraca" data-versao>
+        tela {__VERSAO_TELA__} · API {versaoApi ?? '…'}
+        {versaoApi && versaoApi !== 'local' && __VERSAO_TELA__ !== 'local' && versaoApi !== __VERSAO_TELA__ && (
+          <span className="ml-1 font-medium text-alerta">(versões diferentes: confira o deploy)</span>
+        )}
+      </p>
     </>
   )
 }

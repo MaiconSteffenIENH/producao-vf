@@ -15,6 +15,7 @@ import * as precos from '../services/preco.service'
 import * as queimas from '../services/queima.service'
 import * as vendas from '../services/venda.service'
 import * as parceiros from '../services/parceiro.service'
+import * as exportacao from '../services/exportacao.service'
 import * as encomendas from '../services/encomenda.service'
 import * as avisos from '../services/aviso.service'
 import * as fotos from '../services/foto.service'
@@ -66,7 +67,10 @@ export const rotas = Router()
 
 // ─────────────────────────── Público ───────────────────────────
 
-rotas.get('/health', (_req, res) => res.json({ ok: true, em: new Date().toISOString() }))
+// a versão publicada: o Render injeta o commit; o Início mostra ao lado da versão da tela
+rotas.get('/health', (_req, res) =>
+  res.json({ ok: true, em: new Date().toISOString(), versao: (process.env.RENDER_GIT_COMMIT ?? 'local').slice(0, 7) }),
+)
 
 rotas.post(
   '/auth/login',
@@ -224,6 +228,17 @@ const cruds: Crud[] = [
     schema: materiaPrimaSchema,
   },
 ]
+
+// exportação do livro-razão em planilha (US-42); responde o arquivo, não JSON
+rotas.get(
+  '/movimentos/exportar',
+  rota(async (req, res) => {
+    const { csv, nome } = await exportacao.exportarMovimentos(String(req.query.de ?? ''), String(req.query.ate ?? ''))
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
+    res.send(csv)
+  }),
+)
 
 // ── clientes e fornecedores ──────────────────────────────────────────────────
 // ler-cartao vem antes de `/:id`, senão "ler-cartao" seria lido como um id

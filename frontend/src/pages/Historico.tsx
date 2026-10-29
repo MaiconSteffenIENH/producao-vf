@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Download, Pencil, Trash2 } from 'lucide-react'
 import { api, mensagemDoErro } from '../services/api'
 import { useAutoRefresh } from '../lib/useAutoRefresh'
 import { dataBr, hojeNoAtelie } from '../lib/format'
@@ -107,6 +107,33 @@ const COR_TIPO: Record<string, string> = {
 const COR_SEM_MOTIVO = '#918787'
 
 export function Historico() {
+  const [exportarAberto, setExportarAberto] = useState(false)
+  const [periodo, setPeriodo] = useState(() => {
+    const hoje = hojeNoAtelie()
+    return { de: `${hoje.slice(0, 7)}-01`, ate: hoje }
+  })
+  const [exportando, setExportando] = useState(false)
+  /*
+   * Download pelo axios (que leva o token) e não por link: a rota é protegida,
+   * e um <a href> abriria sem autenticação e devolveria 401 numa aba nova.
+   */
+  const exportar = async () => {
+    setExportando(true)
+    try {
+      const r = await api.get('/movimentos/exportar', { params: periodo, responseType: 'blob' })
+      const url = URL.createObjectURL(r.data as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `movimentos-${periodo.de}-a-${periodo.ate}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      setExportarAberto(false)
+    } catch (erro) {
+      avisar.erro(mensagemDoErro(erro, 'Não deu para exportar.'))
+    } finally {
+      setExportando(false)
+    }
+  }
   const [lotes, setLotes] = useState<LoteDaLista[]>([])
   const [pecas, setPecas] = useState<{ id: string; nome: string }[]>([])
   const [cores, setCores] = useState<{ id: string; nome: string; hex: string }[]>([])
@@ -237,6 +264,9 @@ export function Historico() {
         descricao="Todos os lotes, com o caminho completo de cada um. Nada é apagado."
         acoes={
           <>
+            <Botao variante="secundario" onClick={() => setExportarAberto(true)} className="justify-center">
+              <Download size={16} /> Exportar planilha
+            </Botao>
             <div className="w-full sm:w-40">
               <SelecaoBuscavel
                 valor={filtros.pecaId}
@@ -676,6 +706,30 @@ export function Historico() {
         aoFechar={() => setParaApagar(null)}
         aoApagar={() => void recarregar()}
       />
+      <Modal
+        aberto={exportarAberto}
+        aoFechar={() => setExportarAberto(false)}
+        titulo="Exportar movimentos"
+        descricao="Todo lançamento do período, um por linha: abre direto no Excel. Bom para o contador e para a conferência de fim de mês."
+        largura="max-w-md"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Campo rotulo="De">
+              <Input type="date" value={periodo.de} onChange={(e) => setPeriodo((p) => ({ ...p, de: e.target.value }))} />
+            </Campo>
+            <Campo rotulo="Até">
+              <Input type="date" value={periodo.ate} onChange={(e) => setPeriodo((p) => ({ ...p, ate: e.target.value }))} />
+            </Campo>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Botao variante="secundario" onClick={() => setExportarAberto(false)}>Cancelar</Botao>
+            <Botao onClick={exportar} disabled={exportando || !periodo.de || !periodo.ate}>
+              {exportando ? 'Gerando…' : 'Baixar planilha'}
+            </Botao>
+          </div>
+        </div>
+      </Modal>
     </>
   )
 }

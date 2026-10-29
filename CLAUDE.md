@@ -29,7 +29,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 - Frontend: `npm run dev --prefix frontend` (porta 5173) · build: `npm run build --prefix frontend`
 - Semear o banco: `npm run seed --prefix backend`
 - Backup do banco: todo dia às 00:15 pelo GitHub Actions (`.github/workflows/backup.yml`, 90 dias, cifrado); restaurar com `scripts/restaurar-backup.sh`, roteiro em `docs/BACKUP.md`. Os segredos `DATABASE_URL_BACKUP` e `BACKUP_SENHA` são cadastrados no painel do GitHub, nunca por chat.
-- Ponta a ponta (Playwright, 49 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
+- Ponta a ponta (Playwright, 50 cenários BDD): `./e2e/rodar.sh` (sobe a pilha no Docker, roda, derruba) · `./e2e/rodar.sh bdd-10` para um arquivo · no ambiente do assistente: `e2e/ambiente/rodar-no-sandbox.sh`
 
 ## Decisões estruturais (mudar aqui quebra o planejamento)
 
@@ -61,7 +61,7 @@ Sistema web/PWA de planejamento e acompanhamento da produção de um ateliê de 
 
 ## Onde mora a regra pura
 
-Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 549 casos em 29 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
+Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite testar a matemática do sistema sem subir banco (`npm run test:unidade`, 553 casos em 30 arquivos, ~2s). Regra nova que seja calculável a partir dos dados de entrada nasce aqui, não dentro do service.
 
 | arquivo | o que decide |
 |---|---|
@@ -79,6 +79,7 @@ Nada em `backend/src/lib/` importa Prisma, de propósito — é o que permite te
 | `ficha-tecnica.ts` | faixa de tolerância da medida e coerência da ficha da peça |
 | `avisos.ts` | situação do aviso pelo prazo, coluna do quadro por dia, e o estado que pinta o menu |
 | `cartao-cnpj.ts` | leitura do cartão CNPJ da Receita por coluna, e o que vira campo do cadastro |
+| `exportacao.ts` | CSV que abre no Excel pt-BR (BOM, ponto e vírgula, vírgula decimal) e não executa fórmula digitada |
 | `plural.ts` | plural do português (gêmeo de `frontend/src/lib/format.ts`) |
 
 **Os cenários BDD do plano de testes vivem em `e2e/tests/`**, um arquivo por funcionalidade (`bdd-01…13`) e um `test` por cenário, com o mesmo título do Documento de Projeto. O "Dado que" é montado pela API (`e2e/fixtures/api.ts`); o "Quando" e o "Então" acontecem no navegador, por Page Object (`e2e/pages/`). Seletor é por papel e rótulo (`getByRole`, `getByLabel`); três ganchos existem na aplicação só para isso e não podem sair: `role="dialog"` no `Modal`, `role="status"` no `Toaster` e `data-alerta` no item Avisos do menu. Um worker e banco compartilhado: cada cenário cria as próprias peças com nome único e limpa o que é global (fila do forno, avisos abertos) antes de usar. Cenário de código que ainda está em branch fica `test.skip` com o motivo, ligado por `E2E_INCLUIR_EM_TESTE=1`.

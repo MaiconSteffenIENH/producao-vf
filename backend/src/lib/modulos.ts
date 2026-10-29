@@ -134,6 +134,7 @@ export const MODULOS_POR_ROTA: Readonly<Record<string, readonly string[]>> = {
   categorias: ['categorias', 'pecas', 'inicio'],
   'materias-primas': ['materias-primas', 'planejamento'],
   clientes: ['clientes', 'encomendas'],
+  movimentos: ['historico'],
   fornecedores: ['clientes', 'materias-primas'],
 
   // administração dos próprios módulos: nunca pode ficar de fora do mapa,

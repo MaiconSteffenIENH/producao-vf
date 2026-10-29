@@ -61,6 +61,13 @@ describe('GET com :id — não cabem na lista de caminhos fixos', () => {
     expect(r.body.nome).not.toBe(peca.nome)
   })
 
+  it('/movimentos/exportar devolve CSV que abre no Excel', async () => {
+    const r = await comAuth('get', '/movimentos/exportar?de=2026-01-01&ate=2030-12-31')
+    expect(r.status).toBe(200)
+    expect(r.headers['content-type']).toContain('text/csv')
+    expect(r.text.startsWith('\uFEFFData e hora;Lote;Peça')).toBe(true)
+  })
+
   it('/lotes/ordem-producao monta a folha da bancada', async () => {
     // não depende de outro arquivo ter criado lote antes: a ordem dos arquivos não é contrato
     const pecas = await comAuth('get', '/pecas?ativo=true')

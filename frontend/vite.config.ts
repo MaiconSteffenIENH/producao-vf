@@ -4,6 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // commit publicado, para o Início mostrar tela e API lado a lado (a Vercel injeta no build)
+  define: { __VERSAO_TELA__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? 'local').slice(0, 7)) },
   plugins: [
     react(),
     tailwindcss(),
